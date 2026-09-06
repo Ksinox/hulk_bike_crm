@@ -1580,7 +1580,7 @@ export function ActivityEventRow({
           ? "text-red-ink"
           : "text-ink";
     return (
-      <div className="flex w-full items-start gap-3 rounded-[12px] px-2.5 py-3 transition-colors hover:bg-surface-soft">
+      <div className="flex w-full items-start gap-3 rounded-[12px] px-2.5 py-3 transition-colors hover:bg-surface-soft max-sm:flex-wrap">
         <span
           className={cn(
             "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
@@ -1645,7 +1645,9 @@ export function ActivityEventRow({
             </div>
           )}
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1 pl-2 text-right">
+        {/* На телефоне правая колонка (сумма, время, кто) переезжает под текст
+            строкой — иначе она отжимала описание в узкий столбик (06.09). */}
+        <div className="flex shrink-0 flex-col items-end gap-1 pl-2 text-right max-sm:basis-full max-sm:flex-row max-sm:flex-wrap max-sm:items-center max-sm:justify-start max-sm:gap-x-3 max-sm:pl-12 max-sm:text-left">
           {view.headline && (
             <div
               className={cn(

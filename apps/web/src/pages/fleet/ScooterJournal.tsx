@@ -80,7 +80,8 @@ export function ScooterJournal() {
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700">
           <ScrollText size={17} />
         </span>
-        <div className="min-w-0 flex-1">
+        {/* basis: на телефоне бейдж уходит под текст, а не сжимает его в столбик */}
+        <div className="min-w-0 flex-1 basis-[220px]">
           <div className="text-[14px] font-bold text-ink">Журнал техники</div>
           <div className="mt-0.5 text-[12px] leading-snug text-muted">
             Все действия со скутерами: добавление, смена статуса, правка номеров

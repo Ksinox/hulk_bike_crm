@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Bike, Handshake, Users } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { cn } from "@/lib/utils";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -35,6 +36,7 @@ const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
 ];
 
 export function Partners() {
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState<Tab>("rentals");
   /**
    * Открытая карточка техники — рендерится ВНУТРИ партнёрки на всю ширину
@@ -62,7 +64,8 @@ export function Partners() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
-      <Topbar />
+      {/* На телефоне свой app-shell — десктопная панель дублировала шапку (06.09). */}
+      {!isMobile && <Topbar />}
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
           Партнёрка

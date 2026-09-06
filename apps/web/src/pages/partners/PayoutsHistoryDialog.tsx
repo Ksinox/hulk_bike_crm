@@ -15,6 +15,14 @@ import { useAllInvestorPayouts } from "@/lib/api/investors";
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
+function pluralPayouts(n: number): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return "выплата";
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "выплаты";
+  return "выплат";
+}
+
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate(),
@@ -122,8 +130,7 @@ export function PayoutsHistoryDialog({ onClose }: { onClose: () => void }) {
         {/* Итог за период */}
         <div className="flex flex-wrap items-baseline justify-between gap-2 px-5 py-3">
           <div className="text-[12px] text-muted">
-            {items.length}{" "}
-            {items.length === 1 ? "выплата" : items.length < 5 ? "выплаты" : "выплат"}
+            {items.length} {pluralPayouts(items.length)}
             {byInvestor.length > 1 && (
               <span className="ml-2 text-muted-2">
                 {byInvestor.map(([n, a]) => `${n.split(" ")[0]} ${fmt(a)} ₽`).join(" · ")}
