@@ -41,6 +41,7 @@ export function AnalyticsTile({
   value,
   tile,
   wall = false,
+  compact = false,
   editing = false,
   onSize,
   onRemove,
@@ -53,6 +54,8 @@ export function AnalyticsTile({
   value: MetricValue | undefined;
   tile: BoardTile;
   wall?: boolean;
+  /** Узкий экран: высокие плитки не растягиваем на две строки. */
+  compact?: boolean;
   editing?: boolean;
   onSize?: (size: TileSize) => void;
   onRemove?: () => void;
@@ -106,7 +109,10 @@ export function AnalyticsTile({
       onDragOver={dragHandlers?.onDragOver}
       onDrop={dragHandlers?.onDrop}
       onDragEnd={dragHandlers?.onDragEnd}
-      style={{ gridColumn: `span ${span.col}`, gridRow: `span ${span.row}` }}
+      style={{
+        gridColumn: `span ${span.col}`,
+        gridRow: `span ${compact ? 1 : span.row}`,
+      }}
       className={cn(
         "group relative flex min-w-0 flex-col overflow-hidden rounded-[20px] transition-shadow",
         wall

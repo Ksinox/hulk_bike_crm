@@ -234,6 +234,7 @@ export function Analytics() {
                   tile={tile}
                   tiles={board.tiles}
                   values={values}
+                  compact={isMobile}
                   editing={editing}
                   onRemove={() => removeTile(i)}
                   onSize={(size: TileSize) => patchTile(i, { size })}
@@ -265,6 +266,7 @@ export function Analytics() {
                 def={def}
                 value={values[tile.metric]}
                 tile={tile}
+                compact={isMobile}
                 editing={editing}
                 onSize={(size) => patchTile(i, { size })}
                 onRemove={() => removeTile(i)}

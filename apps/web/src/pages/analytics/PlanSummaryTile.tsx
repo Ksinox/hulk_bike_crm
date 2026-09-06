@@ -17,6 +17,7 @@ export function PlanSummaryTile({
   tiles,
   values,
   wall = false,
+  compact = false,
   editing = false,
   onSize,
   onRemove,
@@ -28,6 +29,8 @@ export function PlanSummaryTile({
   tiles: BoardTile[];
   values: Record<string, MetricValue>;
   wall?: boolean;
+  /** Узкий экран: список планов растёт по содержимому, а не на две строки. */
+  compact?: boolean;
   editing?: boolean;
   onSize?: (size: TileSize) => void;
   onRemove?: () => void;
@@ -77,7 +80,10 @@ export function PlanSummaryTile({
       onDragOver={dragHandlers?.onDragOver}
       onDrop={dragHandlers?.onDrop}
       onDragEnd={dragHandlers?.onDragEnd}
-      style={{ gridColumn: `span ${span.col}`, gridRow: `span ${span.row}` }}
+      style={{
+        gridColumn: `span ${span.col}`,
+        gridRow: `span ${compact ? 1 : span.row}`,
+      }}
       className={cn(
         "group relative flex min-w-0 flex-col overflow-hidden rounded-[20px]",
         wall
