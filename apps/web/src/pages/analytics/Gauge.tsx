@@ -141,9 +141,9 @@ export function PlanBarThick({
   const showTick = !hidden && state.expectedPct > 3 && state.expectedPct < 98;
   return (
     <div
+      style={{ height: "max(6px, min(2.4cqh, 15px))" }}
       className={cn(
         "relative w-full overflow-hidden rounded-full",
-        "h-[max(6px,min(2.2cqh,14px))]",
         wall ? ui.trackWall : ui.track,
         className,
       )}
@@ -182,10 +182,12 @@ export function StatusChip({
   const ui = STATUS_UI[state.status];
   return (
     <span
+      style={{
+        fontSize: "max(9px, min(3.4cqmin, 18px))",
+        padding: "max(2px,0.7cqmin) max(6px,1.7cqmin)",
+      }}
       className={cn(
-        "inline-flex w-fit shrink-0 items-center rounded-full font-bold",
-        "px-[max(6px,1.6cqmin)] py-[max(2px,0.7cqmin)]",
-        "text-[max(9px,min(3.4cqmin,17px))]",
+        "inline-flex w-fit shrink-0 items-center truncate rounded-full font-bold",
         wall ? ui.chipWall : ui.chip,
         className,
       )}

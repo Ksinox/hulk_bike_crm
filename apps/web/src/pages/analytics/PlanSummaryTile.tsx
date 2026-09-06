@@ -98,10 +98,14 @@ export function PlanSummaryTile({
     <div
       data-tile-index={index}
       data-flip-key="plan.summary"
-      style={{ ...spanStyle, containerType: "size" }}
+      style={{
+        ...spanStyle,
+        containerType: "size",
+        borderRadius: "clamp(14px, 3cqmin, 30px)",
+        padding: "clamp(9px, 3.2cqmin, 28px)",
+      }}
       className={cn(
         "group/tile relative flex min-h-0 min-w-0 flex-col overflow-hidden",
-        "rounded-[clamp(14px,3cqmin,30px)] p-[clamp(10px,3.4cqmin,28px)]",
         wall
           ? "border border-white/[0.07] bg-white/[0.04]"
           : "border border-black/[0.04] bg-surface shadow-card-sm",
@@ -110,9 +114,9 @@ export function PlanSummaryTile({
     >
       <div className="flex shrink-0 items-start justify-between gap-2">
         <div
+          style={{ fontSize: "max(9px, min(3.2cqmin, 18px))", gap: "0.8em" }}
           className={cn(
-            "flex items-center gap-[0.8cqmin] font-bold uppercase tracking-[0.14em]",
-            "text-[max(8px,min(3cqmin,17px))]",
+            "flex items-center font-bold uppercase tracking-[0.14em]",
             wall ? "text-white/45" : "text-muted-2",
           )}
         >
@@ -148,24 +152,23 @@ export function PlanSummaryTile({
 
       {rows.length === 0 ? (
         <div
-          className={cn(
-            "mt-[2cqmin] leading-snug text-[max(10px,min(3.6cqmin,20px))]",
-            wall ? "text-white/50" : "text-muted",
-          )}
+          style={{ marginTop: "2cqmin", fontSize: "max(10px, min(3.6cqmin, 20px))" }}
+          className={cn("leading-snug", wall ? "text-white/50" : "text-muted")}
         >
           Планы пока не заданы. Нажмите «Настроить», выберите плитку и поставьте
           план кнопкой-мишенью — здесь появится строка «факт из плана».
         </div>
       ) : (
-        <div className="mt-[1.6cqmin] flex min-h-0 flex-1 flex-col justify-between">
+        <div style={{ marginTop: "1.5cqmin" }} className="flex min-h-0 flex-1 flex-col justify-between">
           {rows.map((r) => {
             const ui = STATUS_UI[r.state.status];
             return (
-              <div key={r.id} className="flex min-h-0 flex-col justify-center gap-[0.5cqh]">
-                <div
-                  className="flex items-baseline justify-between gap-[1.5cqmin]"
-                  style={{ fontSize: line }}
-                >
+              <div
+                key={r.id}
+                style={{ gap: "0.35em", fontSize: line }}
+                className="flex min-h-0 flex-col justify-center"
+              >
+                <div className="flex items-baseline justify-between gap-[0.8em]">
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate font-semibold",

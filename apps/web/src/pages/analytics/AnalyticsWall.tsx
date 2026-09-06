@@ -63,23 +63,34 @@ export function AnalyticsWall() {
   const values = useMetricValues(periodOf);
   const range = periodRange(board.period, now);
 
-  /**
-   * Колонок берём по форме экрана: на широком мониторе плитки не должны
-   * растягиваться в ленты, на узком — не должны сжиматься в столбик.
-   */
-  const cols = useMemo(() => {
-    const ratio = vp.w / Math.max(1, vp.h);
-    if (vp.w < 900) return 2;
-    if (ratio > 2.1) return 8;
-    if (ratio < 1.25) return 4;
-    return 6;
-  }, [vp]);
-
   const tiles = board.tiles.filter((t) => METRIC_BY_ID.has(t.metric));
-  const rows = useMemo(
-    () => packedRows(tiles.map((t) => SIZE_SPAN[t.size]), cols),
-    [tiles, cols],
-  );
+
+  /**
+   * Раскладку подбираем под конкретный монитор, а не по брейкпоинтам:
+   * перебираем число колонок и берём то, при котором клетка получается
+   * ближе всего к приятной пропорции (чуть шире квадрата). Из-за этого
+   * на широком экране плитки не растягиваются в ленты, на маленьком не
+   * дробятся в лапшу, а когда показателей много — рядов становится
+   * больше ровно настолько, насколько нужно.
+   */
+  const { cols, rows } = useMemo(() => {
+    const spans = tiles.map((t) => SIZE_SPAN[t.size]);
+    const gridH = Math.max(120, vp.h - Math.min(vp.h * 0.16, 130));
+    const gap = Math.max(6, Math.min(vp.w, vp.h) * 0.012);
+    let best = { cols: 6, rows: 1, score: Number.POSITIVE_INFINITY };
+    for (let c = vp.w < 760 ? 2 : 3; c <= (vp.w < 760 ? 3 : 9); c++) {
+      const r = packedRows(spans, c);
+      const cellW = (vp.w - gap * (c + 1)) / c;
+      const cellH = (gridH - gap * (r + 1)) / r;
+      if (cellW <= 0 || cellH <= 0) continue;
+      // Целевая пропорция клетки — 1.45; штрафуем и слишком мелкие клетки.
+      const aspect = Math.abs(cellW / cellH - 1.45);
+      const small = cellH < 90 ? (90 - cellH) / 45 : 0;
+      const score = aspect + small;
+      if (score < best.score) best = { cols: c, rows: r, score };
+    }
+    return best;
+  }, [tiles, vp]);
 
   const toggleFull = async () => {
     try {

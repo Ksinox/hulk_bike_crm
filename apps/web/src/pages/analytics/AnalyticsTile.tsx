@@ -117,11 +117,14 @@ export function AnalyticsTile({
     <div
       data-tile-index={index}
       data-flip-key={def.id}
-      style={{ ...spanStyle, containerType: "size" }}
+      style={{
+        ...spanStyle,
+        containerType: "size",
+        borderRadius: "clamp(14px, 3cqmin, 30px)",
+        padding: "clamp(9px, 3.6cqmin, 32px)",
+      }}
       className={cn(
         "group/tile relative flex min-h-0 min-w-0 flex-col overflow-hidden",
-        "rounded-[clamp(14px,3cqmin,30px)]",
-        "p-[clamp(10px,4cqmin,34px)]",
         heroSurface(hero, wall, ui),
         editing && "select-none",
       )}
@@ -131,14 +134,21 @@ export function AnalyticsTile({
       {/* Заголовок: пилюля у героя, микро-строчка у остальных */}
       <header className="relative flex shrink-0 items-start justify-between gap-2">
         <span
+          style={{
+            fontSize: "max(9px, min(3.2cqmin, 18px))",
+            ...(hero
+              ? {
+                  padding: "max(3px,0.9cqmin) max(7px,1.8cqmin)",
+                  borderRadius: 999,
+                }
+              : {}),
+          }}
           className={cn(
-            "font-bold uppercase tracking-[0.14em]",
-            "text-[max(8px,min(3cqmin,17px))]",
+            "min-w-0 truncate font-bold uppercase tracking-[0.14em]",
             hero
-              ? cn(
-                  "rounded-full px-[max(6px,1.6cqmin)] py-[max(2px,0.8cqmin)]",
-                  wall ? "bg-white/10 text-white/70" : "bg-ink/[0.06] text-ink/55",
-                )
+              ? wall
+                ? "bg-white/10 text-white/70"
+                : "bg-ink/[0.06] text-ink/55"
               : wall
                 ? "text-white/45"
                 : "text-muted-2",
@@ -189,24 +199,24 @@ export function AnalyticsTile({
 
       {/* Тело: цифра слева, гейдж справа */}
       <div
+        style={withRing ? { gap: "2.5cqmin" } : undefined}
         className={cn(
           "relative flex min-h-0 flex-1",
-          withRing ? "items-center gap-[3cqmin]" : "flex-col justify-center",
-          tile.size === "s" && "justify-center",
+          withRing ? "items-center" : "flex-col justify-center",
         )}
       >
         <div
+          style={{ gap: "max(2px, 1.1cqmin)" }}
           className={cn(
             "flex min-w-0 flex-col justify-center",
             withRing ? "flex-1" : "w-full",
-            "gap-[max(2px,1.2cqmin)]",
           )}
         >
           {!ringIsValue && (
             <div
+              style={{ fontSize: numberSize(tile.size, withRing) }}
               className={cn(
-                "font-display font-extrabold leading-[0.9] tracking-[-0.03em] tabular-nums",
-                numberSize(tile.size, withRing),
+                "truncate font-display font-extrabold leading-[0.9] tracking-[-0.03em] tabular-nums",
                 hero
                   ? wall
                     ? "text-white"
@@ -230,11 +240,14 @@ export function AnalyticsTile({
 
           {value?.caption && (
             <div
+              style={{
+                fontSize: ringIsValue
+                  ? "max(12px, min(5.2cqmin, 32px))"
+                  : "max(10px, min(3.8cqmin, 23px))",
+              }}
               className={cn(
                 "truncate",
-                ringIsValue
-                  ? "text-[max(11px,min(5cqmin,30px))] font-bold"
-                  : "text-[max(9px,min(3.6cqmin,22px))]",
+                ringIsValue && "font-bold",
                 wall ? "text-white/60" : "text-muted",
               )}
             >
@@ -243,8 +256,9 @@ export function AnalyticsTile({
           )}
           {value?.extra && (
             <div
+              style={{ fontSize: "max(9px, min(3.2cqmin, 20px))" }}
               className={cn(
-                "truncate font-semibold text-[max(8px,min(3.2cqmin,19px))]",
+                "truncate font-semibold",
                 wall ? "text-white/45" : "text-muted-2",
               )}
             >
@@ -252,7 +266,7 @@ export function AnalyticsTile({
             </div>
           )}
           {state && !hidden && (
-            <StatusChip state={state} wall={wall} className="mt-[0.6cqmin]" />
+            <StatusChip state={state} wall={wall} />
           )}
         </div>
 
@@ -275,23 +289,21 @@ export function AnalyticsTile({
 
       {/* План внизу: подпись + шкала там, где нет полукруга */}
       {state && (
-        <footer className="relative mt-[2cqmin] flex shrink-0 flex-col gap-[1.2cqmin]">
+        <footer
+          style={{ marginTop: "1.8cqmin", gap: "1.1cqmin" }}
+          className="relative flex shrink-0 flex-col"
+        >
           <div
-            className={cn(
-              "flex items-baseline justify-between gap-2",
-              "text-[max(8px,min(3.2cqmin,19px))]",
-            )}
+            style={{ fontSize: "max(9px, min(3.2cqmin, 20px))" }}
+            className="flex items-baseline justify-between gap-2"
           >
             <span className={wall ? "text-white/45" : "text-muted-2"}>
               план {def.format(planValue!)}
             </span>
             {!withRing && (
               <span
-                className={cn(
-                  "font-extrabold tabular-nums",
-                  "text-[max(10px,min(4.4cqmin,24px))]",
-                  wall ? ui!.inkWall : ui!.ink,
-                )}
+                style={{ fontSize: "max(11px, min(4.6cqmin, 26px))" }}
+                className={cn("font-extrabold tabular-nums", wall ? ui!.inkWall : ui!.ink)}
               >
                 {hidden ? <Sensitive dark={wall}>{state.pct}%</Sensitive> : `${state.pct}%`}
               </span>
@@ -350,11 +362,13 @@ export function AnalyticsTile({
 function numberSize(size: TileSize, withRing: boolean): string {
   if (size === "l")
     return withRing
-      ? "text-[min(15cqh,11cqw)]"
-      : "text-[min(26cqh,13cqw)]";
+      ? "max(22px, min(17cqh, 12cqw))"
+      : "max(24px, min(30cqh, 15cqw))";
   if (size === "m")
-    return withRing ? "text-[min(26cqh,9cqw)]" : "text-[min(34cqh,11cqw)]";
-  return "text-[min(26cqh,20cqw)]";
+    return withRing
+      ? "max(18px, min(30cqh, 10cqw))"
+      : "max(20px, min(38cqh, 13cqw))";
+  return "max(16px, min(30cqh, 24cqw))";
 }
 
 /** Поверхность плитки: герой заметный, остальные спокойные. */
