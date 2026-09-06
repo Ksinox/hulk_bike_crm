@@ -257,6 +257,15 @@ export function AnalyticsTile({
           {state && !hidden && (
             <StatusChip state={state} wall={wall} className={wall ? "mt-1 self-start" : "mt-0.5 self-start"} />
           )}
+          {state && withRing && (
+            <div
+              className={cn(
+                wall ? "mt-1 text-[17px] text-white/55" : "text-[11.5px] text-muted-2",
+              )}
+            >
+              план {def.format(planValue!)}
+            </div>
+          )}
         </div>
 
         {withRing && ringState && (
@@ -271,7 +280,7 @@ export function AnalyticsTile({
       </div>
 
       {/* План: подпись + толстая шкала (на плитках без кольца) */}
-      {state && (
+      {state && !withRing && (
         <div className={cn("flex flex-col", wall ? "mt-4 gap-2" : "mt-3 gap-1.5")}>
           <div
             className={cn(
@@ -282,7 +291,7 @@ export function AnalyticsTile({
             <span className={wall ? "text-white/60" : "text-muted-2"}>
               план {def.format(planValue!)}
             </span>
-            {!withRing && (
+            {(
               <span
                 className={cn(
                   "font-bold tabular-nums",
@@ -294,7 +303,7 @@ export function AnalyticsTile({
               </span>
             )}
           </div>
-          {!withRing && (
+          {(
             <PlanBarThick
               state={state}
               wall={wall}
