@@ -67,7 +67,10 @@ export function AnalyticsTile({
   const revealed = useSensitiveRevealed();
   const hidden = !!def.sensitive && !revealed;
 
-  const planValue = tile.plan != null && tile.plan > 0 ? tile.plan : null;
+  // У показателя, раздел которого ещё не запущен, факт всегда ноль —
+  // красить плитку красным «отстаём» было бы враньём.
+  const planValue =
+    !def.comingSoon && tile.plan != null && tile.plan > 0 ? tile.plan : null;
   const state =
     planValue != null
       ? planState(value?.value ?? 0, planValue, !!def.periodic, period)

@@ -48,6 +48,7 @@ export function PlanRing({
           strokeWidth={stroke}
           stroke={wall ? "rgba(255,255,255,0.13)" : "rgba(15,23,42,0.09)"}
         />
+        {filled > 0 && (
         <circle
           cx={cx}
           cy={cx}
@@ -60,6 +61,7 @@ export function PlanRing({
           transform={`rotate(-90 ${cx} ${cx})`}
           style={{ transition: "stroke-dasharray 700ms cubic-bezier(0.22,1,0.36,1)" }}
         />
+        )}
         {showTick && (
           <line
             x1={cx + Math.cos(rad) * tickInner}

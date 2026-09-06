@@ -54,7 +54,8 @@ export function PlanSummaryTile({
     .map((t) => {
       const def = METRIC_BY_ID.get(t.metric);
       const v = values[t.metric];
-      if (!def || !v) return null;
+      // Раздел не запущен — в сводке такой строке делать нечего.
+      if (!def || !v || def.comingSoon) return null;
       const plan = t.plan ?? 0;
       return {
         id: t.metric,
