@@ -39,6 +39,8 @@ import {
   type ScooterDisplayStatus,
 } from "@/lib/mock/fleet";
 import { useFleetScooters } from "./fleetStore";
+import { useBuyoutDeals, type BuyoutDeal } from "@/lib/api/buyout";
+import { buyoutDealByScooter } from "@/lib/buyoutStock";
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
 import {
@@ -56,6 +58,8 @@ const TODAY = new Date();
 
 type StatusTab =
   | "all"
+  /** Категория «Выкуп», техника ещё не у клиента (06.09, п.13). */
+  | "buyout_free"
   | "rental_pool"
   | "rented"
   | "repair"
@@ -129,14 +133,14 @@ const MODE_OF: Record<ScooterDisplayStatus, FleetMode> = {
 const MODE_TITLE: Record<FleetMode, string> = {
   rental: "Парк аренды",
   sale: "На продажу",
-  buyout: "В выкупе",
+  buyout: "Выкуп",
   unassigned: "Не распределены",
 };
 
 const MODE_HINT: Record<FleetMode, string> = {
   rental: "техника, которая сдаётся клиентам",
   sale: "витрина и проданные единицы",
-  buyout: "у клиентов по договору выкупа — пока платят, техника наша",
+  buyout: "у клиентов по договору и техника, готовая к выкупу",
   unassigned: "заведены, но подразделение ещё не выбрано",
 };
 
@@ -226,17 +230,25 @@ export function Fleet({
    * попадала в списки «Скутеров» с бейджем «Партнёрская», и парк
    * выглядел больше, чем он есть.
    */
+  // Сделки выкупа: по ним видно, у клиента техника или ещё свободна (06.09).
+  const { data: buyoutData } = useBuyoutDeals();
+  const buyoutByScooter = useMemo(
+    () => buyoutDealByScooter(buyoutData?.items ?? []),
+    [buyoutData],
+  );
+
   const rows = useMemo(() => {
     return FLEET.filter((s) => !s.isPartner).map((s) => {
       const rental = rentalByScooter.get(s.name);
+      const buyout = buyoutByScooter.get(s.id) ?? null;
       // Если у скутера есть активная/просроченная/возвратная аренда —
       // показываем «В аренде» независимо от базового статуса (только
       // если базовый — rental_pool, т.е. скутер официально в пуле аренды).
       const status: ScooterDisplayStatus =
         rental && s.baseStatus === "rental_pool" ? "rented" : s.baseStatus;
-      return { scooter: s, status, rental };
+      return { scooter: s, status, rental, buyout };
     });
-  }, [FLEET, rentalByScooter]);
+  }, [FLEET, rentalByScooter, buyoutByScooter]);
 
   // Изоляция режимов (п.10): работаем только с техникой этого подразделения.
   const modeRows = useMemo(
@@ -255,6 +267,8 @@ export function Fleet({
       for_sale: 0,
       /** Передан в выкуп: техника наша, но у клиента (в аренду не идёт). */
       buyout: 0,
+      /** Категория «Выкуп», но сделки ещё нет — можно оформлять (06.09). */
+      buyout_free: 0,
       /** Продан: права перешли покупателю, техники у нас больше нет. */
       gone: 0,
       total: 0,
@@ -274,7 +288,10 @@ export function Fleet({
       else if (r.status === "dtp") c.dtp++;
       else if (r.status === "disassembly") c.disassembly++;
       else if (r.status === "for_sale") c.for_sale++;
-      else if (r.status === "buyout") c.buyout++;
+      else if (r.status === "buyout") {
+        if (r.buyout) c.buyout++;
+        else c.buyout_free++;
+      }
     }
     return c;
   }, [modeRows, mode]);
@@ -306,7 +323,11 @@ export function Fleet({
           if (!isGone(r.status)) return false;
         } else {
           if (isGone(r.status) && mode !== "sale") return false;
-          if (tab !== "all" && r.status !== tab) return false;
+          if (tab === "buyout_free") {
+            if (r.status !== "buyout" || r.buyout) return false;
+          } else if (tab === "buyout") {
+            if (r.status !== "buyout" || !r.buyout) return false;
+          } else if (tab !== "all" && r.status !== tab) return false;
         }
         // Фильтр по моделям: пропускаем если совпал FK (modelId) ИЛИ
         // legacy-enum (model). У старых скутеров modelId=null — они
@@ -631,6 +652,7 @@ function FleetRow({
     scooter: FleetScooter;
     status: ScooterDisplayStatus;
     rental?: RentalInfo;
+    buyout?: BuyoutDeal | null;
   };
   onOpen: () => void;
   /**
@@ -639,7 +661,8 @@ function FleetRow({
    */
   active?: boolean;
 }) {
-  const { scooter, status, rental } = row;
+  const { scooter, status, rental, buyout } = row;
+  const wasRented = scooter.rentalSlot == null && scooter.exRentalSlot != null;
   // Бейдж масла показываем только для катающих скутеров (парк/в аренде).
   const oilState =
     status === "rental_pool" || status === "rented" ? oilFlag(scooter) : null;
@@ -675,14 +698,26 @@ function FleetRow({
         </div>
       </div>
 
-      {/* status */}
-      <div className="whitespace-nowrap">
+      {/* status (+ «был в аренде» — заказчик 06.09, п.5: метка нужна в списке) */}
+      <div className="flex flex-col items-start gap-1 whitespace-nowrap">
         <StatusPill status={status} />
+        {wasRented && <ExRentalPill />}
       </div>
 
       {/* client */}
       <div className={cn("min-w-0", FLEET_COL.client)}>
-        {rental ? (
+        {buyout ? (
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple-soft text-[11px] font-bold text-purple-ink">
+              {initials(buyout.clientName ?? "—")}
+            </div>
+            <span className="truncate text-[13px] font-semibold text-ink">
+              {buyout.clientName ?? "клиент"}
+            </span>
+          </div>
+        ) : status === "buyout" ? (
+          <span className="text-[13px] italic text-green-ink">Доступен для выкупа</span>
+        ) : rental ? (
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[11px] font-bold text-blue-700">
               {initials(rental.clientName)}
@@ -754,12 +789,14 @@ function FleetTile({
     scooter: FleetScooter;
     status: ScooterDisplayStatus;
     rental?: RentalInfo;
+    buyout?: BuyoutDeal | null;
   };
   onOpen: () => void;
 }) {
-  const { scooter, status, rental } = row;
+  const { scooter, status, rental, buyout } = row;
   const oilState =
     status === "rental_pool" || status === "rented" ? oilFlag(scooter) : null;
+  const wasRented = scooter.rentalSlot == null && scooter.exRentalSlot != null;
   return (
     <div
       onClick={onOpen}
@@ -786,15 +823,20 @@ function FleetTile({
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <StatusPill status={status} />
+        {wasRented && <ExRentalPill />}
         {oilState && <OilBadge state={oilState} />}
       </div>
       <div className="flex items-center justify-between gap-2 text-[11px]">
         <span className="min-w-0 truncate text-muted-2">
-          {rental
-            ? rental.clientName
-            : status === "ready"
-              ? "Свободен"
-              : "—"}
+          {buyout
+            ? (buyout.clientName ?? "у клиента")
+            : status === "buyout"
+              ? "Доступен для выкупа"
+              : rental
+                ? rental.clientName
+                : status === "ready"
+                  ? "Свободен"
+                  : "—"}
         </span>
         <span className="shrink-0 tabular-nums font-semibold text-ink-2">
           {fmt(scooter.mileage)} км
@@ -843,6 +885,15 @@ function ScooterAvatar({ model }: { model: ScooterModel }) {
         />
       </svg>
     </div>
+  );
+}
+
+/** Заказчик 06.09 (п.5): «был в аренде» видно в общем списке, не только в карточке. */
+function ExRentalPill() {
+  return (
+    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+      Был в аренде
+    </span>
   );
 }
 
@@ -913,6 +964,7 @@ function ParkOverview({
     disassembly: number;
     for_sale: number;
     buyout: number;
+    buyout_free: number;
     gone: number;
     total: number;
   };
@@ -987,12 +1039,21 @@ function ParkOverview({
         ? [
             {
               key: "buyout",
-              label: "В выкупе",
-              hint: "у клиентов по договору",
+              label: "У клиентов",
+              hint: "по договору выкупа",
               extra: "пока платят — техника наша",
               value: counters.buyout,
               icon: HandCoins,
               tone: "blue",
+            },
+            {
+              key: "buyout_free",
+              label: "Доступны для выкупа",
+              hint: "сделки ещё нет",
+              extra: "их предлагает мастер выкупа",
+              value: counters.buyout_free,
+              icon: Tag,
+              tone: "green",
             },
           ]
         : [

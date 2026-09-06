@@ -400,6 +400,12 @@ function ScooterTile({
           <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold", meta.cls)}>
             {meta.label}
           </span>
+          {/* Заказчик 06.09 (п.5): «был в аренде» — в списке, не только в карточке. */}
+          {scooter.rentalSlot == null && scooter.exRentalSlot != null && (
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+              был в аренде
+            </span>
+          )}
           {oilState && (
             <span
               className={cn(

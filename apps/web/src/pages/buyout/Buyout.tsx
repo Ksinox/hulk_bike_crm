@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
+  Bike,
   CheckCircle2,
   HandCoins,
   Search,
@@ -9,6 +10,11 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { useApiScooters } from "@/lib/api/scooters";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
+import type { ApiScooter } from "@/lib/api/types";
+import { availableForBuyout } from "@/lib/buyoutStock";
+import { ScooterName } from "@/components/ScooterName";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { cn } from "@/lib/utils";
@@ -58,11 +64,13 @@ import { BuyoutDealCard } from "./BuyoutDealCard";
  * дисциплине. Всё открывается внутри раздела.
  */
 
-type Tab = "overview" | "deals" | "overdue" | "clients";
+type Tab = "overview" | "deals" | "stock" | "overdue" | "clients";
 
 const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
   { id: "overview", label: "Обзор", icon: BarChart3 },
   { id: "deals", label: "Выкупы", icon: HandCoins },
+  /** Заказчик 06.09 (п.13): техника категории «Выкуп», которая ещё не у клиента. */
+  { id: "stock", label: "Доступные", icon: Bike },
   { id: "overdue", label: "Просрочки", icon: AlertTriangle },
   { id: "clients", label: "Клиенты", icon: Star },
 ];
@@ -72,7 +80,13 @@ export function Buyout() {
   const [openDealId, setOpenDealId] = useState<number | null>(null);
   const [openScooterId, setOpenScooterId] = useState<number | null>(null);
   const [wizard, setWizard] = useState<
-    { open: false } | { open: true; dealId?: number | null; clientId?: number | null }
+    | { open: false }
+    | {
+        open: true;
+        dealId?: number | null;
+        clientId?: number | null;
+        scooterId?: number | null;
+      }
   >({ open: false });
 
   const { data } = useBuyoutDeals();
@@ -105,6 +119,11 @@ export function Buyout() {
 
   const active = deals.filter((d) => d.status === "active");
   const overdue = active.filter((d) => d.progress.overdueCount > 0);
+  const { data: apiScooters = [] } = useApiScooters();
+  const stock = useMemo(
+    () => availableForBuyout(apiScooters, deals),
+    [apiScooters, deals],
+  );
 
   const openDeal = deals.find((d) => d.id === openDealId) ?? null;
   const openScooter = useMemo(() => {
@@ -136,6 +155,15 @@ export function Buyout() {
         <span className="rounded-full bg-blue-50 px-3 py-1 text-[11.5px] font-bold text-blue-700">
           {active.length} активных
         </span>
+        {stock.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setTab("stock")}
+            className="rounded-full bg-purple-soft px-3 py-1 text-[11.5px] font-bold text-purple-ink"
+          >
+            {stock.length} доступно
+          </button>
+        )}
         {overdue.length > 0 && (
           <button
             type="button"
@@ -188,6 +216,13 @@ export function Buyout() {
           {tab === "overview" && <Overview deals={deals} onOpen={setOpenDealId} />}
           {tab === "deals" && (
             <DealsList deals={deals} onOpen={setOpenDealId} />
+          )}
+          {tab === "stock" && (
+            <AvailableStock
+              stock={stock}
+              onOpenScooter={setOpenScooterId}
+              onStart={(id) => setWizard({ open: true, scooterId: id })}
+            />
           )}
           {tab === "overdue" && (
             <OverdueList deals={overdue} onOpen={setOpenDealId} />
@@ -253,10 +288,127 @@ export function Buyout() {
         <NewBuyoutWizard
           dealId={wizard.dealId ?? null}
           presetClientId={wizard.clientId ?? null}
+          presetScooterId={wizard.scooterId ?? null}
           onClose={() => setWizard({ open: false })}
         />
       )}
     </main>
+  );
+}
+
+/* ==================== ДОСТУПНЫЕ ДЛЯ ВЫКУПА ==================== */
+
+/**
+ * Заказчик 06.09 (п.13): «режим — скутеры, доступные для выкупа: из
+ * Скутеров категория «Выкуп», не в аренде с выкупом у клиента».
+ * Список тот же, что видит мастер на шаге «Техника»; отсюда сделка
+ * начинается сразу с выбранной техникой.
+ */
+function AvailableStock({
+  stock,
+  onOpenScooter,
+  onStart,
+}: {
+  stock: ApiScooter[];
+  onOpenScooter: (id: number) => void;
+  onStart: (scooterId: number) => void;
+}) {
+  const { data: models = [] } = useApiScooterModels();
+  const modelName = (id: number | null) =>
+    id != null ? (models.find((m) => m.id === id)?.name ?? null) : null;
+  const [q, setQ] = useState("");
+  const needle = q.trim().toLowerCase();
+  const list = stock.filter((s) =>
+    needle
+      ? [s.name, s.vin, s.engineNo, s.frameNumber, modelName(s.modelId)]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(needle)
+      : true,
+  );
+  const price = (s: ApiScooter) =>
+    s.salePrice ?? s.marketValue ?? s.purchasePrice ?? 0;
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className="relative">
+        <Search
+          size={15}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+        />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Модель, VIN, рама, номер двигателя…"
+          className="h-9 w-full rounded-full border border-border bg-surface pl-9 pr-8 text-[13px] outline-none focus:border-blue-600"
+        />
+        {q && (
+          <button
+            type="button"
+            onClick={() => setQ("")}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-2 hover:text-ink"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      <SectionCard
+        title="Доступны для выкупа"
+        hint={`${list.length} ед. · категория «Выкуп» в Скутерах, сейчас не у клиента`}
+      >
+        {list.length === 0 ? (
+          <EmptyState
+            icon={<Bike size={22} />}
+            title={q ? "Ничего не нашли" : "Свободной техники для выкупа нет"}
+            text={
+              q
+                ? "Ищем по модели, VIN, раме и номеру двигателя."
+                : "Чтобы техника появилась здесь, переведите её в категорию «Выкуп» в разделе Скутеры (карточка → статус). Техника, которая уже у клиента по договору, сюда не попадает."
+            }
+          />
+        ) : (
+          <div className="flex flex-col">
+            {list.map((s) => (
+              <div
+                key={s.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-3 last:border-b-0"
+              >
+                <button
+                  type="button"
+                  onClick={() => onOpenScooter(s.id)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <div className="truncate text-[13.5px] font-bold text-ink">
+                    <ScooterName
+                      name={s.name}
+                      number={s.rentalSlot}
+                      exNumber={s.exRentalSlot}
+                    />
+                  </div>
+                  <div className="truncate text-[12px] text-muted">
+                    {modelName(s.modelId) ?? "—"} · VIN {s.vin || "—"} ·{" "}
+                    {(s.mileage ?? 0).toLocaleString("ru-RU")} км
+                    {s.rentalSlot == null && s.exRentalSlot != null && " · был в аренде"}
+                  </div>
+                </button>
+                <span className="shrink-0 text-[13px] font-bold tabular-nums text-ink">
+                  {price(s) ? `${price(s).toLocaleString("ru-RU")} ₽` : "цена не задана"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onStart(s.id)}
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-ink px-3.5 text-[12.5px] font-bold text-white transition-colors hover:bg-ink/90"
+                >
+                  <HandCoins size={14} /> Оформить выкуп
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+    </div>
   );
 }
 

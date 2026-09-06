@@ -18,6 +18,7 @@ import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { SendApplicationButton } from "@/pages/applications/SendApplicationButton";
 import { useApiScooters } from "@/lib/api/scooters";
+import { availableForBuyout } from "@/lib/buyoutStock";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import {
@@ -53,10 +54,13 @@ const TERMS = [1, 2, 3, 4, 5, 6];
 export function NewBuyoutWizard({
   dealId: initialDealId,
   presetClientId,
+  presetScooterId,
   onClose,
 }: {
   dealId?: number | null;
   presetClientId?: number | null;
+  /** Из «Выкуп → Доступные»: техника уже выбрана, мастер начинается с клиента. */
+  presetScooterId?: number | null;
   onClose: () => void;
 }) {
   const { data: dealsData } = useBuyoutDeals();
@@ -98,7 +102,9 @@ export function NewBuyoutWizard({
   const [blacklistChecked, setBlacklistChecked] = useState(
     deal?.blacklistChecked ?? false,
   );
-  const [scooterId, setScooterId] = useState<number | null>(deal?.scooterId ?? null);
+  const [scooterId, setScooterId] = useState<number | null>(
+    deal?.scooterId ?? presetScooterId ?? null,
+  );
   const [termMonths, setTermMonths] = useState(deal?.termMonths ?? 3);
   const [period, setPeriod] = useState<"month" | "week">(deal?.period ?? "month");
   const [down, setDown] = useState(String(deal?.downPayment ?? ""));
@@ -150,21 +156,19 @@ export function NewBuyoutWizard({
     () => new Map(models.map((m) => [m.id, m] as const)),
     [models],
   );
+  /**
+   * Заказчик 06.09 (п.14): мастер предлагает технику из категории «Выкуп»
+   * в Скутерах, которая сейчас не у клиента по другой сделке. Раньше здесь
+   * был парк аренды и витрина — директор переводил скутер в «Выкуп», а в
+   * мастере его не находил.
+   */
   const stock = useMemo(
     () =>
-      scooters.filter(
-        (s) =>
-          !s.archivedAt &&
-          !s.isPartner &&
-          // Пока техника у клиента — в выкуп не предлагаем: сначала
-          // завершить аренду. Сервер это правило тоже держит.
-          (!busyScooterIds.has(s.id) || s.id === scooterId) &&
-          (s.baseStatus === "for_sale" ||
-            s.baseStatus === "ready" ||
-            s.baseStatus === "rental_pool" ||
-            s.id === scooterId),
+      availableForBuyout(scooters, dealsData?.items ?? [], scooterId).filter(
+        // Пока техника у клиента в аренде — в выкуп нельзя (правило 04.09).
+        (s) => !busyScooterIds.has(s.id) || s.id === scooterId,
       ),
-    [scooters, scooterId, busyScooterIds],
+    [scooters, dealsData, scooterId, busyScooterIds],
   );
 
   const client = clients.find((c) => c.id === clientId) ?? null;
@@ -455,7 +459,7 @@ export function NewBuyoutWizard({
 
           {step === 2 && (
             <div className="flex flex-col gap-3">
-              <Hint text="Выберите технику, которая уедет к клиенту. Стоимость подставится из карточки — на следующем шаге её можно изменить." />
+              <Hint text="Здесь техника из категории «Выкуп» в Скутерах, которая сейчас не у клиента. Стоимость подставится из карточки — на следующем шаге её можно изменить." />
               <div className="relative">
                 <Search
                   size={15}
@@ -464,17 +468,33 @@ export function NewBuyoutWizard({
                 <input
                   value={scooterQ}
                   onChange={(e) => setScooterQ(e.target.value)}
-                  placeholder="Модель, VIN, номер двигателя"
+                  placeholder="Модель, VIN, рама, номер двигателя"
                   className="h-11 w-full rounded-[14px] border border-border bg-surface pl-9 pr-3 text-[14px] outline-none focus:border-blue-600"
                 />
               </div>
-              <div className="flex flex-col overflow-hidden rounded-2xl border border-border">
+              {stock.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-border px-4 py-6 text-center">
+                  <div className="text-[13.5px] font-bold text-ink">
+                    Нет техники, доступной для выкупа
+                  </div>
+                  <div className="mt-1 text-[12.5px] text-muted">
+                    Переведите скутер в категорию «Выкуп» в разделе Скутеры (карточка
+                    техники → статус) — он появится здесь.
+                  </div>
+                </div>
+              )}
+              <div
+                className={cn(
+                  "flex flex-col overflow-hidden rounded-2xl border border-border",
+                  stock.length === 0 && "hidden",
+                )}
+              >
                 {stock
                   .filter((s) => {
                     const q = scooterQ.trim().toLowerCase();
                     if (!q) return true;
                     const m = s.modelId != null ? modelById.get(s.modelId)?.name : "";
-                    return [s.name, s.vin, s.engineNo, m]
+                    return [s.name, s.vin, s.engineNo, s.frameNumber, m]
                       .filter(Boolean)
                       .join(" ")
                       .toLowerCase()
