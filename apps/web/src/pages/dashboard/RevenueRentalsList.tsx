@@ -183,7 +183,7 @@ export function RevenueRentalsList({
     [activeRentals, archivedRentals],
   );
   const { data: payments = [] } = useApiPayments();
-  const { shareByRental } = usePartnerInfo();
+  const { excludedRentals } = usePartnerInfo();
   const { data: clients = [] } = useApiClients();
   const drawer = useDashboardDrawer();
   // v0.9.7: раскрытие состава аренды (тело) у платежа по клику на шеврон.
@@ -212,7 +212,7 @@ export function RevenueRentalsList({
         // Правка 31.08: в списке выручки не должно быть НИ ОДНОЙ операции
         // по партнёрскому электротранспорту — ни аренды, ни просрочки, ни
         // штрафов. Эти деньги живут в разделе «Партнёрка».
-        if (p.rentalId != null && shareByRental.has(p.rentalId)) return false;
+        if (p.rentalId != null && excludedRentals.has(p.rentalId)) return false;
         if (scope === "rentals" && p.rentalId == null) return false;
         const t = new Date(p.paidAt!).getTime();
         if (t < start.getTime() || t >= end.getTime()) return false;
@@ -261,7 +261,7 @@ export function RevenueRentalsList({
       // при продлении), тонул вниз, хотя приняли его только что.
       .sort((a, b) => b.paymentId - a.paymentId);
   }, [
-    shareByRental,
+    excludedRentals,
     rentals,
     payments,
     clients,

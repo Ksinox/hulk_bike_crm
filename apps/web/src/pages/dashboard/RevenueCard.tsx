@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { partnerCutOf, usePartnerInfo } from "@/lib/partner";
-import { ElectricMark } from "@/components/PowerTypeBadge";
 import { Card, DeltaPill } from "./KpiCard";
 import { formatRub, type DashboardMetrics } from "./useDashboardMetrics";
 import {
@@ -72,11 +71,12 @@ export function RevenueCard({
    * ущерб) в «Выручку» не попадают вовсе. Раньше они входили за вычетом
    * доли инвестора, и в списке платежей мелькали чужие строки.
    */
-  const { shareByRental } = usePartnerInfo();
+  const { shareByRental, excludedRentals } = usePartnerInfo();
+  // Партнёрская техника и любой электротранспорт — не наша выручка (06.09).
   const isPartnerPayment = (p: { rentalId: number | null }) =>
-    p.rentalId != null && shareByRental.has(p.rentalId);
+    p.rentalId != null && excludedRentals.has(p.rentalId);
 
-  const { total, chart, paymentsCount, partnerSplit } = useMemo(() => {
+  const { total, chart, paymentsCount } = useMemo(() => {
     const today = new Date();
 
     // Платежи-выручка в окне: paid, не залог/возврат, не из депозита
@@ -200,7 +200,7 @@ export function RevenueCard({
       paymentsCount: ownOnly.length,
       partnerSplit: { gross: pGross, cut: pCut, ours: pGross - pCut, own },
     };
-  }, [period, payments, win, customRange, shareByRental]);
+  }, [period, payments, win, customRange, shareByRental, excludedRentals]);
 
   // Разбивка нал/безнал за окно (учитывает выбранный день). Всегда показывает
   // оба значения — независимо от фильтра (фильтр сужает только список).
@@ -222,7 +222,7 @@ export function RevenueCard({
       else cashless += p.amount;
     }
     return { cash, cashless };
-  }, [payments, win, selectedDay, customRange, shareByRental]);
+  }, [payments, win, selectedDay, customRange, excludedRentals]);
   const breakdownTotal = breakdown.cash + breakdown.cashless;
   const cashPct =
     breakdownTotal > 0 ? (breakdown.cash / breakdownTotal) * 100 : 0;
@@ -445,21 +445,9 @@ export function RevenueCard({
       {/* Правка 31.08: партнёрский электротранспорт в выручку НЕ входит —
           сумма выше только по нашей технике. Строку оставляем справкой, но
           подписываем явно, чтобы её не приняли за часть выручки. */}
-      {!compact && partnerSplit.gross > 0 && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-white/10 px-2.5 py-1.5 text-[11.5px] text-white/85">
-          <span className="inline-flex items-center gap-1.5">
-            <ElectricMark size="sm" />
-            электротранспорт инвесторов{" "}
-            <b className="tabular-nums text-white">
-              {formatRub(partnerSplit.gross)} ₽
-            </b>
-          </span>
-          <span className="text-white/60">
-            в выручку не входит · инвестору {formatRub(partnerSplit.cut)} ₽ ·
-            подробно в «Партнёрке»
-          </span>
-        </div>
-      )}
+      {/* Подписи про электротранспорт инвесторов здесь больше нет (06.09):
+          в «Выручке» не должно быть ничего про электро — эти деньги целиком
+          живут в «Партнёрке». */}
 
       {/* График — только для периодов (день/неделя/месяц), не для произвольного
           диапазона. Каждый столбик кликабельный → фильтр по дню. */}

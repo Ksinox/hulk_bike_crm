@@ -81,7 +81,7 @@ export function useBillingPeriodRevenue(
   const { data: payments } = useApiPayments();
   // Пункт 11: выручка партнёрской техники учитывается за вычетом доли
   // инвестора (расчёт выплат — в разделе «Партнёрка»).
-  const { shareByRental } = usePartnerInfo();
+  const { shareByRental, excludedRentals } = usePartnerInfo();
   // Подписываемся на якоря расчётного периода. currentBillingPeriod()
   // читает модульный глобал, который заполняется асинхронно с сервера
   // (setBillingPeriodAnchors на onSuccess). Без этой подписки плашка
@@ -118,7 +118,7 @@ export function useBillingPeriodRevenue(
      * отвечает на вопрос «сколько заработали МЫ».
      */
     const filtered = scoped.filter(
-      (p) => p.rentalId == null || !shareByRental.has(p.rentalId),
+      (p) => p.rentalId == null || !excludedRentals.has(p.rentalId),
     );
     /** Отфильтрованные партнёрские операции — для подписи «сколько скрыто». */
     const partnerExcluded = scoped.length - filtered.length;
@@ -165,5 +165,5 @@ export function useBillingPeriodRevenue(
       /** Выручка нашей собственной техники. */
       ownTotal,
     };
-  }, [payments, period, scope, shareByRental]);
+  }, [payments, period, scope, shareByRental, excludedRentals]);
 }

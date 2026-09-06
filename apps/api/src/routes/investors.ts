@@ -321,6 +321,48 @@ export async function investorsRoutes(app: FastifyInstance) {
    * Правка 27.08: выплаты инвестора — накоплено + история.
    * accrued считается на сервере: доход за всё время − выплачено.
    */
+  /**
+   * История выплат по ВСЕМ инвесторам (заказчик, 06.09): с плитки «Выплаты»
+   * открывается детализация за прошлые периоды, период произвольный.
+   * Без from/to — вся история (последние 500 записей).
+   */
+  app.get<{ Querystring: { from?: string; to?: string } }>(
+    "/payouts",
+    async (req) => {
+      const from = req.query.from ? new Date(req.query.from + "T00:00:00") : null;
+      const to = req.query.to ? new Date(req.query.to + "T23:59:59") : null;
+      const rows = await db
+        .select({
+          id: investorPayouts.id,
+          investorId: investorPayouts.investorId,
+          investorName: investors.name,
+          amount: investorPayouts.amount,
+          paidAt: investorPayouts.paidAt,
+          note: investorPayouts.note,
+          method: investorPayouts.method,
+          cashAmount: investorPayouts.cashAmount,
+          transferAmount: investorPayouts.transferAmount,
+          by: users.name,
+        })
+        .from(investorPayouts)
+        .innerJoin(investors, eq(investorPayouts.investorId, investors.id))
+        .leftJoin(users, eq(investorPayouts.paidBy, users.id))
+        .where(
+          and(
+            ...(from ? [gte(investorPayouts.paidAt, from)] : []),
+            ...(to ? [lte(investorPayouts.paidAt, to)] : []),
+          ),
+        )
+        .orderBy(desc(investorPayouts.paidAt))
+        .limit(500);
+      return {
+        items: rows,
+        total: rows.reduce((s, r) => s + r.amount, 0),
+        period: { from: req.query.from ?? null, to: req.query.to ?? null },
+      };
+    },
+  );
+
   app.get<{ Params: { id: string }; Querystring: { from?: string; to?: string } }>(
     "/:id/payouts",
     async (req, reply) => {

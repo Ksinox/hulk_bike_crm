@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useApiScooters, usePartnerShare } from "@/lib/api/scooters";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiInvestors } from "@/lib/api/investors";
 import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
 
@@ -26,6 +27,12 @@ export type PartnerInfo = {
   shareByRental: Map<number, number>;
   /** Есть ли партнёрская техника вообще (для условного UI). */
   hasPartnerTech: boolean;
+  /**
+   * Аренды, которых в «Выручке» быть не должно вовсе (заказчик, 06.09):
+   * партнёрская техника И любой электротранспорт — даже если единицу
+   * завели без флага «партнёрская». Раньше исключали только по флагу.
+   */
+  excludedRentals: Set<number>;
 };
 
 export function usePartnerInfo(): PartnerInfo {
@@ -34,8 +41,10 @@ export function usePartnerInfo(): PartnerInfo {
   const { data: investorsData } = useApiInvestors();
   const { data: active = [] } = useApiRentals();
   const { data: archived = [] } = useApiRentalsArchived();
+  const { data: models = [] } = useApiScooterModels();
 
   return useMemo(() => {
+    const electroModels = new Set(models.filter((m) => m.isElectric).map((m) => m.id));
     // Правка 24.08: партнёрская — сама ЕДИНИЦА техники (scooters.isPartner).
     // Правка 27.08: процент подтягивается от ИНВЕСТОРА единицы; единица без
     // инвестора — её старый процент либо общий из настроек (legacy).
@@ -53,18 +62,26 @@ export function usePartnerInfo(): PartnerInfo {
         shareByScooter.set(s.id, Math.min(100, Math.max(0, pct)) / 100);
       }
     }
+    const excludedScooters = new Set<number>(shareByScooter.keys());
+    for (const s of scooters) {
+      if (s.modelId != null && electroModels.has(s.modelId)) excludedScooters.add(s.id);
+    }
     const shareByRental = new Map<number, number>();
+    const excludedRentals = new Set<number>();
     for (const r of [...active, ...archived]) {
-      if (r.scooterId != null && shareByScooter.has(r.scooterId)) {
+      if (r.scooterId == null) continue;
+      if (shareByScooter.has(r.scooterId)) {
         shareByRental.set(r.id, shareByScooter.get(r.scooterId)!);
       }
+      if (excludedScooters.has(r.scooterId)) excludedRentals.add(r.id);
     }
     return {
       shareByScooter,
       shareByRental,
       hasPartnerTech: shareByScooter.size > 0,
+      excludedRentals,
     };
-  }, [scooters, shareQ.data, investorsData, active, archived]);
+  }, [scooters, shareQ.data, investorsData, active, archived, models]);
 }
 
 /**

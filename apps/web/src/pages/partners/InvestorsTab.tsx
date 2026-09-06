@@ -28,6 +28,7 @@ import { ApiError } from "@/lib/api";
 import { useApiScooters } from "@/lib/api/scooters";
 import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
 import { ScooterName } from "@/components/ScooterName";
+import { PayoutsHistoryDialog } from "./PayoutsHistoryDialog";
 import { ElectricMark } from "@/components/PowerTypeBadge";
 
 /**
@@ -102,6 +103,8 @@ export function InvestorsTab({
   );
 
   const open = investors.find((i) => i.id === openId) ?? null;
+  /** Детализация выплат по всем инвесторам (06.09). */
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   /**
    * Форма рендерится и в списке, и в карточке инвестора. Раньше она жила
@@ -155,9 +158,12 @@ export function InvestorsTab({
             value={`${fmt(totals.monthly)} ₽`}
             hint="средний доход инвесторов"
             accent
+            action={{ label: "Детализация", onClick: () => setHistoryOpen(true) }}
           />
         </div>
       )}
+
+      {historyOpen && <PayoutsHistoryDialog onClose={() => setHistoryOpen(false)} />}
 
       <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
@@ -250,19 +256,36 @@ function SummaryTile({
   value,
   hint,
   accent,
+  action,
 }: {
   label: string;
   value: string;
   hint: string;
   accent?: boolean;
+  /** Кнопка в углу плитки — напр. «Детализация» у выплат (06.09). */
+  action?: { label: string; onClick: () => void };
 }) {
   return (
     <div
       className={cn(
-        "rounded-2xl px-4 py-3 shadow-card-sm",
+        "relative rounded-2xl px-4 py-3 shadow-card-sm",
         accent ? "bg-violet-600 text-white" : "bg-surface",
       )}
     >
+      {action && (
+        <button
+          type="button"
+          onClick={action.onClick}
+          className={cn(
+            "absolute right-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
+            accent
+              ? "bg-white/20 text-white hover:bg-white/30"
+              : "bg-surface-soft text-muted hover:text-ink",
+          )}
+        >
+          {action.label}
+        </button>
+      )}
       <div
         className={cn(
           "text-[10.5px] font-bold uppercase tracking-wider",

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useReloadRestoredState } from "@/lib/usePersistedState";
-import { ShoppingBag, Bike } from "lucide-react";
+import { ShoppingBag, Bike, ScrollText } from "lucide-react";
+import { ScooterJournal } from "@/pages/fleet/ScooterJournal";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -22,6 +23,7 @@ import { matchId, matchScooterName, normalizeQuery } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import {
   MobileChips,
+  MobileSheet,
   MobileEmpty,
   MobileSearch,
   type ChipOption,
@@ -81,6 +83,8 @@ export function MobileScooters() {
     return fileUrl(m?.avatarKey, { variant: "thumb" }) ?? undefined;
   };
   const [filter, setFilter] = useState<Filter>("all");
+  /** Журнал техники — тот же, что на компьютере (паритет, 06.09). */
+  const [journalOpen, setJournalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useReloadRestoredState<number | null>(
     "mobile:scooters:openId",
@@ -206,7 +210,23 @@ export function MobileScooters() {
         }}
       />
       <MobileSearch value={search} onChange={setSearch} placeholder="Номер, имя, VIN…" />
-      <MobileChips options={chips} value={filter} onChange={setFilter} />
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <MobileChips options={chips} value={filter} onChange={setFilter} />
+        </div>
+        <button
+          type="button"
+          onClick={() => setJournalOpen(true)}
+          className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3 text-[13px] font-semibold text-ink shadow-card-sm"
+          title="Журнал действий с техникой"
+        >
+          <ScrollText size={15} /> Журнал
+        </button>
+      </div>
+
+      <MobileSheet open={journalOpen} onClose={() => setJournalOpen(false)} title="Журнал техники">
+        <ScooterJournal />
+      </MobileSheet>
 
       {filtered.length === 0 ? (
         <MobileEmpty

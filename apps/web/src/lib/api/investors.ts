@@ -191,3 +191,27 @@ export function useUnmarkPayout() {
     onSuccess: () => qc.invalidateQueries({ queryKey: investorsKeys.all }),
   });
 }
+
+/** Выплата с именем инвестора — для общей детализации (06.09). */
+export type InvestorPayoutAll = InvestorPayoutRecord & {
+  investorId: number;
+  investorName: string;
+};
+
+/** История выплат по всем инвесторам за период; без дат — вся история. */
+export function useAllInvestorPayouts(range: {
+  from: string | null;
+  to: string | null;
+}) {
+  const qs = new URLSearchParams();
+  if (range.from) qs.set("from", range.from);
+  if (range.to) qs.set("to", range.to);
+  const suffix = qs.toString() ? `?${qs}` : "";
+  return useQuery({
+    queryKey: ["investors", "payouts", "all", range.from, range.to],
+    queryFn: () =>
+      api.get<{ items: InvestorPayoutAll[]; total: number }>(
+        `/api/investors/payouts${suffix}`,
+      ),
+  });
+}
