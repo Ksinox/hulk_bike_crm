@@ -180,7 +180,7 @@ export function AnalyticsTile({
           {/* Прибыль и закуп прячем и на стене: экран видят все, кто рядом.
               Открывается тем же ключом директора, что и в «Продажах». */}
           {def.sensitive ? (
-            <Sensitive>{value?.display ?? "—"}</Sensitive>
+            <Sensitive dark={wall}>{value?.display ?? "—"}</Sensitive>
           ) : (
             (value?.display ?? "—")
           )}

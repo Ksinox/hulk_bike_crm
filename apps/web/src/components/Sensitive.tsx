@@ -1,35 +1,76 @@
 import type { ReactNode, MouseEvent } from "react";
-import { EyeOff, Eye } from "lucide-react";
+import { Eye, EyeOff, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { hideSensitive, revealSensitive, useSensitiveRevealed } from "@/lib/sensitive";
+import {
+  hideSensitive,
+  revealSensitive,
+  useSensitiveRevealed,
+  useSensitiveUnlocked,
+} from "@/lib/sensitive";
 
 /**
- * Размытое число (06.09, п.11): прибыль / закуп видны только после ключа
- * директора. Клик по размытому — запрос ключа. Содержимое остаётся тем же,
- * меняется только вид, поэтому вёрстка не прыгает.
+ * Закрытая цифра (прибыль, закуп) — заказчик 06.09.
+ *
+ * Раньше здесь было размытие, но сквозь него цифра читалась, а при наведении
+ * становилась ещё чётче. Теперь это «спойлер», как в мессенджерах: значение
+ * не рендерится глазу вовсе (invisible), сверху — плашка с крапом ровно того
+ * же размера, поэтому вёрстка не прыгает. Клик по плашке просит ключ
+ * директора; клик по открытой цифре — прячет обратно.
  */
 export function Sensitive({
   children,
   className,
   block,
+  dark,
 }: {
   children: ReactNode;
   className?: string;
   /** Блочный контейнер (плитка целиком), а не строчный кусочек текста. */
   block?: boolean;
+  /** Тёмный фон (экран-стена) — крап делаем светлым. */
+  dark?: boolean;
 }) {
   const revealed = useSensitiveRevealed();
-  if (revealed) return <>{children}</>;
+
+  if (revealed) {
+    return (
+      <span
+        role="button"
+        tabIndex={0}
+        title="Нажмите, чтобы снова спрятать"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          hideSensitive();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            hideSensitive();
+          }
+        }}
+        className={cn(
+          "cursor-pointer rounded-[6px] transition-colors hover:bg-amber-100/60",
+          block ? "block" : "inline-block",
+          className,
+        )}
+      >
+        {children}
+      </span>
+    );
+  }
+
   const onClick = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     void revealSensitive();
   };
+
   return (
     <span
       role="button"
       tabIndex={0}
-      title="Только директор: нажмите, чтобы показать (ключ директора)"
+      title="Скрыто — нажмите, чтобы показать (ключ директора)"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -37,14 +78,37 @@ export function Sensitive({
           void revealSensitive();
         }
       }}
+      aria-label="Скрыто — доступно директору по ключу"
       className={cn(
-        "cursor-pointer select-none blur-[6px] transition-[filter] hover:blur-[4px] [&_*]:pointer-events-none",
+        "relative cursor-pointer select-none overflow-hidden rounded-[7px] align-middle",
         block ? "block" : "inline-block",
         className,
       )}
-      aria-label="Скрыто — доступно директору по ключу"
     >
-      {children}
+      {/* Само значение не показываем совсем — только держим им ширину. */}
+      <span className="invisible">{children}</span>
+      <span
+        aria-hidden
+        className={cn(
+          "absolute inset-0 rounded-[7px]",
+          dark ? "bg-white/15" : "bg-ink/12",
+        )}
+        style={{
+          backgroundImage: dark
+            ? "radial-gradient(rgba(255,255,255,0.75) 1px, transparent 1.4px)"
+            : "radial-gradient(rgba(15,23,42,0.55) 1px, transparent 1.4px)",
+          backgroundSize: "6px 6px",
+        }}
+      />
+      <span
+        aria-hidden
+        className={cn(
+          "absolute inset-0 flex items-center justify-center",
+          dark ? "text-white/70" : "text-ink/45",
+        )}
+      >
+        <Lock size={12} />
+      </span>
     </span>
   );
 }
@@ -52,6 +116,7 @@ export function Sensitive({
 /** Кнопка в шапке: показать / скрыть прибыль и закуп. */
 export function SensitiveToggle({ className }: { className?: string }) {
   const revealed = useSensitiveRevealed();
+  const unlocked = useSensitiveUnlocked();
   return (
     <button
       type="button"
@@ -59,7 +124,9 @@ export function SensitiveToggle({ className }: { className?: string }) {
       title={
         revealed
           ? "Скрыть прибыль и закупочную стоимость"
-          : "Показать прибыль и закуп — только директор, по ключу"
+          : unlocked
+            ? "Показать прибыль — ключ уже вводили в этой вкладке"
+            : "Показать прибыль и закуп — только директор, по ключу"
       }
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11.5px] font-bold transition-colors",
