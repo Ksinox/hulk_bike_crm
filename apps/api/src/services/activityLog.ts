@@ -36,6 +36,8 @@ export type ActivityEntity =
   | "sale_manager"
   // Блок «Аренда с выкупом» (01.09).
   | "buyout"
+  // Сторонние ремонты (06.09): заказ-наряды на чужую технику.
+  | "service_order"
   | "settings";
 
 /**

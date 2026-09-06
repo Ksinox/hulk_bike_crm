@@ -15,8 +15,12 @@ import {
   MobileSheet,
   type ChipOption,
 } from "../ui";
+import { ServiceOrders } from "@/pages/service/ServiceOrders";
+import { useServiceOrders } from "@/lib/api/service-orders";
 
 type Filter = "active" | "completed";
+/** Как и на десктопе: главная вкладка — сторонние ремонты (06.09). */
+type Scope = "outside" | "own";
 
 const MODEL_LABEL: Record<string, string> = {
   jog: "Yamaha Jog",
@@ -40,6 +44,7 @@ function progressLabel(progress: ApiRepairProgress[]): string {
 }
 
 export function MobileService() {
+  const [scope, setScope] = useState<Scope>("outside");
   const [filter, setFilter] = useState<Filter>("active");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useReloadRestoredState<number | null>(
@@ -47,6 +52,7 @@ export function MobileService() {
     null,
   );
 
+  const ordersQ = useServiceOrders();
   const activeQ = useRepairJobs({ status: "active" });
   const completedQ = useRepairJobs({ status: "completed" });
   const active = activeQ.data ?? [];
@@ -71,8 +77,19 @@ export function MobileService() {
 
   const openJob = source.find((j) => j.id === openId) ?? null;
 
+  const scopeChips: ChipOption<Scope>[] = [
+    { id: "outside", label: "Сторонний ремонт", count: ordersQ.data?.length ?? 0 },
+    { id: "own", label: "Наша техника", count: active.length },
+  ];
+
   return (
     <div className="flex flex-col gap-3">
+      <MobileChips options={scopeChips} value={scope} onChange={setScope} />
+
+      {scope === "outside" && <ServiceOrders />}
+
+      {scope === "own" && (
+      <>
       <MobileSearch value={search} onChange={setSearch} placeholder="Скутер, модель, клиент…" />
       <MobileChips options={chips} value={filter} onChange={setFilter} />
 
@@ -99,6 +116,8 @@ export function MobileService() {
       >
         {openJob && <JobDetail job={openJob} />}
       </MobileSheet>
+      </>
+      )}
     </div>
   );
 }

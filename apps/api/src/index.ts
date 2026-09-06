@@ -218,6 +218,11 @@ async function bootstrap() {
     await protectedApp.register(remindersRoutes, { prefix: "/api/reminders" });
     const { analyticsRoutes } = await import("./routes/analytics.js");
     await protectedApp.register(analyticsRoutes, { prefix: "/api/analytics" });
+
+    const { serviceOrderRoutes } = await import("./routes/service-orders.js");
+    await protectedApp.register(serviceOrderRoutes, {
+      prefix: "/api/service-orders",
+    });
     // Каталоги
     await protectedApp.register(scooterModelsRoutes, { prefix: "/api/scooter-models" });
     await protectedApp.register(equipmentRoutes, { prefix: "/api/equipment" });

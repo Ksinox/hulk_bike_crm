@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiPayments } from "@/lib/api/payments";
 import { useRepairJobs } from "@/lib/api/repair-jobs";
+import { useServiceOrders } from "@/lib/api/service-orders";
 import { useSaleDeals } from "@/lib/api/sales";
 import { useBuyoutDeals } from "@/lib/api/buyout";
 import { usePartnerInfo } from "@/lib/partner";
@@ -178,22 +179,30 @@ export const METRICS: MetricDef[] = [
     id: "service.count",
     group: "service",
     title: "Сторонние ремонты",
-    about: "Ремонты чужой техники за период. Раздел ещё не запущен.",
+    about: "Сколько чужой техники приняли в ремонт за период.",
     planable: true,
     periodic: true,
     defaultPeriod: "month",
-    comingSoon: true,
     format: count,
   },
   {
     id: "service.revenue",
     group: "service",
     title: "Выручка с ремонтов",
-    about: "Деньги со сторонних ремонтов. Раздел ещё не запущен.",
+    about: "Работы и запчасти по сторонним ремонтам за период.",
     planable: true,
     periodic: true,
     defaultPeriod: "month",
-    comingSoon: true,
+    format: money,
+  },
+  {
+    id: "service.profit",
+    group: "service",
+    title: "Прибыль с ремонтов",
+    about: "Выручка за вычетом закупа запчастей.",
+    planable: true,
+    periodic: true,
+    defaultPeriod: "month",
     format: money,
   },
 
@@ -290,6 +299,7 @@ export function useMetricValues(periodOf: (metricId: string) => BoardPeriod) {
   const clientsQ = useApiClients();
   const paymentsQ = useApiPayments();
   const repairsQ = useRepairJobs({ status: "all" });
+  const serviceQ = useServiceOrders();
   const salesQ = useSaleDeals();
   const buyoutQ = useBuyoutDeals();
   const rentals = useRentals();
@@ -451,17 +461,49 @@ export function useMetricValues(periodOf: (metricId: string) => BoardPeriod) {
         extra: active > 0 ? `в работе сейчас: ${active}` : undefined,
         tone: "neutral",
       };
+      // Сторонние ремонты (06.09): считаем по заказ-нарядам, отменённые
+      // в статистику не берём. Дату берём по приёмке — как в самом блоке.
+      const orders = (serviceQ.data ?? []).filter((o) => o.status !== "cancelled");
+      const rc = rangeFor("service.count");
+      const inRc = orders.filter((o) => {
+        const t = new Date(o.acceptedAt).getTime();
+        return t >= rc.from.getTime() && t <= rc.to.getTime();
+      });
       out["service.count"] = {
-        value: 0,
-        display: "—",
-        caption: "раздел сторонних ремонтов ещё не запущен",
+        value: inRc.length,
+        display: count(inRc.length),
+        caption: `принято ${rc.label}`,
+        extra:
+          inRc.filter((o) => o.status !== "paid").length > 0
+            ? `ждут оплату: ${inRc.filter((o) => o.status !== "paid").length}`
+            : undefined,
         tone: "neutral",
       };
+
+      const rr = rangeFor("service.revenue");
+      const inRr = orders.filter((o) => {
+        const t = new Date(o.acceptedAt).getTime();
+        return t >= rr.from.getTime() && t <= rr.to.getTime();
+      });
+      const revenue = inRr.reduce((sum, o) => sum + o.totals.revenue, 0);
       out["service.revenue"] = {
-        value: 0,
-        display: "—",
-        caption: "появится вместе с разделом ремонтов",
-        tone: "neutral",
+        value: revenue,
+        display: money(revenue),
+        caption: `${rr.label} · ${inRr.length} ремонтов`,
+        tone: revenue > 0 ? "good" : "neutral",
+      };
+
+      const rp = rangeFor("service.profit");
+      const inRp = orders.filter((o) => {
+        const t = new Date(o.acceptedAt).getTime();
+        return t >= rp.from.getTime() && t <= rp.to.getTime();
+      });
+      const profit = inRp.reduce((sum, o) => sum + o.totals.profit, 0);
+      out["service.profit"] = {
+        value: profit,
+        display: money(profit),
+        caption: `${rp.label} · за вычетом запчастей`,
+        tone: profit > 0 ? "good" : "neutral",
       };
     }
 

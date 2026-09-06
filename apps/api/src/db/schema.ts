@@ -1130,6 +1130,11 @@ export const priceGroups = pgTable(
      * В новых группах не используем — переходим на одна группа = одна модель.
      */
     hasTwoPrices: boolean("has_two_prices").notNull().default(false),
+    /**
+     * 'damage' — прайс ущерба (по моделям нашей техники),
+     * 'service' — прайс работ для сторонних ремонтов (модели не нужны).
+     */
+    kind: text("kind").notNull().default("damage"),
     priceALabel: text("price_a_label").notNull().default("Цена"),
     priceBLabel: text("price_b_label"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -2441,3 +2446,117 @@ export const buyoutPayments = pgTable(
     dealIdx: index("buyout_payments_deal_idx").on(t.dealId),
   }),
 );
+
+/* ============================================================
+ * service_orders / service_order_items — СТОРОННИЕ РЕМОНТЫ (06.09)
+ *
+ * Заказчик: «Ремонты включают в себя только сторонние ремонты и имеют
+ * возможность создания прайса на работу. Создаём ремонт → добавляем
+ * услуги из прайса → добавляем наименование и стоимость запчастей →
+ * система считает прибыль с ремонта и выручку».
+ *
+ * Это чужая техника, поэтому scooter_id тут нет вовсе: марка и номер —
+ * свободный текст. Ремонты своей техники живут отдельно, в repair_jobs.
+ * Выручка отсюда НЕ подтягивается в дашборд (как и партнёрка) — считается
+ * внутри своего блока.
+ * ============================================================ */
+
+export const serviceOrders = pgTable(
+  "service_orders",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    /** Сквозной номер заказ-наряда, растёт сам. */
+    number: integer("number").notNull(),
+    /** 'in_work' | 'done' | 'paid' | 'cancelled' */
+    status: text("status").notNull().default("in_work"),
+
+    /** Клиент из базы, если он у нас есть; иначе — только имя и телефон. */
+    clientId: bigint("client_id", { mode: "number" }).references(
+      () => clients.id,
+      { onDelete: "set null" },
+    ),
+    customerName: text("customer_name").notNull(),
+    customerPhone: text("customer_phone"),
+
+    /** Чужая техника — свободным текстом. */
+    vehicle: text("vehicle").notNull(),
+    vehicleNumber: text("vehicle_number"),
+    /** С чем приехали. */
+    complaint: text("complaint"),
+    note: text("note"),
+
+    acceptedAt: timestamp("accepted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    /** 'cash' | 'transfer' */
+    paymentMethod: text("payment_method"),
+    paidAmount: integer("paid_amount"),
+
+    masterUserId: bigint("master_user_id", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    createdByUserId: bigint("created_by_user_id", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    numberIdx: uniqueIndex("service_orders_number_idx").on(t.number),
+    statusIdx: index("service_orders_status_idx").on(t.status),
+    acceptedIdx: index("service_orders_accepted_idx").on(t.acceptedAt),
+  }),
+);
+
+export const serviceOrderItems = pgTable(
+  "service_order_items",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    orderId: bigint("order_id", { mode: "number" })
+      .notNull()
+      .references(() => serviceOrders.id, { onDelete: "cascade" }),
+    /** 'work' — работа из прайса, 'part' — запчасть. */
+    kind: text("kind").notNull(),
+    /** Позиция прайса, из которой взяли работу (для истории цен). */
+    priceItemId: bigint("price_item_id", { mode: "number" }).references(
+      () => priceItems.id,
+      { onDelete: "set null" },
+    ),
+    name: text("name").notNull(),
+    qty: integer("qty").notNull().default(1),
+    /** Цена клиенту за единицу. */
+    price: integer("price").notNull().default(0),
+    /** Закупочная цена запчасти за единицу (у работ 0). */
+    cost: integer("cost").notNull().default(0),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    orderIdx: index("service_order_items_order_idx").on(t.orderId),
+  }),
+);
+
+export const serviceOrdersRelations = relations(serviceOrders, ({ many, one }) => ({
+  items: many(serviceOrderItems),
+  client: one(clients, {
+    fields: [serviceOrders.clientId],
+    references: [clients.id],
+  }),
+}));
+
+export const serviceOrderItemsRelations = relations(serviceOrderItems, ({ one }) => ({
+  order: one(serviceOrders, {
+    fields: [serviceOrderItems.orderId],
+    references: [serviceOrders.id],
+  }),
+}));

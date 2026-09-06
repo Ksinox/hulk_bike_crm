@@ -37,8 +37,17 @@ import {
 } from "@/lib/api/repair-jobs";
 import type { ApiScooter } from "@/lib/api/types";
 import { PriceItemsPicker } from "./PriceItemsPicker";
+import { ServiceOrders } from "./ServiceOrders";
+import { useServiceOrders } from "@/lib/api/service-orders";
 
 type Tab = "active" | "completed";
+
+/**
+ * Верхнее деление раздела (06.09, задание заказчика): главная вкладка —
+ * сторонние ремонты (чужая техника, прайс работ, деньги), вторая — наша
+ * техника (журнал ремонтов по акту повреждений, как было).
+ */
+type Scope = "outside" | "own";
 
 /**
  * Раздел «Ремонты» — журнал ремонтов скутеров с чек-листом и фото.
@@ -48,8 +57,10 @@ type Tab = "active" | "completed";
  * с галкой «отправить в ремонт» или при ручном переводе скутера в repair.
  */
 export function Service() {
+  const [scope, setScope] = useState<Scope>("outside");
   const [tab, setTab] = useState<Tab>("active");
   const [search, setSearch] = useState("");
+  const ordersQ = useServiceOrders();
 
   const activeQ = useRepairJobs({ status: "active" });
   const completedQ = useRepairJobs({ status: "completed" });
@@ -77,24 +88,55 @@ export function Service() {
             Ремонты
           </h1>
           <div className="text-[12px] text-muted-2">
-            Скутеры в обслуживании с чек-листом по акту повреждений и
-            историей закрытых ремонтов.
+            {scope === "outside"
+              ? "Чужая техника: заказ-наряды, работы из прайса, запчасти, выручка и прибыль."
+              : "Наши скутеры в обслуживании: чек-лист по акту повреждений и журнал закрытых ремонтов."}
           </div>
         </div>
-        <div className="relative w-[280px]">
-          <Search
-            size={14}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
-          />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по скутеру или клиенту…"
-            className="h-9 w-full rounded-[10px] border border-border bg-surface pl-9 pr-3 text-[13px] outline-none focus:border-blue-600"
-          />
-        </div>
+        {scope === "own" && (
+          <div className="relative w-[280px]">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+            />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск по скутеру или клиенту…"
+              className="h-9 w-full rounded-[10px] border border-border bg-surface pl-9 pr-3 text-[13px] outline-none focus:border-blue-600"
+            />
+          </div>
+        )}
       </header>
 
+      {/* Главная вкладка — сторонние ремонты; своя техника рядом. */}
+      <div className="flex w-fit gap-1 rounded-full bg-surface p-1 shadow-card-sm">
+        {(
+          [
+            { id: "outside" as const, label: "Сторонний ремонт", n: ordersQ.data?.length ?? 0 },
+            { id: "own" as const, label: "Наша техника", n: activeJobs.length },
+          ]
+        ).map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setScope(s.id)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold transition-colors",
+              scope === s.id ? "bg-ink text-white" : "text-muted hover:text-ink",
+            )}
+          >
+            {s.label}
+            <span className={cn("tabular-nums", scope === s.id ? "text-white/60" : "text-muted-2")}>
+              {s.n}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {scope === "outside" && <ServiceOrders />}
+
+      {scope === "own" && (
       <div className="flex gap-1 border-b border-border">
         <TabButton
           active={tab === "active"}
@@ -111,8 +153,9 @@ export function Service() {
           count={completedJobs.length}
         />
       </div>
+      )}
 
-      {isLoading ? (
+      {scope === "own" && (isLoading ? (
         <div className="flex items-center gap-2 rounded-2xl bg-surface px-6 py-12 text-muted-2 shadow-card-sm">
           <Loader2 size={16} className="animate-spin" /> Загружаем ремонты…
         </div>
@@ -130,7 +173,7 @@ export function Service() {
             <JournalRow key={job.id} job={job} />
           ))}
         </div>
-      )}
+      ))}
     </div>
   );
 }

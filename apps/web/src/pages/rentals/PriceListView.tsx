@@ -46,6 +46,13 @@ export function PriceListView() {
   const models = useApiScooterModels();
 
   const [creatingGroup, setCreatingGroup] = useState(false);
+  /**
+   * Два прайса в одном экране (06.09): «ущерб» — по моделям нашей техники
+   * (им считают акт повреждений), «работы» — для сторонних ремонтов, там
+   * модель ни при чём. Разделены, чтобы механик не искал замену вариатора
+   * среди штрафов.
+   */
+  const [kind, setKind] = useState<"damage" | "service">("damage");
 
   if (list.isLoading) {
     return (
@@ -55,16 +62,59 @@ export function PriceListView() {
     );
   }
 
-  const groups = list.data ?? [];
+  const allGroups = list.data ?? [];
+  const groups = allGroups.filter((g) => (g.kind ?? "damage") === kind);
 
   const empty = groups.length === 0;
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex w-fit gap-1 rounded-full bg-surface p-1 shadow-card-sm">
+        {(
+          [
+            { id: "damage" as const, label: "Прайс ущерба" },
+            { id: "service" as const, label: "Прайс работ" },
+          ]
+        ).map((k) => (
+          <button
+            key={k.id}
+            type="button"
+            onClick={() => {
+              setKind(k.id);
+              setCreatingGroup(false);
+            }}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold transition-colors",
+              kind === k.id ? "bg-ink text-white" : "text-muted hover:text-ink",
+            )}
+          >
+            {k.label}
+            <span
+              className={cn(
+                "tabular-nums",
+                kind === k.id ? "text-white/60" : "text-muted-2",
+              )}
+            >
+              {allGroups.filter((g) => (g.kind ?? "damage") === k.id).length}
+            </span>
+          </button>
+        ))}
+      </div>
+
       <div className="rounded-[10px] bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
-        Прейскурант — это справочник цен на детали, штрафы, повреждения и
-        экипировку. Используется при <b>фиксации ущерба</b> по аренде:
-        выбираешь позиции из списка — сумма считается автоматически.
+        {kind === "damage" ? (
+          <>
+            Прейскурант — это справочник цен на детали, штрафы, повреждения и
+            экипировку. Используется при <b>фиксации ущерба</b> по аренде:
+            выбираешь позиции из списка — сумма считается автоматически.
+          </>
+        ) : (
+          <>
+            Прайс работ — то, из чего собирают <b>сторонний ремонт</b>: строка
+            «что делали» и цена по умолчанию. В заказ-наряде позиция берётся
+            одним кликом, а цену можно поправить прямо в счёте.
+          </>
+        )}
         {canEdit && (
           <>
             {" "}
@@ -74,7 +124,20 @@ export function PriceListView() {
         )}
       </div>
 
-      {empty && (
+      {empty && kind === "service" && (
+        <div className="flex flex-col items-center gap-2 rounded-[14px] border border-dashed border-border px-6 py-10 text-center">
+          <div className="text-[14px] font-semibold text-ink">
+            Прайс работ пока пуст
+          </div>
+          <div className="max-w-[440px] text-[12.5px] leading-relaxed text-muted">
+            Заведите группу (например «Двигатель» или «Ходовая») и добавьте в
+            неё строки: «Замена вариатора — 1 500 ₽». Потом в заказ-наряде их
+            будет видно списком.
+          </div>
+        </div>
+      )}
+
+      {empty && kind === "damage" && (
         <div className="flex flex-col items-center gap-3 rounded-[14px] border border-dashed border-border py-10">
           <div className="text-[14px] font-semibold text-ink">
             Прейскурант пока пуст
@@ -129,7 +192,8 @@ export function PriceListView() {
         <div className="flex flex-wrap items-center gap-2">
           {creatingGroup ? (
             <NewGroupForm
-              modelOptions={models.data ?? []}
+              kind={kind}
+              modelOptions={kind === "service" ? [] : (models.data ?? [])}
               allGroups={groups}
               onCancel={() => setCreatingGroup(false)}
               onSave={async (input) => {
@@ -709,12 +773,15 @@ function GroupHeaderEdit({
 }
 
 function NewGroupForm({
+  kind = "damage",
   modelOptions,
   allGroups,
   busy,
   onCancel,
   onSave,
 }: {
+  /** Вид прайса: у работ модели нет, поэтому селектор модели скрыт. */
+  kind?: "damage" | "service";
   modelOptions: { id: number; name: string }[];
   allGroups: ApiPriceGroup[];
   busy: boolean;
@@ -727,6 +794,7 @@ function NewGroupForm({
     scooterModelId: number | null;
     copyItemsFromGroupId: number | null;
     copyWithPrices: boolean;
+    kind?: "damage" | "service";
   }) => void;
 }) {
   const [name, setName] = useState("");
@@ -833,9 +901,10 @@ function NewGroupForm({
               hasTwoPrices: twoPrices,
               priceALabel: labelA.trim() || "Цена",
               priceBLabel: twoPrices ? labelB.trim() || null : null,
-              scooterModelId: modelId,
+              scooterModelId: kind === "service" ? null : modelId,
               copyItemsFromGroupId: copyFrom,
               copyWithPrices,
+              kind,
             })
           }
           className="rounded-[8px] bg-ink px-3 py-1 text-[12px] font-bold text-white hover:bg-blue-600 disabled:opacity-50"

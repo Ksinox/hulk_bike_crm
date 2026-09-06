@@ -27,6 +27,8 @@ const GroupBody = z.object({
   priceALabel: z.string().min(1).max(50).optional(),
   priceBLabel: z.string().max(50).nullable().optional(),
   scooterModelId: z.number().int().positive().nullable().optional(),
+  /** 'damage' — прайс ущерба, 'service' — прайс работ сторонних ремонтов. */
+  kind: z.enum(["damage", "service"]).optional(),
   /** При создании группы — опционально скопировать позиции из другой группы. */
   copyItemsFromGroupId: z.number().int().positive().nullable().optional(),
   /** Копировать с ценами или только названия (цены = 0). */
@@ -43,10 +45,12 @@ const ItemBody = z.object({
 });
 
 export async function priceListRoutes(app: FastifyInstance) {
-  app.get("/", async () => {
+  app.get("/", async (req) => {
+    const kind = (req.query as { kind?: string }).kind;
     const groups = await db
       .select()
       .from(priceGroups)
+      .where(kind ? eq(priceGroups.kind, kind) : undefined)
       .orderBy(asc(priceGroups.sortOrder), asc(priceGroups.id));
     const items = await db
       .select()
@@ -75,6 +79,7 @@ export async function priceListRoutes(app: FastifyInstance) {
         priceALabel: parsed.data.priceALabel ?? "Цена",
         priceBLabel: parsed.data.priceBLabel ?? null,
         scooterModelId: parsed.data.scooterModelId ?? null,
+        kind: parsed.data.kind ?? "damage",
       })
       .returning();
     // Опционально копируем позиции из другой группы.
