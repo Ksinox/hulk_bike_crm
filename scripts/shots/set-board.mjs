@@ -7,14 +7,14 @@ const r = await fetch(API + "/api/auth/login", {
 });
 const cookie = (r.headers.get("set-cookie") || "").split(";")[0];
 const board = {
-  period: "week",
+  period: "month",
   title: "Как идут дела",
   tiles: [
     { metric: "rent.park_load", size: "l", plan: 90 },
     { metric: "rent.active", size: "m", plan: 6 },
     { metric: "rent.overdue", size: "m", plan: null },
     { metric: "rent.income_today", size: "m", plan: null },
-    { metric: "rent.revenue", size: "m", plan: 80000 },
+    { metric: "rent.revenue", size: "m", plan: 300000 },
     { metric: "rent.returns", size: "s", plan: null, period: "week" },
     { metric: "rent.new_clients", size: "s", plan: 5, period: "week" },
     { metric: "sales.count", size: "s", plan: 10 },
