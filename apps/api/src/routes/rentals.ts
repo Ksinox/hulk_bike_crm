@@ -3648,6 +3648,56 @@ export async function rentalsRoutes(app: FastifyInstance) {
     return endDay.getTime() + 86_400_000;
   }
 
+  /**
+   * Заказчик 06.09 (п.4, «в Партнёрке долг не гасится»): оплата штрафа,
+   * сделанная в тот же день, что и выкуп просроченных дней, попадала ДО
+   * начала нового эпизода (день после сдвинутого возврата) и в баланс не
+   * шла — а зафиксированный при выкупе дней штраф (carry) шёл всегда.
+   * Итог: клиент всё оплатил, долг 750 ₽ остался.
+   *
+   * Правило теперь такое: оплаты/прощения штрафа текущего эпизода гасят
+   * текущее начисление; более ранние — гасят только тот штраф, который к
+   * их моменту был ЗАФИКСИРОВАН (carry), и не больше него. Так старые
+   * оплаты по-прежнему не съедают новый штраф (фикс 24.08), а оплата
+   * сохранённого штрафа его закрывает.
+   */
+  function fineLedger(
+    entries: {
+      kind: string;
+      amount: number;
+      createdAt: Date | string | null;
+      appliedToEndPlanned: boolean | null;
+    }[],
+    epochStartMs: number,
+  ): { fineCarry: number; fineSettled: number } {
+    const sorted = [...entries].sort(
+      (a, b) =>
+        new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+    );
+    let fineCarry = 0;
+    let carryPaid = 0;
+    let fineSettled = 0;
+    for (const e of sorted) {
+      if (e.kind === "overdue_fine_carry") {
+        fineCarry += e.amount;
+        continue;
+      }
+      const settles =
+        e.kind === "overdue_fine_payment" ||
+        (e.kind === "overdue_fine_forgive" && !e.appliedToEndPlanned);
+      if (!settles) continue;
+      if (inEpoch(e.createdAt, epochStartMs)) {
+        fineSettled += e.amount;
+      } else {
+        const room = Math.max(0, fineCarry - carryPaid);
+        const take = Math.min(e.amount, room);
+        carryPaid += take;
+        fineSettled += take;
+      }
+    }
+    return { fineCarry, fineSettled };
+  }
+
   /** Долговая запись относится к текущему эпизоду просрочки? */
   function inEpoch(
     createdAt: Date | string | null | undefined,
@@ -3871,9 +3921,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
       // Пункт 9: + fineCarry — штраф за выкупленные дни остаётся долгом.
       // Фикс 24.08: вычитаем только оплаты/прощения ТЕКУЩЕГО эпизода —
       // иначе платежи за прошлые просрочки обнуляют новый штраф.
+      // Фикс 06.09 (п.4): см. fineLedger — оплата зафиксированного штрафа
+      // засчитывается, даже если сделана до начала нового эпизода.
+      void fineForgiveCurrent;
+      void finePayCurrent;
+      void fineCarry;
+      const ledger = fineLedger(myEntries, epochStart);
       const fineBalance = Math.max(
         0,
-        fineCharge + fineCarry - fineForgiveCurrent - finePayCurrent,
+        fineCharge + ledger.fineCarry - ledger.fineSettled,
       );
       const manualBalance = Math.max(0, manualCharged - manualForgiven);
 
@@ -4054,9 +4110,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
     const daysBalance = daysCharge;
     // Пункт 9: + fineCarry — штраф за выкупленные дни остаётся долгом.
     // Фикс 24.08: гасим только оплатами/прощениями ТЕКУЩЕГО эпизода.
+    // Фикс 06.09 (п.4): та же логика, что в агрегате (fineLedger).
+    void fineForgiveCurrent;
+    void finePayCurrent;
+    void fineCarry;
+    const ledger = fineLedger(events, epochStartMs);
     const fineBalance = Math.max(
       0,
-      fineCharge + fineCarry - fineForgiveCurrent - finePayCurrent,
+      fineCharge + ledger.fineCarry - ledger.fineSettled,
     );
     const overdueBalance = daysBalance + fineBalance;
     // Для UI «сколько уже простили/оплатили» — суммируем всё.
@@ -4285,7 +4346,29 @@ export async function rentalsRoutes(app: FastifyInstance) {
           let carryEntryId: number | null = null;
           let fineCarryAmount = 0;
           if (daysAdded > 0 && fineDaily > 0) {
-            fineCarryAmount = daysAdded * fineDaily;
+            // Фикс 06.09 (п.4): если клиент уже оплатил часть штрафа ДО
+            // выкупа дней, фиксируем только непогашенный остаток — иначе
+            // оплаченный штраф возвращался в долг.
+            const priorEntries = await db
+              .select({
+                kind: debtEntries.kind,
+                amount: debtEntries.amount,
+                createdAt: debtEntries.createdAt,
+                appliedToEndPlanned: debtEntries.appliedToEndPlanned,
+              })
+              .from(debtEntries)
+              .where(eq(debtEntries.rentalId, id));
+            const priorLedger = fineLedger(
+              priorEntries,
+              overdueEpochStartMs(r.endPlannedAt),
+            );
+            const outstandingBefore = Math.max(
+              0,
+              overdueDays * fineDaily + priorLedger.fineCarry - priorLedger.fineSettled,
+            );
+            fineCarryAmount = Math.min(daysAdded * fineDaily, outstandingBefore);
+          }
+          if (fineCarryAmount > 0) {
             const [carryRow] = await db
               .insert(debtEntries)
               .values({

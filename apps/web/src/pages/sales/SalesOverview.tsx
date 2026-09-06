@@ -19,6 +19,7 @@ import {
   type SaleDeal,
 } from "@/lib/api/sales";
 import { useApiScooters } from "@/lib/api/scooters";
+import { DateRangePicker } from "@/components/ui/date-picker";
 import {
   ManagerAvatar,
   PeriodPicker,
@@ -47,6 +48,7 @@ import {
   totals,
   type PeriodPreset,
   type Range,
+  ruDateShort,
 } from "./salesUtils";
 
 /**
@@ -119,9 +121,34 @@ export function SalesOverview({
   const maxModelUnits = Math.max(1, ...modRating.map((m) => m.units));
   const maxManagerRevenue = Math.max(1, ...mRating.map((m) => m.revenue));
 
-  // План берём на месяц, в котором заканчивается период.
-  const planPeriod = `${range.to.getFullYear()}-${String(range.to.getMonth() + 1).padStart(2, "0")}`;
-  const plan = (plansData?.items ?? []).find((p) => p.period.slice(0, 7) === planPeriod);
+  /**
+   * План (06.09, п.6): период произвольный — берём тот, в который попадает
+   * сегодняшний день (а если такого нет — ближайший будущий). Факт для
+   * плана считаем по ЕГО периоду, а не по окну графика: раньше план на
+   * месяц сравнивался с «последними 30 днями», и цифры не сходились.
+   */
+  const plan = useMemo(() => {
+    const items = plansData?.items ?? [];
+    const todayIso = ymdLocal(new Date());
+    const withTo = items.map((p) => ({ ...p, to: p.periodTo ?? monthEndIso(p.period) }));
+    return (
+      withTo.find((p) => p.period <= todayIso && p.to >= todayIso) ??
+      withTo.filter((p) => p.period > todayIso).sort((a, b) => a.period.localeCompare(b.period))[0] ??
+      null
+    );
+  }, [plansData]);
+  const planRange: Range | null = useMemo(() => {
+    if (!plan) return null;
+    return {
+      from: new Date(`${plan.period}T00:00:00`),
+      to: new Date(`${plan.to}T23:59:59`),
+      label: `${ruDateShort(plan.period)} — ${ruDateShort(plan.to)}`,
+    };
+  }, [plan]);
+  const planFact = useMemo(
+    () => totals(planRange ? soldIn(deals, planRange, managerId) : []),
+    [deals, planRange, managerId],
+  );
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -302,7 +329,7 @@ export function SalesOverview({
         {/* План */}
         <SectionCard
           title="План продаж"
-          hint={range.to.toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
+          hint={planRange ? planRange.label : "период не задан"}
           action={
             isDirector && (
               <button
@@ -316,18 +343,18 @@ export function SalesOverview({
           }
         >
           <div className="flex flex-1 flex-col justify-between gap-3 p-4">
-            <PlanBar label="Единиц" fact={now.units} plan={plan?.units ?? 0} unit="ед." />
-            <PlanBar label="Выручка" fact={now.revenue} plan={plan?.revenue ?? 0} unit="₽" />
-            <PlanBar label="Прибыль" fact={now.profit} plan={plan?.profit ?? 0} unit="₽" />
+            <PlanBar label="Единиц" fact={planFact.units} plan={plan?.units ?? 0} unit="ед." />
+            <PlanBar label="Выручка" fact={planFact.revenue} plan={plan?.revenue ?? 0} unit="₽" />
+            <PlanBar label="Прибыль" fact={planFact.profit} plan={plan?.profit ?? 0} unit="₽" />
             <PlanBar
               label="Маржинальность"
-              fact={now.marginPct}
+              fact={planFact.marginPct}
               plan={plan?.marginPct ?? 0}
               unit="%"
             />
             {!plan && !isDirector && (
               <div className="text-[12px] text-muted-2">
-                План на месяц задаёт директор.
+                План на период задаёт директор.
               </div>
             )}
           </div>
@@ -464,7 +491,8 @@ export function SalesOverview({
 
       {planOpen && (
         <PlanDialog
-          period={planPeriod}
+          period={plan?.period ?? ymdLocal(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
+          periodTo={plan?.to ?? monthEndIso(ymdLocal(new Date()))}
           initial={plan ?? null}
           onClose={() => setPlanOpen(false)}
         />
@@ -544,13 +572,17 @@ function saleWhen(iso: string): string {
   return `${d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} ${time}`;
 }
 
-/** Диалог «Задать план» — четыре числа на месяц. */
+/** Диалог «Задать план» — четыре числа на период (06.09: период любой, напр. с 15 по 14). */
 function PlanDialog({
   period,
+  periodTo,
   initial,
   onClose,
 }: {
+  /** Начало периода, YYYY-MM-DD. */
   period: string;
+  /** Конец периода включительно, YYYY-MM-DD. */
+  periodTo: string;
   initial: { units: number; revenue: number; profit: number; marginPct: number } | null;
   onClose: () => void;
 }) {
@@ -559,18 +591,42 @@ function PlanDialog({
   const [revenue, setRevenue] = useState(String(initial?.revenue ?? ""));
   const [profit, setProfit] = useState(String(initial?.profit ?? ""));
   const [margin, setMargin] = useState(String(initial?.marginPct ?? ""));
-  const [month, setMonth] = useState(period);
+  const [from, setFrom] = useState(period);
+  const [to, setTo] = useState(periodTo);
+
+  /** Быстрые периоды: календарный месяц и «с 15 по 14» (расчётный период аренд). */
+  const presets = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const cur = { from: ymdLocal(new Date(y, m, 1)), to: ymdLocal(new Date(y, m + 1, 0)) };
+    const next = { from: ymdLocal(new Date(y, m + 1, 1)), to: ymdLocal(new Date(y, m + 2, 0)) };
+    const mid =
+      now.getDate() >= 15
+        ? { from: ymdLocal(new Date(y, m, 15)), to: ymdLocal(new Date(y, m + 1, 14)) }
+        : { from: ymdLocal(new Date(y, m - 1, 15)), to: ymdLocal(new Date(y, m, 14)) };
+    return [
+      { label: "Этот месяц", ...cur },
+      { label: "Следующий", ...next },
+      { label: "С 15 по 14", ...mid },
+    ];
+  }, []);
 
   const save = async () => {
+    if (!from || !to || to < from) {
+      toast.error("Проверьте период", "Конец периода не может быть раньше начала.");
+      return;
+    }
     try {
       await setPlan.mutateAsync({
-        period: month,
+        period: from,
+        periodTo: to,
         units: Number(units) || 0,
         revenue: Number(revenue) || 0,
         profit: Number(profit) || 0,
         marginPct: Number(margin) || 0,
       });
-      toast.success("План сохранён");
+      toast.success("План сохранён", `${ruDateShort(from)} — ${ruDateShort(to)}`);
       onClose();
     } catch {
       toast.error("Не удалось сохранить план");
@@ -579,22 +635,44 @@ function PlanDialog({
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4 animate-backdrop-in">
-      <div className="w-full max-w-[440px] rounded-2xl bg-surface p-5 shadow-card-lg animate-modal-in">
+      <div className="w-full max-w-[460px] rounded-2xl bg-surface p-5 shadow-card-lg animate-modal-in">
         <div className="text-[16px] font-bold text-ink">План продаж</div>
         <div className="mt-1 text-[12.5px] text-muted">
-          Ставится на месяц. Факт сравнивается с планом на главном экране.
+          Период любой — календарный месяц или, например, с 15 по 14. Факт
+          считается по этому же периоду.
         </div>
-        <label className="mt-4 flex flex-col gap-1">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-            Месяц
-          </span>
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="h-10 rounded-[12px] border border-border bg-surface px-3 text-[14px] tabular-nums outline-none focus:border-emerald-500"
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {presets.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => {
+                setFrom(p.from);
+                setTo(p.to);
+              }}
+              className={cn(
+                "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
+                from === p.from && to === p.to
+                  ? "bg-ink text-white"
+                  : "bg-surface-soft text-muted hover:text-ink",
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2">
+          <DateRangePicker
+            from={from}
+            to={to}
+            placeholder="Период плана"
+            className="w-full"
+            onChange={({ from: f, to: t }: { from: string | null; to: string | null }) => {
+              if (f) setFrom(f);
+              if (t) setTo(t);
+            }}
           />
-        </label>
+        </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
           <PlanField label="Единиц" value={units} onChange={setUnits} suffix="ед." />
           <PlanField label="Выручка" value={revenue} onChange={setRevenue} suffix="₽" />
@@ -621,6 +699,18 @@ function PlanDialog({
       </div>
     </div>
   );
+}
+
+/** YYYY-MM-DD по локальному времени. */
+function ymdLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Последний день месяца для «YYYY-MM-DD». */
+function monthEndIso(iso: string): string {
+  const y = Number(iso.slice(0, 4));
+  const m = Number(iso.slice(5, 7));
+  return ymdLocal(new Date(y, m, 0));
 }
 
 function PlanField({

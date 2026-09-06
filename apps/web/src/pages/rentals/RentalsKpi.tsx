@@ -32,7 +32,7 @@ const TONES: Record<KpiTone, string> = {
 
 export function RentalsKpi({ items }: { items: Kpi[] }) {
   return (
-    <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5 min-[2000px]:gap-3">
+    <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6 min-[2000px]:gap-3">
       {items.map((it) => {
         const clickable = !!it.onClick;
         // Плашка с переключателем внутри — div: кнопка в кнопке невалидна.

@@ -2281,8 +2281,10 @@ export const saleDealDocuments = pgTable(
 
 export const salePlans = pgTable("sale_plans", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
-  /** Первое число месяца, на который поставлен план. */
+  /** Начало периода плана (любой день — заказчик 06.09: «с 15 по 15»). */
   period: date("period").notNull(),
+  /** Конец периода включительно; null у старых строк = конец месяца. */
+  periodTo: date("period_to"),
   units: integer("units").notNull().default(0),
   revenue: integer("revenue").notNull().default(0),
   profit: integer("profit").notNull().default(0),

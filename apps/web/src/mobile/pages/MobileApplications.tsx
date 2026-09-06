@@ -11,6 +11,7 @@ import {
   type RejectionReasonCode,
 } from "@/lib/api/clientApplications";
 import { toast, confirmDialog } from "@/lib/toast";
+import { navigate } from "@/app/navigationStore";
 import { cn } from "@/lib/utils";
 import { MobileNewClient } from "../forms/MobileNewClient";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
@@ -267,6 +268,12 @@ export function MobileApplications() {
             const app = convertApp;
             setConvertApp(null);
             setOpenId(null);
+            // Заказчик 06.09 (п.3): анкета покупателя → мастер продажи, не аренда.
+            if ((app?.purpose ?? "rent") === "sale") {
+              toast.success("Клиент создан", "Открываю оформление продажи");
+              navigate({ route: "sales", newSale: true, clientId: client.id });
+              return;
+            }
             setRentalPrefill({
               clientId: client.id,
               modelFilter: app?.requestedModel ?? undefined,

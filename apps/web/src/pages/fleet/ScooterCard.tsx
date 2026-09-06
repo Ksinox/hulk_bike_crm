@@ -870,7 +870,8 @@ export function ScooterCard({
               )}
               {/* Пункт 15: номер в арендном парке — смена только на свободный.
                   В дровере номер и принадлежность показаны в обложке. */}
-              {!drawerChrome && <RentalSlotSpec scooter={scooter} />}
+              {/* 06.09 (п.7): и в дровере тоже — иначе номер «не меняется». */}
+              <RentalSlotSpec scooter={scooter} />
               {!drawerChrome && <PartnerSpec scooter={scooter} />}
               {/* В дровере пробег показан выше, в блоке состояния — здесь
                   он был бы вторым таким же числом. */}

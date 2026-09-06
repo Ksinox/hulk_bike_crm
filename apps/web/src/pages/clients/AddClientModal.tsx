@@ -625,10 +625,13 @@ export function AddClientModal({
               app={matchedApp}
               onPull={() => {
                 const init = applicationToFormInit(matchedApp);
+                // Заказчик 06.09 (п.3): «показывает ФИО из заявки, а не
+                // введённое» — то, что оператор уже напечатал, не трогаем,
+                // из заявки подставляются только пустые поля.
                 setF((prev) => ({
                   ...prev,
-                  name: init.name || prev.name,
-                  phone: init.phone || prev.phone,
+                  name: prev.name.trim() ? prev.name : init.name || prev.name,
+                  phone: prev.phone.replace(/\D/g, "").length >= 11 ? prev.phone : init.phone || prev.phone,
                   phone2: init.phone2 || prev.phone2,
                   birth: init.birth || prev.birth,
                   isForeigner: init.isForeigner,
@@ -1085,9 +1088,16 @@ export function AddClientModal({
                 disabled={!canSave}
                 onClick={async () => {
                   if (!editing && duplicate) {
+                    // 06.09 (п.3): говорим, ЧЬЁ имя в базе и что ввёл
+                    // оператор — иначе казалось, что форма подменила ФИО.
+                    const typed = f.name.trim();
+                    const same =
+                      typed.toLowerCase() === duplicate.name.trim().toLowerCase();
                     toast.error(
-                      "Такой клиент уже есть",
-                      `«${duplicate.name}» с этим номером уже в базе. Откройте его карточку, не создавайте дубль.`,
+                      "Клиент с этим номером уже есть",
+                      same
+                        ? `«${duplicate.name}» уже в базе. Откройте его карточку, не создавайте дубль.`
+                        : `В базе он записан как «${duplicate.name}», вы ввели «${typed || "—"}». Откройте его карточку и поправьте ФИО там, а не создавайте дубль.`,
                     );
                     return;
                   }
@@ -1573,11 +1583,12 @@ function ApplicationMatchHint({
         </div>
         <div className="flex-1">
           <div className="text-[13px] font-bold text-blue-900">
-            Похожая заявка от {dateStr} — подтянуть данные?
+            Похожая {app.purpose === "sale" ? "анкета покупателя" : "заявка на аренду"} от{" "}
+            {dateStr} — подтянуть данные?
           </div>
           <div className="mt-0.5 text-[12px] text-blue-900/80">
             {app.name || "без имени"} · {app.phone || "тел. не указан"}.
-            Все поля и фото можно подставить одной кнопкой.
+            Подставятся только пустые поля и фото — то, что вы уже ввели, останется.
           </div>
           <div className="mt-2 flex gap-2">
             <button

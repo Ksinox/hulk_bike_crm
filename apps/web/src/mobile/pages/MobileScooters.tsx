@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { useReloadRestoredState } from "@/lib/usePersistedState";
-import { ShoppingBag, Bike, ScrollText } from "lucide-react";
+import { ShoppingBag, Bike, ScrollText, Printer } from "lucide-react";
+import { StaticDocPreview } from "@/components/StaticDocPreview";
+import { useInventorySheet } from "@/pages/fleet/useInventorySheet";
 import { ScooterJournal } from "@/pages/fleet/ScooterJournal";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
@@ -85,6 +87,9 @@ export function MobileScooters() {
   const [filter, setFilter] = useState<Filter>("all");
   /** Журнал техники — тот же, что на компьютере (паритет, 06.09). */
   const [journalOpen, setJournalOpen] = useState(false);
+  /** «Ревизия парка» — тот же печатный лист, что на компьютере (06.09, п.2). */
+  const [revisionOpen, setRevisionOpen] = useState(false);
+  const revision = useInventorySheet();
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useReloadRestoredState<number | null>(
     "mobile:scooters:openId",
@@ -222,7 +227,25 @@ export function MobileScooters() {
         >
           <ScrollText size={15} /> Журнал
         </button>
+        <button
+          type="button"
+          onClick={() => setRevisionOpen(true)}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-ink shadow-card-sm"
+          title="Ревизия парка — печатный лист"
+          aria-label="Ревизия парка"
+        >
+          <Printer size={15} />
+        </button>
       </div>
+
+      {revisionOpen && (
+        <StaticDocPreview
+          title="Ревизия парка"
+          html={revision.html}
+          docFilename={`Ревизия_парка_${new Date().toISOString().slice(0, 10)}.doc`}
+          onClose={() => setRevisionOpen(false)}
+        />
+      )}
 
       <MobileSheet open={journalOpen} onClose={() => setJournalOpen(false)} title="Журнал техники">
         <ScooterJournal />

@@ -75,8 +75,10 @@ export type SaleManager = {
 
 export type SalePlan = {
   id: number;
-  /** Первое число месяца: «2026-08-01». */
+  /** Начало периода: «2026-08-01» (или любой день — 06.09, п.6). */
   period: string;
+  /** Конец периода включительно; null у старых записей = конец месяца. */
+  periodTo: string | null;
   units: number;
   revenue: number;
   profit: number;
@@ -237,8 +239,10 @@ export function useDeleteSaleManager() {
 }
 
 export type SalePlanInput = {
-  /** «2026-08» или «2026-08-01». */
+  /** «2026-08» (месяц) или «2026-08-15» (начало произвольного периода). */
   period: string;
+  /** Конец периода включительно (06.09, п.6). */
+  periodTo?: string | null;
   units?: number;
   revenue?: number;
   profit?: number;

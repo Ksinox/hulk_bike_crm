@@ -64,8 +64,10 @@ const DealBody = z
 
 const PlanBody = z
   .object({
-    /** YYYY-MM или YYYY-MM-DD — приводим к первому числу месяца. */
+    /** YYYY-MM (месяц) или YYYY-MM-DD — начало периода. */
     period: z.string().min(7).max(10),
+    /** YYYY-MM-DD — конец периода включительно (06.09, п.6). Без него — месяц. */
+    periodTo: z.string().length(10).optional().nullable(),
     units: z.number().int().min(0).optional(),
     revenue: z.number().int().min(0).optional(),
     profit: z.number().int().min(0).optional(),
@@ -76,6 +78,14 @@ const PlanBody = z
 /** «2026-08» / «2026-08-14» → «2026-08-01». */
 function monthStart(v: string): string {
   return `${v.slice(0, 7)}-01`;
+}
+
+/** Последний день месяца для «YYYY-MM…». */
+function monthEnd(v: string): string {
+  const y = Number(v.slice(0, 4));
+  const m = Number(v.slice(5, 7));
+  const d = new Date(y, m, 0);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function fmtMoney(n: number): string {
@@ -620,9 +630,18 @@ export async function salesRoutes(app: FastifyInstance) {
         .code(400)
         .send({ error: "bad body", details: parsed.error.issues });
     }
-    const period = monthStart(parsed.data.period);
+    // 06.09 (п.6): произвольный период. Дата без конца → календарный месяц.
+    const period =
+      parsed.data.period.length === 10 && parsed.data.periodTo
+        ? parsed.data.period
+        : monthStart(parsed.data.period);
+    const periodTo = parsed.data.periodTo ?? monthEnd(parsed.data.period);
+    if (periodTo < period) {
+      return reply.code(400).send({ error: "bad period", message: "Конец периода раньше начала." });
+    }
     const values = {
       period,
+      periodTo,
       units: parsed.data.units ?? 0,
       revenue: parsed.data.revenue ?? 0,
       profit: parsed.data.profit ?? 0,
@@ -644,7 +663,7 @@ export async function salesRoutes(app: FastifyInstance) {
       entity: "sale_deal",
       entityId: null,
       action: "plan_set",
-      summary: `План продаж на ${period.slice(0, 7)}: ${row!.units} ед. · ${fmtMoney(row!.revenue)} ₽ выручки · ${fmtMoney(row!.profit)} ₽ прибыли`,
+      summary: `План продаж на ${period}…${periodTo}: ${row!.units} ед. · ${fmtMoney(row!.revenue)} ₽ выручки · ${fmtMoney(row!.profit)} ₽ прибыли`,
       meta: { plan: row },
     });
     return row;

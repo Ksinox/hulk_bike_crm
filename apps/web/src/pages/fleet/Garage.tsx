@@ -6,8 +6,7 @@ import {
   Key,
   Package,
   ScrollText,
-  Tag,
-} from "lucide-react";
+  Tag, Printer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { Fleet } from "./Fleet";
@@ -15,6 +14,8 @@ import { ModelsCatalog } from "./ModelsCatalog";
 import { EquipmentCatalog } from "./EquipmentCatalog";
 import { ScooterArchive } from "./ScooterArchive";
 import { ScooterJournal } from "./ScooterJournal";
+import { StaticDocPreview } from "@/components/StaticDocPreview";
+import { useInventorySheet } from "./useInventorySheet";
 
 /**
  * «Скутеры» — контейнер рабочих режимов (правки 2.0, п.10).
@@ -47,6 +48,9 @@ const SETTINGS: { id: GarageTab; label: string; icon: typeof Tag }[] = [
 ];
 
 export function Garage() {
+  /** Печатная «Ревизия парка» (заказчик 06.09, п.2). */
+  const [revisionOpen, setRevisionOpen] = useState(false);
+  const revision = useInventorySheet();
   const [tab, setTab] = useState<GarageTab>(() => {
     try {
       const saved = localStorage.getItem("hulk.garageTab") as GarageTab | null;
@@ -122,7 +126,28 @@ export function Garage() {
             );
           })}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setRevisionOpen(true)}
+          title="Печатный лист для пересчёта техники: категории, VIN, клетки для галочек"
+          className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[12.5px] font-semibold text-ink shadow-card-sm transition-colors hover:bg-surface-soft"
+        >
+          <Printer size={14} /> Ревизия парка
+          <span className="rounded-full bg-surface-soft px-1.5 text-[11px] font-bold text-muted">
+            {revision.total}
+          </span>
+        </button>
       </div>
+
+      {revisionOpen && (
+        <StaticDocPreview
+          title="Ревизия парка"
+          html={revision.html}
+          docFilename={`Ревизия_парка_${new Date().toISOString().slice(0, 10)}.doc`}
+          onClose={() => setRevisionOpen(false)}
+        />
+      )}
 
       {isMode(tab) && <Fleet embedded mode={tab} />}
       {tab === "models" && <ModelsCatalog />}
