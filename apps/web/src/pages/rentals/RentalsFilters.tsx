@@ -14,6 +14,8 @@ export type StatusFilter =
   | "return_today"
   | "new_request"
   | "completed"
+  /** Заказчик 06.09 (п.1): возвраты за период — завершённые по фактической дате. */
+  | "returned"
   // v0.5.4: 'issue' оставлен в типе для совместимости со старыми
   // URL/localStorage. На UI вкладки больше нет (статуса 'problem' нет).
   | "issue"
@@ -38,6 +40,8 @@ export type FiltersState = {
   endDateFrom?: string | null;
   /** v0.6.15: ISO YYYY-MM-DD — верхняя граница endPlanned. */
   endDateTo?: string | null;
+  /** Период чипса «Возвраты» (06.09, п.1): сегодня по умолчанию или неделя. */
+  returnedPeriod?: "today" | "week";
 };
 
 // v0.4.47: убран таб «Все» — он дублировал «Активные». «Активные»
@@ -51,6 +55,7 @@ const STATUS_TABS: { id: StatusFilter; label: string }[] = [
   { id: "return_today", label: "Возврат сегодня" },
   { id: "new_request", label: "Выданы сегодня" },
   { id: "completed", label: "Завершены" },
+  { id: "returned", label: "Возвраты" },
   { id: "archived", label: "Архив" },
 ];
 

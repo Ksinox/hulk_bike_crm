@@ -48,6 +48,7 @@ import {
   usePartnerShare,
   usePatchScooter,
   useRentalSlots,
+  useSetSlotsTotal,
 } from "@/lib/api/scooters";
 import { useMe } from "@/lib/api/auth";
 import { Archive, Loader2 } from "lucide-react";
@@ -1733,8 +1734,14 @@ function SpecCell({
  */
 function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
   const [open, setOpen] = useState(false);
+  /** Занятый номер, по которому ждём подтверждения обмена. */
+  const [confirmSlot, setConfirmSlot] = useState<number | null>(null);
+  /** Добавление номеров в парк: поле с новым общим количеством. */
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreTotal, setMoreTotal] = useState("");
   const slotsQ = useRentalSlots();
   const patch = usePatchScooter();
+  const setTotal = useSetSlotsTotal();
   const inPool = scooter.rentalSlot != null;
 
   if (!inPool) {
@@ -1751,19 +1758,55 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
   }
 
   const free = slotsQ.data?.free ?? [];
+  const total = slotsQ.data?.total ?? 0;
+  const holderOf = new Map(
+    (slotsQ.data?.used ?? []).map((u) => [u.slot, u] as const),
+  );
+  const numbers = Array.from({ length: total }, (_, i) => i + 1);
 
-  const pick = async (slot: number) => {
+  /**
+   * Заказчик 06.09 (п.7): «сейчас этот номер изменить не получается» —
+   * свободных номеров в парке обычно нет. Теперь показываем все номера:
+   * свободный берём сразу, занятый — обменом (тот скутер получает наш).
+   */
+  const pick = async (slot: number, swap = false) => {
     setOpen(false);
+    setConfirmSlot(null);
     if (slot === scooter.rentalSlot) return;
+    const holder = holderOf.get(slot);
     try {
-      await patch.mutateAsync({ id: scooter.id, patch: { rentalSlot: slot } });
+      await patch.mutateAsync({
+        id: scooter.id,
+        patch: swap ? { rentalSlot: slot, slotSwap: true } : { rentalSlot: slot },
+      });
       toast.success(
-        "Номер изменён",
-        `${scooterModelName(scooter.name)} теперь под номером ${slot}. Запись в журнале.`,
+        swap ? "Номера поменяны местами" : "Номер изменён",
+        swap && holder
+          ? `${scooterModelName(scooter.name)} теперь №${slot}, ${scooterModelName(holder.name)} — №${scooter.rentalSlot}. Обе записи в журнале.`
+          : `${scooterModelName(scooter.name)} теперь под номером ${slot}. Запись в журнале.`,
       );
     } catch (e) {
       toast.error(
-        "Не удалось сменить место",
+        "Не удалось сменить номер",
+        e instanceof Error ? e.message : "Попробуйте ещё раз",
+      );
+    }
+  };
+
+  const addNumbers = async () => {
+    const n = Number(moreTotal);
+    if (!Number.isFinite(n) || n <= total) {
+      toast.error("Укажите число больше текущего", `Сейчас в парке ${total} номеров`);
+      return;
+    }
+    try {
+      await setTotal.mutateAsync(n);
+      setMoreOpen(false);
+      setMoreTotal("");
+      toast.success("Номера добавлены", `В арендном парке теперь ${n} номеров`);
+    } catch (e) {
+      toast.error(
+        "Не удалось добавить номера",
         e instanceof Error ? e.message : "Попробуйте ещё раз",
       );
     }
@@ -1778,7 +1821,7 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={patch.isPending}
-        title="Сменить номер (только на свободный)"
+        title="Сменить номер: свободный — сразу, занятый — обменом"
         className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-transparent px-1.5 py-0.5 -ml-1.5 text-[15px] font-bold leading-tight text-blue-600 transition-colors hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50"
       >
         {scooter.rentalSlot}
@@ -1787,28 +1830,119 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
 
       {open && (
         <>
-          <span className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full z-50 mt-1 w-[210px] rounded-xl border border-border bg-surface p-2 shadow-card-lg">
-            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
-              Свободные номера
+          <span
+            className="fixed inset-0 z-40"
+            onClick={() => {
+              setOpen(false);
+              setConfirmSlot(null);
+              setMoreOpen(false);
+            }}
+          />
+          <div className="absolute left-0 top-full z-50 mt-1 w-[264px] max-w-[calc(100vw-32px)] rounded-xl border border-border bg-surface p-2 shadow-card-lg">
+            <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-2">
+              <span>Номера в парке · {total}</span>
+              <span className="normal-case tracking-normal text-muted-2">
+                {free.length} свободн{free.length === 1 ? "ый" : "ых"}
+              </span>
             </div>
-            {free.length === 0 ? (
+            {total === 0 ? (
               <div className="px-1 py-1 text-[12px] text-muted">
-                Свободных номеров нет
+                В парке пока нет номеров — добавьте ниже.
               </div>
             ) : (
               <div className="flex flex-wrap gap-1">
-                {free.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => pick(s)}
-                    className="flex h-8 min-w-8 items-center justify-center rounded-lg border border-border bg-surface px-1.5 text-[12.5px] font-bold text-ink-2 transition-colors hover:border-blue-500 hover:bg-blue-600 hover:text-white"
-                  >
-                    {s}
-                  </button>
-                ))}
+                {numbers.map((s) => {
+                  const holder = holderOf.get(s);
+                  const mine = s === scooter.rentalSlot;
+                  const taken = !!holder && !mine;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      disabled={mine}
+                      title={
+                        mine
+                          ? "Текущий номер"
+                          : taken
+                            ? `${scooterModelName(holder!.name)} — поменяться номерами`
+                            : "Свободен"
+                      }
+                      onClick={() => (taken ? setConfirmSlot(s) : pick(s))}
+                      className={cn(
+                        "flex h-8 min-w-8 items-center justify-center rounded-lg border px-1.5 text-[12.5px] font-bold transition-colors",
+                        mine
+                          ? "border-blue-600 bg-blue-600 text-white"
+                          : taken
+                            ? confirmSlot === s
+                              ? "border-amber-500 bg-amber-100 text-amber-900"
+                              : "border-border bg-surface-soft text-muted hover:border-amber-400 hover:bg-amber-50 hover:text-amber-900"
+                            : "border-border bg-surface text-ink-2 hover:border-blue-500 hover:bg-blue-600 hover:text-white",
+                      )}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
               </div>
+            )}
+            <div className="mt-1.5 text-[10.5px] text-muted-2">
+              Белые — свободны, серые — заняты (обмен номерами).
+            </div>
+
+            {confirmSlot != null && holderOf.get(confirmSlot) && (
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[12px] text-amber-900">
+                Поменяться с{" "}
+                <b>{scooterModelName(holderOf.get(confirmSlot)!.name)}</b>: он получит
+                №{scooter.rentalSlot}, эта техника — №{confirmSlot}.
+                <div className="mt-1.5 flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => pick(confirmSlot, true)}
+                    className="h-8 flex-1 rounded-lg bg-ink text-[12px] font-bold text-white"
+                  >
+                    Поменять
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmSlot(null)}
+                    className="h-8 rounded-lg border border-border bg-surface px-3 text-[12px] font-semibold text-muted"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {moreOpen ? (
+              <div className="mt-2 flex items-center gap-1.5">
+                <input
+                  value={moreTotal}
+                  onChange={(e) => setMoreTotal(e.target.value.replace(/\D/g, ""))}
+                  inputMode="numeric"
+                  placeholder={String(total + 1)}
+                  className="h-8 w-16 rounded-lg border border-border bg-surface px-2 text-[12.5px] font-bold text-ink outline-none focus:border-blue-600"
+                />
+                <span className="text-[11px] text-muted">всего номеров</span>
+                <button
+                  type="button"
+                  onClick={addNumbers}
+                  disabled={setTotal.isPending}
+                  className="ml-auto h-8 rounded-lg bg-ink px-3 text-[12px] font-bold text-white disabled:opacity-50"
+                >
+                  Сохранить
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreOpen(true);
+                  setMoreTotal(String(total + 1));
+                }}
+                className="mt-2 text-[12px] font-semibold text-blue-600 hover:underline"
+              >
+                + Добавить номера в парк
+              </button>
             )}
           </div>
         </>

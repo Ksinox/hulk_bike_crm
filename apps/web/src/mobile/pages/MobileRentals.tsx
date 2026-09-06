@@ -40,7 +40,19 @@ import {
   type ChipOption,
 } from "../ui";
 
-type Filter = "active" | "overdue" | "return_today" | "completed";
+type Filter = "active" | "overdue" | "return_today" | "returned" | "completed";
+
+/** Возврат в периоде: сегодня или последние 7 дней (06.09, п.1). */
+function returnedIn(endActual: string | undefined, period: "today" | "week"): boolean {
+  if (!endActual) return false;
+  const [d, m, y] = endActual.split(".").map(Number);
+  if (!d || !m || !y) return false;
+  const now = new Date();
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const start = period === "week" ? end - 6 * 86_400_000 : end;
+  const t = new Date(y, m - 1, d).getTime();
+  return t >= start && t <= end;
+}
 
 /** Сегодня в формате DD.MM.YYYY (локальное время). */
 function todayRu(): string {
@@ -150,12 +162,20 @@ export function MobileRentals() {
     return d ? d.overdueBalance + d.damageBalance + d.manualBalance : 0;
   };
 
-  const source = filter === "completed" ? archived : active;
+  /** Период чипса «Возвраты»: сегодня по умолчанию, можно неделю (06.09). */
+  const [returnedPeriod, setReturnedPeriod] = useState<"today" | "week">("today");
+  const source =
+    filter === "completed"
+      ? archived
+      : filter === "returned"
+        ? [...active, ...archived]
+        : active;
 
   const counts = useMemo(() => {
     let act = 0;
     let over = 0;
     let ret = 0;
+    let returned = 0;
     for (const r of active) {
       if (!inFleetTab(r)) continue;
       const finished = r.status === "completed" || r.status === "cancelled";
@@ -164,9 +184,15 @@ export function MobileRentals() {
       if (r.status === "returning" || (r.status === "active" && r.endPlanned === today))
         ret++;
     }
-    return { act, over, ret };
+    const seen = new Set<number>();
+    for (const r of [...active, ...archived]) {
+      if (seen.has(r.id) || !inFleetTab(r)) continue;
+      seen.add(r.id);
+      if (r.status === "completed" && returnedIn(r.endActual, returnedPeriod)) returned++;
+    }
+    return { act, over, ret, returned };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, today, debtAgg, fleetTab, partnerNames]);
+  }, [active, archived, today, debtAgg, fleetTab, partnerNames, returnedPeriod]);
 
   const filtered = useMemo(() => {
     const matchStatus = (r: Rental): boolean => {
@@ -178,6 +204,8 @@ export function MobileRentals() {
           r.status === "returning" ||
           (r.status === "active" && r.endPlanned === today)
         );
+      if (filter === "returned")
+        return r.status === "completed" && returnedIn(r.endActual, returnedPeriod);
       if (filter === "completed") return true; // archived source
       return true;
     };
@@ -192,11 +220,16 @@ export function MobileRentals() {
         matchId(r.id, q)
       );
     };
+    const seen = new Set<number>();
     return source
-      .filter((r) => inFleetTab(r) && matchStatus(r) && matchSearch(r))
+      .filter((r) => {
+        if (seen.has(r.id)) return false;
+        seen.add(r.id);
+        return inFleetTab(r) && matchStatus(r) && matchSearch(r);
+      })
       .sort((a, b) => b.id - a.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, filter, search, clientById, today, debtAgg, fleetTab, partnerNames]);
+  }, [source, filter, search, clientById, today, debtAgg, fleetTab, partnerNames, returnedPeriod]);
 
   // F5: «Сумма» строки = «Эта аренда» (текущий период), как в карточке и
   // десктоп-списке. Один и тот же computeCurrentPeriod.
@@ -206,6 +239,7 @@ export function MobileRentals() {
     { id: "active", label: "Активные", count: counts.act },
     { id: "overdue", label: "Просрочка", count: counts.over },
     { id: "return_today", label: "Сегодня", count: counts.ret },
+    { id: "returned", label: "Возвраты", count: counts.returned },
     { id: "completed", label: "Архив" },
   ];
 
@@ -279,6 +313,31 @@ export function MobileRentals() {
         </div>
       )}
       <MobileChips options={chips} value={filter} onChange={setFilter} />
+      {filter === "returned" && (
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] text-muted">Завершённые аренды:</span>
+          <div className="inline-flex rounded-full bg-surface p-0.5 shadow-card-sm">
+            {(
+              [
+                ["today", "Сегодня"],
+                ["week", "Неделя"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setReturnedPeriod(id)}
+                className={cn(
+                  "h-9 rounded-full px-3.5 text-[12.5px] font-semibold transition-colors",
+                  returnedPeriod === id ? "bg-ink text-white" : "text-muted",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <MobileEmpty

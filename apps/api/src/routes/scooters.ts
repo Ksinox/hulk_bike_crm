@@ -56,7 +56,13 @@ const CreateScooterBody = z
   })
   .strict();
 
-const PatchScooterBody = CreateScooterBody.partial();
+const PatchScooterBody = CreateScooterBody.partial().extend({
+  /**
+   * Заказчик 06.09 (п.7): «номер изменить не получается» — свободных
+   * номеров обычно нет, все заняты. Обмен: занять чужой номер, отдав свой.
+   */
+  slotSwap: z.boolean().optional(),
+});
 
 const directorOnly = requireRole("director");
 
@@ -519,6 +525,10 @@ export async function scootersRoutes(app: FastifyInstance) {
 
     // ── Пункт 15: арендные места ──
     const patch: Record<string, unknown> = { ...parsed.data };
+    const slotSwap = parsed.data.slotSwap === true;
+    delete patch.slotSwap;
+    /** Обмен номерами: кто отдаёт нам номер и какой получит взамен. */
+    let swapWith: { id: number; name: string; slot: number } | null = null;
     const nextStatus = parsed.data.baseStatus ?? before.baseStatus;
     const willHold = holdsSlot(nextStatus);
     const heldBefore = holdsSlot(before.baseStatus);
@@ -547,11 +557,22 @@ export async function scootersRoutes(app: FastifyInstance) {
               error: "slot_out_of_range",
               message: `Номер ${wantedSlot} больше общего количества номеров (${total}).`,
             });
-          if (!free.includes(wantedSlot))
-            return reply.code(409).send({
-              error: "slot_taken",
-              message: `Номер ${wantedSlot} уже занят другой техникой.`,
-            });
+          if (!free.includes(wantedSlot)) {
+            const holder = used.find((u) => u.slot === wantedSlot && u.id !== id);
+            if (!(slotSwap && holder && before.rentalSlot != null))
+              return reply.code(409).send({
+                error: "slot_taken",
+                message: `Номер ${wantedSlot} уже занят другой техникой.`,
+              });
+            // Обмен (06.09): держатель на время остаётся без номера —
+            // уникальный индекс не даст двум скутерам один номер, — а
+            // после нашего обновления получает наш прежний.
+            swapWith = { id: holder.id, name: holder.name, slot: before.rentalSlot };
+            await db
+              .update(scooters)
+              .set({ rentalSlot: null })
+              .where(eq(scooters.id, holder.id));
+          }
           patch.rentalSlot = wantedSlot;
         } else if (before.rentalSlot == null || wantedSlot === null) {
           // вход в парк без указания места (или явный сброс) → авто
@@ -586,7 +607,37 @@ export async function scootersRoutes(app: FastifyInstance) {
       .set({ ...patch, updatedAt: sql`now()` })
       .where(eq(scooters.id, id))
       .returning();
-    if (!row) return reply.code(404).send({ error: "not found" });
+    if (!row) {
+      if (swapWith) {
+        await db
+          .update(scooters)
+          .set({ rentalSlot: wantedSlot ?? null })
+          .where(eq(scooters.id, swapWith.id));
+      }
+      return reply.code(404).send({ error: "not found" });
+    }
+
+    // Вторая половина обмена номерами (06.09, п.7) + запись в журнал.
+    if (swapWith) {
+      await db
+        .update(scooters)
+        .set({ rentalSlot: swapWith.slot, updatedAt: sql`now()` })
+        .where(eq(scooters.id, swapWith.id));
+      await logActivity(req, {
+        entity: "scooter",
+        entityId: swapWith.id,
+        action: "rental_slot_changed",
+        summary: `Номер техники ${scooterLabel(swapWith.name)} в арендном парке: ${wantedSlot} → ${swapWith.slot} (обмен с ${scooterLabel(row.name)})`,
+        diff: {
+          slot: {
+            label: "Место в арендном парке",
+            from: `№${wantedSlot}`,
+            to: `№${swapWith.slot}`,
+            kind: "text",
+          },
+        },
+      });
+    }
 
     // Пункт 15: смена места — отдельная запись в журнал с diff.
     if (

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { BarChart3, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BUCKET_AXIS, fmt, fmtCompact, type Bucket, type Point } from "./salesUtils";
 
@@ -14,6 +15,17 @@ import { BUCKET_AXIS, fmt, fmtCompact, type Bucket, type Point } from "./salesUt
  *   • столбики вырастают снизу с небольшой задержкой друг за другом —
  *     видно, что данные обновились после смены периода.
  */
+
+/** Заказчик 06.09 (п.10): выбор вида графика — столбики или линия. */
+type ChartMode = "bars" | "line";
+const MODE_KEY = "hulk.salesChart.mode";
+function readMode(): ChartMode {
+  try {
+    return localStorage.getItem(MODE_KEY) === "line" ? "line" : "bars";
+  } catch {
+    return "bars";
+  }
+}
 
 /** «Красивый» шаг сетки: 1/2/5 × 10^n — чтобы подписи были круглыми. */
 function niceStep(max: number, lines: number): number {
@@ -46,7 +58,19 @@ export function SalesChart({
   onPan?: (steps: number) => void;
 }) {
   const [hover, setHover] = useState<string | null>(null);
+  const [mode, setModeState] = useState<ChartMode>(readMode);
+  const setMode = (m: ChartMode) => {
+    setModeState(m);
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {
+      /* приватный режим — не страшно */
+    }
+  };
   const fieldRef = useRef<HTMLDivElement | null>(null);
+  /** Центры колонок — по ним проходит линия (колонки не равной ширины). */
+  const colRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [xs, setXs] = useState<number[]>([]);
   const drag = useRef<{ x: number; moved: number } | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -106,6 +130,43 @@ export function SalesChart({
   // Подписи прореживаем: при месяце по дням их 31, все не влезут.
   const every = Math.ceil(all.length / 12);
 
+  // Линия: измеряем центры колонок после раскладки и при ресайзе.
+  useLayoutEffect(() => {
+    if (mode !== "line") return;
+    const field = fieldRef.current;
+    if (!field) return;
+    const measure = () => {
+      const base = field.getBoundingClientRect().left;
+      setXs(
+        all.map((_, i) => {
+          const el = colRefs.current[i];
+          if (!el) return 0;
+          const r = el.getBoundingClientRect();
+          return r.left - base + r.width / 2;
+        }),
+      );
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(field);
+    return () => ro.disconnect();
+  }, [mode, all]);
+
+  const yOf = (p: Point) => {
+    const v = value(p);
+    return top > 0 ? height - (v / top) * height : height;
+  };
+  const linePts = all
+    .map((p, i) => ({ p, x: xs[i] ?? 0, y: yOf(p) }))
+    .filter((d) => Number.isFinite(d.x));
+  const realPts = linePts.filter((d) => !d.p.forecast);
+  const forecastPt = linePts.find((d) => d.p.forecast) ?? null;
+  const linePath = realPts.map((d, i) => `${i === 0 ? "M" : "L"}${d.x},${d.y}`).join(" ");
+  const areaPath =
+    realPts.length > 1
+      ? `${linePath} L${realPts[realPts.length - 1]!.x},${height} L${realPts[0]!.x},${height} Z`
+      : "";
+
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 gap-2">
@@ -147,7 +208,56 @@ export function SalesChart({
             ))}
           </div>
 
-          {/* Столбики */}
+          {/* Линия (06.09, п.10): та же сетка и те же колонки-наведения,
+              только вместо столбиков — путь по центрам колонок. */}
+          {mode === "line" && realPts.length > 0 && (
+            <svg
+              className="pointer-events-none absolute left-0 top-0 overflow-visible"
+              width="100%"
+              height={height}
+            >
+              <defs>
+                <linearGradient id="salesLineFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity="0.28" />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
+                </linearGradient>
+              </defs>
+              {areaPath && <path d={areaPath} fill="url(#salesLineFill)" />}
+              {realPts.length > 1 && (
+                <path
+                  d={linePath}
+                  fill="none"
+                  stroke="#059669"
+                  strokeWidth={2.5}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              )}
+              {forecastPt && realPts.length > 0 && (
+                <path
+                  d={`M${realPts[realPts.length - 1]!.x},${realPts[realPts.length - 1]!.y} L${forecastPt.x},${forecastPt.y}`}
+                  fill="none"
+                  stroke="#34d399"
+                  strokeWidth={2}
+                  strokeDasharray="5 4"
+                  strokeLinecap="round"
+                />
+              )}
+              {linePts.map((d) => (
+                <circle
+                  key={d.p.key}
+                  cx={d.x}
+                  cy={d.y}
+                  r={hover === d.p.key ? 5 : d.p.forecast ? 3.5 : 3}
+                  fill={d.p.forecast ? "#ecfdf5" : "#fff"}
+                  stroke={d.p.forecast ? "#34d399" : "#059669"}
+                  strokeWidth={2}
+                />
+              ))}
+            </svg>
+          )}
+
+          {/* Столбики (в режиме линии — невидимые колонки для наведения) */}
           <div
             // justify-between: при малом числе столбиков они не жмутся
             // влево — последний (текущий момент) стоит у правого края.
@@ -162,6 +272,9 @@ export function SalesChart({
               return (
                 <div
                   key={p.key}
+                  ref={(el) => {
+                    colRefs.current[i] = el;
+                  }}
                   onMouseEnter={() => setHover(p.key)}
                   onMouseLeave={() => setHover(null)}
                   className="group relative flex h-full min-w-0 flex-1 flex-col justify-end"
@@ -169,7 +282,8 @@ export function SalesChart({
                 >
                   <div
                     className={cn(
-                      "w-full origin-bottom rounded-t-[5px] animate-bar-grow",
+                      "w-full origin-bottom rounded-t-[5px]",
+                      mode === "line" ? "invisible" : "animate-bar-grow",
                       p.forecast
                         ? "border-2 border-dashed border-emerald-400 bg-emerald-50"
                         : v > 0
@@ -214,6 +328,29 @@ export function SalesChart({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 pl-11 text-[10.5px] text-muted-2">
+        {/* Вид графика (06.09, п.10) — запоминается в браузере. */}
+        <div className="inline-flex rounded-full bg-surface-soft p-0.5">
+          {(
+            [
+              ["bars", "Столбики", BarChart3],
+              ["line", "Линия", TrendingUp],
+            ] as const
+          ).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setMode(id)}
+              title={label}
+              className={cn(
+                "inline-flex h-6 items-center gap-1 rounded-full px-2 text-[10.5px] font-semibold transition-colors",
+                mode === id ? "bg-ink text-white" : "text-muted hover:text-ink",
+              )}
+            >
+              <Icon size={11} />
+              <span className="hidden sm:inline">{label}</span>
+            </button>
+          ))}
+        </div>
         <span>{BUCKET_AXIS[bucket]}</span>
         {(onZoom || onPan) && (
           <span className="text-muted-2">
@@ -223,7 +360,7 @@ export function SalesChart({
         {forecast && (
           <>
             <span className="inline-block h-2.5 w-2.5 rounded-[2px] border-2 border-dashed border-emerald-400 bg-emerald-50" />
-            <span>последний столбик — прогноз по тренду</span>
+            <span>{mode === "line" ? "пунктир" : "последний столбик"} — прогноз по тренду</span>
           </>
         )}
       </div>

@@ -122,6 +122,8 @@ function matchStatus(
   }
   if (f === "completed")
     return r.status === "completed" || r.status === "cancelled";
+  // «Возвраты» (06.09, п.1): период проверяется отдельно, по endActual.
+  if (f === "returned") return r.status === "completed";
   if (f === "issue") {
     // v0.4.36: unreachable клиента засчитываем только для ЖИВЫХ аренд.
     // Раньше закрытая 3 месяца назад аренда «не отвечающего» клиента
@@ -384,8 +386,41 @@ export function Rentals() {
   const [revenueOpen, setRevenueOpen] = useState(false);
 
   // Если выбрана вкладка «Архив» — берём архивный список, иначе обычный.
+  // «Возвраты» (06.09): завершённые есть и в живом списке, и в архиве —
+  // берём оба, иначе счётчик и список расходятся.
   const rentals =
-    filters.status === "archived" ? archivedList : activeRentals;
+    filters.status === "archived"
+      ? archivedList
+      : filters.status === "returned"
+        ? [...activeRentals, ...archivedList]
+        : activeRentals;
+
+  /** Возвраты за период: завершённые по фактической дате (06.09, п.1). */
+  const returnedPeriod = filters.returnedPeriod ?? "today";
+  const returnedInPeriod = useMemo(() => {
+    const [td, tm, ty] = today.split(".").map(Number);
+    const end = new Date(ty!, tm! - 1, td!).getTime();
+    const start = returnedPeriod === "week" ? end - 6 * 86_400_000 : end;
+    const inPeriod = (r: Rental) => {
+      if (r.status !== "completed" || !r.endActual) return false;
+      const [d, m, y] = r.endActual.split(".").map(Number);
+      if (!d || !m || !y) return false;
+      const t = new Date(y, m - 1, d).getTime();
+      return t >= start && t <= end;
+    };
+    const seen = new Set<number>();
+    const out: Rental[] = [];
+    for (const r of [...activeRentals, ...archivedList]) {
+      if (seen.has(r.id) || !inPeriod(r)) continue;
+      seen.add(r.id);
+      out.push(r);
+    }
+    return out;
+  }, [activeRentals, archivedList, today, returnedPeriod]);
+  const returnedIds = useMemo(
+    () => new Set(returnedInPeriod.map((r) => r.id)),
+    [returnedInPeriod],
+  );
 
   useEffect(() => {
     if (selectedId != null) return;
@@ -504,9 +539,14 @@ export function Rentals() {
       if (et && endIso > et) return false;
       return true;
     };
+    // «Возвраты» (06.09, п.1): только завершённые в выбранном периоде;
+    // список собран из живых и архивных — один id не дублируем.
+    const seenIds = new Set<number>();
     return rentals
       .filter(
         (r) =>
+          (filters.status !== "returned" ||
+            (returnedIds.has(r.id) && !seenIds.has(r.id) && !!seenIds.add(r.id))) &&
           // Правки 2.0, п.9 + 27.08: списки не смешиваются. Таб
           // «Бензиновые» — только наша техника, таб «Партнёрская» —
           // только техника инвесторов (та же, что в «Партнёрке»).
@@ -529,7 +569,7 @@ export function Rentals() {
         if (sr !== 0) return sr;
         return b.id - a.id;
       });
-  }, [filters, rentals, unreachable, apiClients, today, rentalPoolSize, partnerScooterNames, fleetTab]);
+  }, [filters, rentals, unreachable, apiClients, today, rentalPoolSize, partnerScooterNames, fleetTab, returnedIds]);
 
   const kpi = useMemo<Kpi[]>(() => {
     // v0.4.10: период и сумма выручки приходят из useBillingPeriodRevenue —
@@ -604,6 +644,27 @@ export function Rentals() {
         tone: overdueDebt > 0 ? "red" : "neutral",
       },
       {
+        // Заказчик 06.09 (п.1): сколько аренд завершилось — сегодня по
+        // умолчанию, переключение на неделю. Клик — список этих возвратов.
+        label: "Возвраты",
+        value: String(returnedInPeriod.length),
+        hint: returnedPeriod === "week" ? "за 7 дней" : "сегодня",
+        tone: returnedInPeriod.length > 0 ? "blue" : "neutral",
+        onClick: () => setFilters({ ...filters, status: "returned", returnedPeriod }),
+        toggle: {
+          options: [
+            { id: "today", label: "Сегодня" },
+            { id: "week", label: "Неделя" },
+          ],
+          value: returnedPeriod,
+          onChange: (id) =>
+            setFilters({
+              ...filters,
+              returnedPeriod: id === "week" ? "week" : "today",
+            }),
+        },
+      },
+      {
         label: "Выручка",
         // Точная сумма без округления — заказчик специально просил, в
         // бухгалтерии «33 тыс» вместо «33 400» создаёт путаницу.
@@ -614,7 +675,7 @@ export function Rentals() {
         onClick: () => setRevenueOpen(true),
       },
     ];
-  }, [rentals, revenue, today, totalDebtByRentalId]);
+  }, [rentals, revenue, today, totalDebtByRentalId, returnedInPeriod, returnedPeriod, filters]);
 
   // v0.7.2: push-панель — карточка выбранной аренды живёт в потоке справа
   // и сдвигает/сжимает список (не overlay, не затемнение). Панель можно
