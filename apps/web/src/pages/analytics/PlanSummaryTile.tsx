@@ -114,7 +114,10 @@ export function PlanSummaryTile({
         </div>
         {editing && (
           <div
-            className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/tile:opacity-100"
+            className={cn(
+              "flex shrink-0 items-center gap-0.5 transition-opacity",
+              compact ? "opacity-100" : "opacity-0 group-hover/tile:opacity-100",
+            )}
             onPointerDown={(e) => e.stopPropagation()}
           >
             <span

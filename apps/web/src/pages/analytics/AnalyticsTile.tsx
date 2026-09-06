@@ -87,14 +87,19 @@ export function AnalyticsTile({
       ? { ...state, pct: Math.round(value?.value ?? 0), expectedPct: Math.min(100, planValue!) }
       : state;
 
+  // Без кольца цифре достаётся вся плитка — значит, она должна быть крупнее.
   const numberClass = wall
     ? big
-      ? "text-[86px] leading-[0.92]"
+      ? withRing
+        ? "text-[86px] leading-[0.92]"
+        : "text-[104px] leading-[0.92]"
       : tile.size === "m"
         ? "text-[62px] leading-[0.92]"
         : "text-[50px] leading-[0.92]"
     : big
-      ? "text-[44px] leading-none"
+      ? withRing
+        ? "text-[44px] leading-none"
+        : "text-[56px] leading-none"
       : tile.size === "m"
         ? "text-[34px] leading-none"
         : "text-[27px] leading-none";
@@ -162,7 +167,11 @@ export function AnalyticsTile({
         </div>
         {editing && (
           <div
-            className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/tile:opacity-100"
+            className={cn(
+              "flex shrink-0 items-center gap-0.5 transition-opacity",
+              // На телефоне наведения нет — панель держим видимой.
+              compact ? "opacity-100" : "opacity-0 group-hover/tile:opacity-100",
+            )}
             onPointerDown={(e) => e.stopPropagation()}
           >
             <span
