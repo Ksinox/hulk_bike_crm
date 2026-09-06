@@ -80,6 +80,12 @@ export function AnalyticsTile({
   const ringSize = wall ? (big ? 208 : 132) : big ? 128 : 84;
   const ringStroke = wall ? (big ? 26 : 18) : big ? 16 : 11;
   const withRing = state != null && tile.size !== "s" && !compact;
+  // Загрузка парка: кольцо рисует сам показатель, засечка — план.
+  const ringIsValue = withRing && !!def.percentValue;
+  const ringState =
+    ringIsValue && state
+      ? { ...state, pct: Math.round(value?.value ?? 0), expectedPct: Math.min(100, planValue!) }
+      : state;
 
   const numberClass = wall
     ? big
@@ -195,12 +201,14 @@ export function AnalyticsTile({
       {/* Цифра + кольцо */}
       <div
         className={cn(
-          "mt-2 flex min-w-0 flex-1 items-center",
-          withRing ? "gap-4" : "flex-col justify-center",
-          withRing && (big ? "gap-6" : "gap-4"),
+          "mt-2 flex min-w-0 flex-1",
+          withRing
+            ? cn("items-center", big ? "gap-6" : "gap-4")
+            : "flex-col items-start justify-center",
         )}
       >
         <div className={cn("flex min-w-0 flex-1 flex-col justify-center", wall ? "gap-1.5" : "gap-1")}>
+          {!ringIsValue && (
           <div
             className={cn(
               "font-display font-extrabold tabular-nums",
@@ -220,8 +228,19 @@ export function AnalyticsTile({
               (value?.display ?? "—")
             )}
           </div>
+          )}
           {value?.caption && (
-            <div className={cn(wall ? "text-[18px] text-white/70" : "text-[12.5px] text-muted")}>
+            <div
+              className={cn(
+                ringIsValue
+                  ? wall
+                    ? "text-[26px] font-bold text-white/85"
+                    : "text-[17px] font-bold text-ink-2"
+                  : wall
+                    ? "text-[18px] text-white/70"
+                    : "text-[12.5px] text-muted",
+              )}
+            >
               {value.caption}
             </div>
           )}
@@ -240,9 +259,9 @@ export function AnalyticsTile({
           )}
         </div>
 
-        {withRing && state && (
+        {withRing && ringState && (
           <PlanRing
-            state={state}
+            state={ringState}
             size={ringSize}
             stroke={ringStroke}
             wall={wall}
