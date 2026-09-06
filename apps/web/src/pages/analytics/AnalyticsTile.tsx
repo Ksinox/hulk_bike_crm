@@ -201,7 +201,7 @@ export function AnalyticsTile({
       <div
         style={withRing ? { gap: "2.5cqmin" } : undefined}
         className={cn(
-          "relative flex min-h-0 flex-1",
+          "relative flex min-h-0 flex-1 overflow-hidden",
           withRing ? "items-center" : "flex-col justify-center",
         )}
       >
@@ -247,7 +247,7 @@ export function AnalyticsTile({
               }}
               className={cn(
                 "truncate",
-                ringIsValue && "font-bold",
+                ringIsValue ? "font-bold" : "a-hide-xs",
                 wall ? "text-white/60" : "text-muted",
               )}
             >
@@ -258,7 +258,7 @@ export function AnalyticsTile({
             <div
               style={{ fontSize: "max(9px, min(3.2cqmin, 20px))" }}
               className={cn(
-                "truncate font-semibold",
+                "a-hide-sm truncate font-semibold",
                 wall ? "text-white/45" : "text-muted-2",
               )}
             >
@@ -266,7 +266,7 @@ export function AnalyticsTile({
             </div>
           )}
           {state && !hidden && (
-            <StatusChip state={state} wall={wall} />
+            <StatusChip state={state} wall={wall} className="a-hide-sm" />
           )}
         </div>
 
@@ -295,7 +295,7 @@ export function AnalyticsTile({
         >
           <div
             style={{ fontSize: "max(9px, min(3.2cqmin, 20px))" }}
-            className="flex items-baseline justify-between gap-2"
+            className="a-hide-xxs flex items-baseline justify-between gap-2"
           >
             <span className={wall ? "text-white/45" : "text-muted-2"}>
               план {def.format(planValue!)}

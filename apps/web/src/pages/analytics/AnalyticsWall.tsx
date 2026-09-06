@@ -78,15 +78,16 @@ export function AnalyticsWall() {
     const gridH = Math.max(120, vp.h - Math.min(vp.h * 0.16, 130));
     const gap = Math.max(6, Math.min(vp.w, vp.h) * 0.012);
     let best = { cols: 6, rows: 1, score: Number.POSITIVE_INFINITY };
-    for (let c = vp.w < 760 ? 2 : 3; c <= (vp.w < 760 ? 3 : 9); c++) {
+    for (let c = vp.w < 760 ? 2 : 3; c <= (vp.w < 760 ? 3 : 10); c++) {
       const r = packedRows(spans, c);
       const cellW = (vp.w - gap * (c + 1)) / c;
       const cellH = (gridH - gap * (r + 1)) / r;
       if (cellW <= 0 || cellH <= 0) continue;
       // Целевая пропорция клетки — 1.45; штрафуем и слишком мелкие клетки.
       const aspect = Math.abs(cellW / cellH - 1.45);
-      const small = cellH < 90 ? (90 - cellH) / 45 : 0;
-      const score = aspect + small;
+      const small = cellH < 128 ? (128 - cellH) / 40 : 0;
+      const narrow = cellW < 150 ? (150 - cellW) / 60 : 0;
+      const score = aspect + small + narrow;
       if (score < best.score) best = { cols: c, rows: r, score };
     }
     return best;

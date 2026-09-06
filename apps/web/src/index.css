@@ -480,3 +480,23 @@
   border: 1px solid rgba(255, 255, 255, 0.55) !important;
   box-shadow: 0 0 0 9999em rgba(9, 14, 26, 0.72) !important;
 }
+
+/* Аналитика (07.09): плитка сама решает, что показать при своей высоте.
+   Заказчик просил, чтобы всё помещалось на любом мониторе — значит, на
+   низкой плитке лишние строки не сжимаются в кашу, а честно уходят,
+   оставляя главное: заголовок, цифру и шкалу плана. */
+@container (max-height: 165px) {
+  .a-hide-sm {
+    display: none !important;
+  }
+}
+@container (max-height: 120px) {
+  .a-hide-xs {
+    display: none !important;
+  }
+}
+@container (max-height: 92px) {
+  .a-hide-xxs {
+    display: none !important;
+  }
+}
