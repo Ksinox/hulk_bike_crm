@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Fragment } from "react";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DateRangeFilter } from "@/pages/clients/DateRangeFilter";
@@ -8,6 +9,7 @@ import {
   type PeriodPreset,
   type Range,
 } from "./salesUtils";
+import { Sensitive } from "@/components/Sensitive";
 
 /** Мелкие переиспользуемые элементы блока «Продажи». */
 
@@ -57,6 +59,7 @@ export function StatTile({
   delta,
   accent,
   icon,
+  sensitive,
 }: {
   label: string;
   value: string;
@@ -66,6 +69,8 @@ export function StatTile({
   delta?: number | null;
   accent?: boolean;
   icon?: ReactNode;
+  /** 06.09 (п.11): значение размыто, пока директор не откроет ключом. */
+  sensitive?: boolean;
 }) {
   return (
     <div
@@ -98,7 +103,7 @@ export function StatTile({
             accent ? "text-white" : "text-ink",
           )}
         >
-          {value}
+          {sensitive ? <Sensitive>{value}</Sensitive> : value}
         </span>
         {suffix && (
           <span
@@ -246,13 +251,17 @@ export function PlanBar({
   fact,
   plan,
   unit,
+  sensitive,
 }: {
   label: string;
   fact: number;
   plan: number;
   unit?: string;
+  /** 06.09 (п.11): факт/план по прибыли — размыты без ключа. */
+  sensitive?: boolean;
 }) {
   const pct = plan > 0 ? Math.round((fact / plan) * 100) : 0;
+  const Wrap = sensitive ? Sensitive : Fragment;
   const done = pct >= 100;
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -261,16 +270,18 @@ export function PlanBar({
           {label}
         </span>
         <span className="ml-auto text-[13px] font-bold tabular-nums text-ink">
-          {fact.toLocaleString("ru-RU")}
-          {unit ? ` ${unit}` : ""}
+          <Wrap>
+            {fact.toLocaleString("ru-RU")}
+            {unit ? ` ${unit}` : ""}
+          </Wrap>
         </span>
         <span className="text-[11px] text-muted-2">
           {plan > 0 ? (
-            <>
+            <Wrap>
               из {plan.toLocaleString("ru-RU")}
               {unit ? ` ${unit}` : ""} ·{" "}
               <b className={done ? "text-emerald-700" : "text-ink-2"}>{pct}%</b>
-            </>
+            </Wrap>
           ) : (
             "плана нет"
           )}

@@ -7,6 +7,7 @@ import type { ApiScooter } from "@/lib/api/types";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { EmptyState, SectionCard, StatTile } from "./SalesUI";
 import { fmt, fmtCompact } from "./salesUtils";
+import { Sensitive } from "@/components/Sensitive";
 
 /**
  * «В продаже» (31.08) — техника со статусом «Продаётся».
@@ -76,12 +77,14 @@ export function SalesStock({
           accent
         />
         <StatTile
+          sensitive
           label="Вложено (закуп)"
           value={fmtCompact(sums.cost)}
           suffix="₽"
           hint="сумма цен закупа"
         />
         <StatTile
+          sensitive
           label="Ожидаемая прибыль"
           value={fmtCompact(sums.profit)}
           suffix="₽"
@@ -168,7 +171,7 @@ export function SalesStock({
                         </span>
                       )}
                       {s.salePrice && s.purchasePrice != null && (
-                        <span
+                        <Sensitive
                           className={cn(
                             "text-[12px] tabular-nums",
                             profit >= 0 ? "text-emerald-700" : "text-red-ink",
@@ -176,7 +179,7 @@ export function SalesStock({
                         >
                           {profit >= 0 ? "+" : ""}
                           {fmt(profit)} ₽
-                        </span>
+                        </Sensitive>
                       )}
                       <button
                         type="button"
@@ -238,7 +241,7 @@ export function SalesStock({
                         {fmt(s.mileage ?? 0)} км
                       </td>
                       <td className="px-2 py-2.5 text-right tabular-nums text-muted">
-                        {s.purchasePrice != null ? `${fmt(s.purchasePrice)} ₽` : "—"}
+                        <Sensitive>{s.purchasePrice != null ? `${fmt(s.purchasePrice)} ₽` : "—"}</Sensitive>
                       </td>
                       <td className="px-2 py-2.5 text-right">
                         {s.salePrice ? (
@@ -257,9 +260,11 @@ export function SalesStock({
                           profit >= 0 ? "text-emerald-700" : "text-red-ink",
                         )}
                       >
-                        {s.salePrice && s.purchasePrice != null
-                          ? `${profit >= 0 ? "+" : ""}${fmt(profit)} ₽`
-                          : "—"}
+                        <Sensitive>
+                          {s.salePrice && s.purchasePrice != null
+                            ? `${profit >= 0 ? "+" : ""}${fmt(profit)} ₽`
+                            : "—"}
+                        </Sensitive>
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <span className="inline-flex items-center gap-1.5">
@@ -365,27 +370,31 @@ function QuickEditDialog({
         <div className="mt-4 grid grid-cols-2 gap-3">
           <Field label="Пробег" suffix="км" value={mileage} onChange={setMileage} numeric />
           <Field label="Партия закупа" value={batch} onChange={setBatch} placeholder="Партия 3, апрель" />
-          <Field
-            label="Цена закупа"
-            suffix="₽"
-            value={purchase}
-            onChange={setPurchase}
-            numeric
-          />
+          <Sensitive block>
+            <Field
+              label="Цена закупа"
+              suffix="₽"
+              value={purchase}
+              onChange={setPurchase}
+              numeric
+            />
+          </Sensitive>
           <Field label="Цена продажи" suffix="₽" value={sale} onChange={setSale} numeric />
         </div>
 
         <div className="mt-3 flex items-center justify-between rounded-xl bg-surface-soft px-3 py-2 text-[12.5px]">
           <span className="text-muted">Прибыль со сделки</span>
-          <b
-            className={cn(
-              "tabular-nums",
-              profit >= 0 ? "text-emerald-700" : "text-red-ink",
-            )}
-          >
-            {profit >= 0 ? "+" : ""}
-            {fmt(profit)} ₽
-          </b>
+          <Sensitive>
+            <b
+              className={cn(
+                "tabular-nums",
+                profit >= 0 ? "text-emerald-700" : "text-red-ink",
+              )}
+            >
+              {profit >= 0 ? "+" : ""}
+              {fmt(profit)} ₽
+            </b>
+          </Sensitive>
         </div>
 
         <label className="mt-3 flex flex-col gap-1">

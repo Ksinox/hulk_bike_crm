@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BUCKET_AXIS, fmt, fmtCompact, type Bucket, type Point } from "./salesUtils";
+import { Sensitive } from "@/components/Sensitive";
 
 /**
  * График динамики продаж (31.08, переработан по фидбэку).
@@ -315,7 +316,12 @@ export function SalesChart({
                       {!p.forecast && (
                         <div className="text-[10px] text-white/70">
                           {p.units} ед.
-                          {p.profit > 0 && ` · прибыль ${fmt(p.profit)} ₽`}
+                          {p.profit > 0 && (
+                            <>
+                              {" · прибыль "}
+                              <Sensitive>{fmt(p.profit)} ₽</Sensitive>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

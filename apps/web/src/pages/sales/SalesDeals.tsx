@@ -13,6 +13,7 @@ import {
   type PeriodPreset,
   type Range,
 } from "./salesUtils";
+import { Sensitive } from "@/components/Sensitive";
 
 /**
  * «Сделки» — детализация продаж за период (31.08).
@@ -158,7 +159,7 @@ export function SalesDeals({
           <>
             {range.label} · найдено {filtered.length} · продано {sum.units} ед. на{" "}
             <b className="text-ink-2">{fmt(sum.revenue)} ₽</b> · прибыль{" "}
-            <b className="text-emerald-700">{fmt(sum.profit)} ₽</b>
+            <Sensitive><b className="text-emerald-700">{fmt(sum.profit)} ₽</b></Sensitive>
           </>
         }
       >
@@ -247,7 +248,7 @@ function DealCard({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
           {deal.vin && ` · VIN ${deal.vin}`}
         </span>
         {deal.purchasePrice != null && (
-          <span
+          <Sensitive
             className={cn(
               "shrink-0 tabular-nums",
               profit >= 0 ? "text-emerald-700" : "text-red-ink",
@@ -255,7 +256,7 @@ function DealCard({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
           >
             {profit >= 0 ? "+" : ""}
             {fmt(profit)} ₽
-          </span>
+          </Sensitive>
         )}
       </div>
       <div className="flex items-center gap-2">
@@ -326,7 +327,7 @@ function DealRow({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
         )}
       </td>
       <td className="hidden whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-muted 2xl:table-cell">
-        {deal.purchasePrice != null ? `${fmt(deal.purchasePrice)} ₽` : "—"}
+        <Sensitive>{deal.purchasePrice != null ? `${fmt(deal.purchasePrice)} ₽` : "—"}</Sensitive>
       </td>
       <td className="whitespace-nowrap px-2 py-2.5 text-right font-bold tabular-nums text-ink">
         {fmt(deal.price)} ₽
@@ -337,7 +338,9 @@ function DealRow({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
           profit >= 0 ? "text-emerald-700" : "text-red-ink",
         )}
       >
-        {deal.purchasePrice != null ? `${profit >= 0 ? "+" : ""}${fmt(profit)} ₽` : "—"}
+        <Sensitive>
+          {deal.purchasePrice != null ? `${profit >= 0 ? "+" : ""}${fmt(profit)} ₽` : "—"}
+        </Sensitive>
       </td>
       <td className="px-4 py-2.5 text-right">
         <span className="inline-flex items-center gap-1.5">

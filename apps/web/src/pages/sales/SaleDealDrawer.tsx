@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import {
   Ban,
   Banknote,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/api/sales";
 import { ManagerAvatar } from "./SalesUI";
 import { fmt, ruDate, STATUS_CLASS, STATUS_LABEL } from "./salesUtils";
+import { Sensitive } from "@/components/Sensitive";
 
 /**
  * Карточка сделки (31.08): всё о продаже в одном окне — техника с VIN,
@@ -87,10 +89,12 @@ export function SaleDealDrawer({
           <div className="grid grid-cols-3 gap-2">
             <Money label="Продажа" value={`${fmt(deal.price)} ₽`} accent />
             <Money
+              sensitive
               label="Закуп"
               value={deal.purchasePrice != null ? `${fmt(deal.purchasePrice)} ₽` : "—"}
             />
             <Money
+              sensitive
               label="Прибыль"
               value={
                 deal.purchasePrice != null
@@ -360,13 +364,17 @@ function Money({
   hint,
   accent,
   tone,
+  sensitive,
 }: {
   label: string;
   value: string;
   hint?: string;
   accent?: boolean;
   tone?: "good" | "bad";
+  /** 06.09 (п.11): закуп и прибыль — размыты без ключа директора. */
+  sensitive?: boolean;
 }) {
+  const Wrap = sensitive ? Sensitive : Fragment;
   return (
     <div
       className={cn(
@@ -394,7 +402,7 @@ function Money({
                 : "text-ink",
         )}
       >
-        {value}
+        <Wrap>{value}</Wrap>
       </div>
       {hint && (
         <div

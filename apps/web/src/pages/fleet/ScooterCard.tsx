@@ -63,6 +63,7 @@ import {
   scooterModelName,
 } from "@/components/ScooterName";
 import { askArchiveReason } from "./archiveReason";
+import { Sensitive } from "@/components/Sensitive";
 
 type TabId =
   | "overview"
@@ -1366,7 +1367,7 @@ export function ScooterCard({
                 <div className="mt-1.5 text-[12px] text-muted-2">
                   {hasPurchasePrice ? (
                     <>
-                      Цена закупа <b>{fmt(purchase)} ₽</b>
+                      Цена закупа <Sensitive><b>{fmt(purchase)} ₽</b></Sensitive>
                       {covered
                         ? " — полностью амортизирована."
                         : ` — осталось покрыть ${fmt(
@@ -1467,7 +1468,7 @@ export function ScooterCard({
                     Цена закупа
                   </div>
                   <div className="mt-1 font-display text-[20px] font-extrabold tabular-nums text-ink">
-                    {hasPurchasePrice ? `${fmt(purchase)} ₽` : "—"}
+                    <Sensitive>{hasPurchasePrice ? `${fmt(purchase)} ₽` : "—"}</Sensitive>
                   </div>
                   {!hasPurchasePrice && (
                     <div className="mt-1 text-[11px] text-blue-600">
@@ -1486,8 +1487,10 @@ export function ScooterCard({
                         netProfit >= 0 ? "text-green-ink" : "text-red-ink",
                       )}
                     >
-                      {netProfit >= 0 ? "+" : "−"}
-                      {fmt(Math.abs(netProfit))} ₽
+                      <Sensitive>
+                        {netProfit >= 0 ? "+" : "−"}
+                        {fmt(Math.abs(netProfit))} ₽
+                      </Sensitive>
                     </div>
                   ) : (
                     <div className="mt-1 font-display text-[20px] font-extrabold text-muted-2">

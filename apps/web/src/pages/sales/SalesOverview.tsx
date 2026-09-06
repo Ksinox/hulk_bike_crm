@@ -50,6 +50,7 @@ import {
   type Range,
   ruDateShort,
 } from "./salesUtils";
+import { Sensitive } from "@/components/Sensitive";
 
 /**
  * Главный экран блока «Продажи» (31.08).
@@ -220,6 +221,7 @@ export function SalesOverview({
           accent
         />
         <StatTile
+          sensitive
           label="Прибыль"
           value={fmtCompact(now.profit)}
           suffix="₽"
@@ -232,6 +234,7 @@ export function SalesOverview({
           icon={<TrendingUp size={13} />}
         />
         <StatTile
+          sensitive
           label="Маржинальность"
           value={String(now.marginPct)}
           suffix="%"
@@ -345,8 +348,9 @@ export function SalesOverview({
           <div className="flex flex-1 flex-col justify-between gap-3 p-4">
             <PlanBar label="Единиц" fact={planFact.units} plan={plan?.units ?? 0} unit="ед." />
             <PlanBar label="Выручка" fact={planFact.revenue} plan={plan?.revenue ?? 0} unit="₽" />
-            <PlanBar label="Прибыль" fact={planFact.profit} plan={plan?.profit ?? 0} unit="₽" />
+            <PlanBar sensitive label="Прибыль" fact={planFact.profit} plan={plan?.profit ?? 0} unit="₽" />
             <PlanBar
+              sensitive
               label="Маржинальность"
               fact={planFact.marginPct}
               plan={plan?.marginPct ?? 0}
@@ -449,7 +453,7 @@ export function SalesOverview({
                     />
                   </div>
                   <div className="text-[11px] text-muted-2">
-                    {fmt(m.revenue)} ₽ выручки · прибыль {fmt(m.profit)} ₽ · средний чек{" "}
+                    {fmt(m.revenue)} ₽ выручки · прибыль <Sensitive>{fmt(m.profit)} ₽</Sensitive> · средний чек{" "}
                     {fmt(m.avgCheck)} ₽
                   </div>
                 </div>
@@ -547,7 +551,7 @@ function RecentRow({
           {fmt(deal.price)} ₽
         </span>
         <span className="block text-[11px] tabular-nums text-emerald-700">
-          +{fmt(deal.price - (deal.purchasePrice ?? 0))} ₽
+          <Sensitive>+{fmt(deal.price - (deal.purchasePrice ?? 0))} ₽</Sensitive>
         </span>
       </span>
     </button>

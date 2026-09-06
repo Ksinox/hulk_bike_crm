@@ -18,6 +18,7 @@ import { SalesManagers } from "./SalesManagers";
 import { NewSaleWizard } from "./NewSaleWizard";
 import { SaleDealDrawer } from "./SaleDealDrawer";
 import { plural } from "./salesUtils";
+import { SensitiveToggle } from "@/components/Sensitive";
 
 /**
  * Раздел «Продажи» (задание заказчика 31.08).
@@ -122,6 +123,7 @@ export function Sales() {
         <span className="rounded-full bg-emerald-100 px-3 py-1 text-[11.5px] font-bold text-emerald-700">
           {stockCount} в продаже
         </span>
+        <SensitiveToggle />
         {inWork > 0 && (
           <button
             type="button"

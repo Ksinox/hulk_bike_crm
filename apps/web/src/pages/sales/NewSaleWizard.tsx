@@ -40,6 +40,7 @@ import {
 import { ManagerAvatar } from "./SalesUI";
 import { saleFormUrl } from "./saleForm";
 import { fmt } from "./salesUtils";
+import { Sensitive } from "@/components/Sensitive";
 
 /**
  * Мастер сделки продажи (31.08) — этапы из задания заказчика:
@@ -668,7 +669,7 @@ function StepScooter({
                 </span>
                 {s.purchasePrice != null && (
                   <span className="block text-[11px] text-muted-2">
-                    закуп {fmt(s.purchasePrice)} ₽
+                    закуп <Sensitive>{fmt(s.purchasePrice)} ₽</Sensitive>
                   </span>
                 )}
               </span>
@@ -736,13 +737,14 @@ function StepPrice({
       )}
 
       <div className="grid grid-cols-3 gap-2">
-        <MiniStat label="Закуп" value={purchase != null ? `${fmt(purchase)} ₽` : "—"} />
+        <MiniStat sensitive label="Закуп" value={purchase != null ? `${fmt(purchase)} ₽` : "—"} />
         <MiniStat
+          sensitive
           label="Прибыль"
           value={profit != null ? `${profit >= 0 ? "+" : ""}${fmt(profit)} ₽` : "—"}
           tone={profit != null && profit < 0 ? "bad" : "good"}
         />
-        <MiniStat label="Маржа" value={margin != null ? `${margin}%` : "—"} />
+        <MiniStat sensitive label="Маржа" value={margin != null ? `${margin}%` : "—"} />
       </div>
 
       <label className="flex flex-col gap-1.5">
@@ -806,7 +808,12 @@ function StepManager({
                   </span>
                   <span className="block text-[12px] text-muted">
                     {m.commissionPct}% с прибыли
-                    {cut != null && ` · ему ${fmt(cut)} ₽`}
+                    {cut != null && (
+                      <>
+                        {" · ему "}
+                        <Sensitive>{fmt(cut)} ₽</Sensitive>
+                      </>
+                    )}
                   </span>
                 </span>
                 {managerId === m.id && (
@@ -999,10 +1006,13 @@ function MiniStat({
   label,
   value,
   tone,
+  sensitive,
 }: {
   label: string;
   value: string;
   tone?: "good" | "bad";
+  /** 06.09 (п.11): закуп/прибыль/маржа — размыты без ключа директора. */
+  sensitive?: boolean;
 }) {
   return (
     <div className="rounded-xl bg-surface-soft px-3 py-2">
@@ -1015,7 +1025,7 @@ function MiniStat({
           tone === "bad" ? "text-red-ink" : tone === "good" ? "text-emerald-700" : "text-ink",
         )}
       >
-        {value}
+        {sensitive ? <Sensitive>{value}</Sensitive> : value}
       </div>
     </div>
   );

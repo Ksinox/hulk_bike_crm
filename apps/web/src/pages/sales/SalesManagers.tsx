@@ -13,6 +13,7 @@ import {
 } from "@/lib/api/sales";
 import { EmptyState, ManagerAvatar, SectionCard, StatTile } from "./SalesUI";
 import { fmt, ruDateShort, STATUS_CLASS, STATUS_LABEL, totals } from "./salesUtils";
+import { Sensitive } from "@/components/Sensitive";
 
 /**
  * «Менеджеры» (31.08): кто продаёт, под каким процентом и с какой историей.
@@ -109,7 +110,7 @@ export function SalesManagers({ onOpenDeal }: { onOpenDeal: (id: number) => void
         <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
           <StatTile label="Продано" value={fmt(t.units)} suffix="ед." hint="за всё время" />
           <StatTile label="Выручка" value={fmt(t.revenue)} suffix="₽" accent />
-          <StatTile label="Прибыль" value={fmt(t.profit)} suffix="₽" hint={`маржа ${t.marginPct}%`} />
+          <StatTile sensitive label="Прибыль" value={fmt(t.profit)} suffix="₽" hint={`маржа ${t.marginPct}%`} />
           <StatTile
             label="Вознаграждение"
             value={fmt(t.commission)}
@@ -223,9 +224,9 @@ export function SalesManagers({ onOpenDeal }: { onOpenDeal: (id: number) => void
                       <span className="block text-[13px] font-bold tabular-nums text-ink">
                         {fmt(t.revenue)} ₽
                       </span>
-                      <span className="block text-[11px] tabular-nums text-emerald-700">
+                      <Sensitive className="block text-[11px] tabular-nums text-emerald-700">
                         +{fmt(t.profit)} ₽
-                      </span>
+                      </Sensitive>
                     </span>
                   </button>
                 );
@@ -274,7 +275,7 @@ export function SalesManagers({ onOpenDeal }: { onOpenDeal: (id: number) => void
                         {fmt(t.revenue)} ₽
                       </td>
                       <td className="px-2 py-2.5 text-right tabular-nums text-emerald-700">
-                        {fmt(t.profit)} ₽
+                        <Sensitive>{fmt(t.profit)} ₽</Sensitive>
                       </td>
                       <td className="px-2 py-2.5 text-right tabular-nums text-muted">
                         {t.commission ? `${fmt(t.commission)} ₽` : "—"}
