@@ -567,8 +567,9 @@ function WorkPricePicker({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {groups.length === 0 && (
           <div className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-[12.5px] text-muted">
-            Прайс работ пока пуст. Он заводится в «Настройках» → «Прайс» →
-            «Прайс работ»: строка «что чинили» и цена по умолчанию.
+            Прайс работ пока пуст. Он заводится в «Документах» →
+            «Прейскурант» → «Прайс работ»: строка «что делали» и цена по
+            умолчанию.
           </div>
         )}
         {groups.map((g) => {
