@@ -90,6 +90,20 @@ try {
     secure: true,
     sameSite: "None",
   });
+  // Кадры «было» со старой сборки: фронт на localhost, /api проксируется
+  // на preview. Кука api-домена туда не поедет — ставим её и на localhost,
+  // прокси передаст заголовок дальше (иначе остаётся форма входа).
+  if (new URL(BASE).hostname === "localhost") {
+    await page.setCookie({
+      name: "hulk_session",
+      value: m[1],
+      domain: "localhost",
+      path: "/",
+      httpOnly: false,
+      secure: false,
+      sameSite: "Lax",
+    });
+  }
   // Профиль браузера чистый на каждый прогон → NewApplicationDetector
   // всплывал бы модалкой «Новая заявка» поверх любого сценария. Помечаем
   // все заявки «просмотренными» (id 1..200) до загрузки приложения.
