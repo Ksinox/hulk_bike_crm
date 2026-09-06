@@ -10,8 +10,7 @@ import {
   Search,
   ShieldCheck,
   UserPlus,
-  X,
-} from "lucide-react";
+  X, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useAllClients } from "@/pages/clients/clientStore";
@@ -19,6 +18,7 @@ import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { SendApplicationButton } from "@/pages/applications/SendApplicationButton";
 import { useApiScooters } from "@/lib/api/scooters";
 import { availableForBuyout } from "@/lib/buyoutStock";
+import { BuyoutContractPreview } from "./BuyoutContractPreview";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import {
@@ -30,6 +30,7 @@ import {
   usePatchBuyoutDeal,
   useSignBuyoutDeal,
   type BuyoutDeal,
+  type CustomScheduleRow,
 } from "@/lib/api/buyout";
 import { saleFormUrl } from "@/pages/sales/saleForm";
 import { fmt } from "@/pages/sales/salesUtils";
@@ -110,6 +111,13 @@ export function NewBuyoutWizard({
   const [down, setDown] = useState(String(deal?.downPayment ?? ""));
   const [price, setPrice] = useState(String(deal?.scooterPrice ?? ""));
   const [startDate, setStartDate] = useState(deal?.startDate ?? "");
+  /** 06.09 (п.15): свой график — даты/суммы вручную, «уже оплачено». */
+  const [customOn, setCustomOn] = useState(!!deal?.customSchedule?.length);
+  const [customRows, setCustomRows] = useState<CustomScheduleRow[]>(
+    deal?.customSchedule ?? [],
+  );
+  /** Договор выкупа в окне CRM (06.09, п.12). */
+  const [contractOpen, setContractOpen] = useState(false);
   const [airtag, setAirtag] = useState(deal?.airtagConfirmed ?? false);
   const [clientQ, setClientQ] = useState("");
   const [scooterQ, setScooterQ] = useState("");
@@ -134,6 +142,8 @@ export function NewBuyoutWizard({
     setDown(String(deal.downPayment || ""));
     setPrice(String(deal.scooterPrice || ""));
     setStartDate(deal.startDate ?? "");
+    setCustomOn(!!deal.customSchedule?.length);
+    setCustomRows(deal.customSchedule ?? []);
     setAirtag(deal.airtagConfirmed);
     if (deal.status === "contract") setStep(5);
     else if (deal.scooterId) setStep(3);
@@ -171,6 +181,18 @@ export function NewBuyoutWizard({
     [scooters, dealsData, scooterId, busyScooterIds],
   );
 
+  /** 06.09 (п.15): сумма и оплаченная часть своего графика. */
+  const customSum = customRows.reduce((s, r) => s + (r.amount || 0), 0);
+  const customPaid = customRows.reduce((s, r) => s + (r.paidAt ? r.amount || 0 : 0), 0);
+  const todayIso = () => new Date().toISOString().slice(0, 10);
+  const nextDateAfter = (iso?: string) => {
+    const d = iso ? new Date(`${iso}T00:00:00`) : new Date();
+    if (period === "week") d.setDate(d.getDate() + 7);
+    else d.setMonth(d.getMonth() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const updateRow = (i: number, p: Partial<CustomScheduleRow>) =>
+    setCustomRows((rows) => rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
   const client = clients.find((c) => c.id === clientId) ?? null;
   const scooter = scooters.find((s) => s.id === scooterId) ?? null;
   const markups = markupsData?.markups ?? {};
@@ -197,6 +219,25 @@ export function NewBuyoutWizard({
     client &&
     (client.passportRaw || (client.passportSeries && client.passportNumber))
   );
+  /** Разбить остаток поровну по датам с первого платежа — как автоматический график. */
+  const splitEvenly = (): CustomScheduleRow[] => {
+    const start = startDate || todayIso();
+    const rows: CustomScheduleRow[] = [];
+    let left = calc.financed;
+    for (let i = 0; i < calc.count && left > 0; i++) {
+      const last = i === calc.count - 1;
+      const amount = last ? left : Math.min(calc.payment, left);
+      const d = new Date(`${start}T00:00:00`);
+      if (period === "week") d.setDate(d.getDate() + 7 * i);
+      else d.setMonth(d.getMonth() + i);
+      rows.push({
+        dueDate: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+        amount,
+      });
+      left -= amount;
+    }
+    return rows;
+  };
 
   const persist = async (patch: Record<string, unknown>) => {
     if (dealId == null) {
@@ -227,12 +268,19 @@ export function NewBuyoutWizard({
         if (calc.financed <= 0) {
           return toast.error("Взнос покрывает всю сумму — это продажа, не выкуп");
         }
+        if (customOn && customSum !== calc.financed) {
+          return toast.error(
+            "График не сходится",
+            `Сумма строк ${fmt(customSum)} ₽, а остаток по договору ${fmt(calc.financed)} ₽.`,
+          );
+        }
         await persist({
           scooterPrice: calc.base,
           termMonths,
           downPayment: calc.downNum,
           period,
-          startDate: startDate || null,
+          startDate: startDate || (customOn && customRows[0] ? customRows[0].dueDate : null),
+          customSchedule: customOn ? customRows : null,
         });
       } else if (step === 4) {
         if (!airtag) return toast.error("Подтвердите установку метки на технику");
@@ -266,7 +314,13 @@ export function NewBuyoutWizard({
     (step === 0 && !!clientId) ||
     (step === 1 && blacklistChecked) ||
     (step === 2 && !!scooterId) ||
-    (step === 3 && calc.total > 0 && calc.financed > 0) ||
+    (step === 3 &&
+      calc.total > 0 &&
+      calc.financed > 0 &&
+      (!customOn ||
+        (customRows.length > 0 &&
+          customRows.every((r) => r.dueDate && r.amount > 0) &&
+          customSum === calc.financed))) ||
     (step === 4 && airtag) ||
     step === 5;
 
@@ -641,7 +695,165 @@ export function NewBuyoutWizard({
                   onChange={(e) => setStartDate(e.target.value)}
                   className="h-11 rounded-[14px] border border-border bg-surface px-3 text-[14px] tabular-nums outline-none focus:border-blue-600"
                 />
+                <span className="text-[11.5px] text-muted-2">
+                  Можно указать прошедшую дату — сделка оформляется задним числом.
+                </span>
               </label>
+
+              {/* 06.09 (п.15): свой график — суммы и даты вручную, часть уже оплачена */}
+              <div className="flex flex-col gap-2 rounded-2xl border border-border p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                    График платежей
+                  </span>
+                  <div className="ml-auto flex h-9 gap-1 rounded-[12px] bg-surface-soft p-1">
+                    {(
+                      [
+                        [false, "Автоматически"],
+                        [true, "Свой"],
+                      ] as const
+                    ).map(([on, label]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => {
+                          setCustomOn(on);
+                          if (on && customRows.length === 0) setCustomRows(splitEvenly());
+                        }}
+                        className={cn(
+                          "rounded-[9px] px-3 text-[12.5px] font-semibold transition-colors",
+                          customOn === on ? "bg-surface text-ink shadow-card-sm" : "text-muted",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {!customOn ? (
+                  <div className="text-[12px] text-muted">
+                    {calc.count} платежей по {fmt(calc.payment)} ₽{" "}
+                    {period === "week" ? "еженедельно" : "ежемесячно"} с даты первого платежа.
+                    Нужно раскидать остаток по своим датам или отметить, что часть уже
+                    выплачена, — переключите на «Свой».
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-[12px] text-muted">
+                      Даты и суммы — как договорились с клиентом. «Оплачено» — деньги уже
+                      получены: строка закроется при подписании, поступление встанет на
+                      указанную дату.
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      {customRows.map((r, i) => (
+                        <div
+                          key={i}
+                          className="flex flex-wrap items-center gap-1.5 rounded-xl bg-surface-soft p-1.5"
+                        >
+                          <span className="w-5 text-center text-[11px] font-bold text-muted-2">
+                            {i + 1}
+                          </span>
+                          <input
+                            type="date"
+                            value={r.dueDate}
+                            onChange={(e) => updateRow(i, { dueDate: e.target.value })}
+                            className="h-10 min-w-[140px] flex-1 rounded-[10px] border border-border bg-surface px-2 text-[13px] tabular-nums outline-none focus:border-blue-600"
+                          />
+                          <span className="relative min-w-[120px] flex-1">
+                            <input
+                              inputMode="numeric"
+                              value={r.amount ? String(r.amount) : ""}
+                              onChange={(e) =>
+                                updateRow(i, { amount: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })
+                              }
+                              placeholder="0"
+                              className="h-10 w-full rounded-[10px] border border-border bg-surface pl-2 pr-7 text-[13px] font-bold tabular-nums outline-none focus:border-blue-600"
+                            />
+                            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-2">
+                              ₽
+                            </span>
+                          </span>
+                          <label
+                            className={cn(
+                              "inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-[10px] border px-2 text-[12px] font-semibold",
+                              r.paidAt
+                                ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                : "border-border bg-surface text-muted",
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!r.paidAt}
+                              onChange={(e) =>
+                                updateRow(i, { paidAt: e.target.checked ? r.dueDate || todayIso() : null })
+                              }
+                              className="h-4 w-4 accent-emerald-600"
+                            />
+                            оплачено
+                          </label>
+                          {r.paidAt && (
+                            <input
+                              type="date"
+                              value={r.paidAt}
+                              max={todayIso()}
+                              title="Когда получены деньги"
+                              onChange={(e) => updateRow(i, { paidAt: e.target.value })}
+                              className="h-10 min-w-[140px] rounded-[10px] border border-emerald-300 bg-emerald-50 px-2 text-[12.5px] tabular-nums text-emerald-800 outline-none"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setCustomRows((rows) => rows.filter((_, j) => j !== i))}
+                            className="flex h-10 w-9 items-center justify-center rounded-[10px] text-muted-2 hover:bg-red-soft hover:text-red-ink"
+                            title="Убрать строку"
+                          >
+                            <X size={15} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCustomRows((rows) => [
+                            ...rows,
+                            {
+                              dueDate: nextDateAfter(rows[rows.length - 1]?.dueDate),
+                              amount: Math.max(0, calc.financed - customSum),
+                            },
+                          ])
+                        }
+                        className="inline-flex h-9 items-center gap-1 rounded-full bg-surface-soft px-3 text-[12.5px] font-semibold text-ink"
+                      >
+                        <Plus size={14} /> Строка
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCustomRows(splitEvenly())}
+                        className="inline-flex h-9 items-center rounded-full bg-surface-soft px-3 text-[12.5px] font-semibold text-ink"
+                      >
+                        Разбить поровну
+                      </button>
+                      <span
+                        className={cn(
+                          "ml-auto text-[12.5px] font-bold tabular-nums",
+                          customSum === calc.financed ? "text-emerald-700" : "text-red-ink",
+                        )}
+                      >
+                        {fmt(customSum)} из {fmt(calc.financed)} ₽
+                        {customSum !== calc.financed &&
+                          ` (${customSum < calc.financed ? "не хватает" : "лишние"} ${fmt(Math.abs(calc.financed - customSum))} ₽)`}
+                      </span>
+                    </div>
+                    {customPaid > 0 && (
+                      <div className="text-[12px] text-emerald-700">
+                        Уже оплачено {fmt(customPaid)} ₽ — остаток к выплате {fmt(calc.financed - customPaid)} ₽.
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
 
               {/* Итог калькулятора */}
               <div className="rounded-2xl bg-ink p-4 text-white">
@@ -737,7 +949,11 @@ export function NewBuyoutWizard({
                 <Row label="Взнос" value={`${fmt(calc.downNum)} ₽`} />
                 <Row
                   label="График"
-                  value={`${calc.count} × ${fmt(calc.payment)} ₽ ${period === "week" ? "еженедельно" : "ежемесячно"}`}
+                  value={
+                    customOn
+                      ? `${customRows.length} платежей по своему графику${customPaid > 0 ? `, уже оплачено ${fmt(customPaid)} ₽` : ""}`
+                      : `${calc.count} × ${fmt(calc.payment)} ₽ ${period === "week" ? "еженедельно" : "ежемесячно"}`
+                  }
                 />
                 <Row
                   label="Первый платёж"
@@ -748,7 +964,7 @@ export function NewBuyoutWizard({
                 <button
                   type="button"
                   disabled={dealId == null}
-                  onClick={() => window.open(buyoutContractUrl(dealId!, "html"), "_blank")}
+                  onClick={() => setContractOpen(true)}
                   className="inline-flex h-11 items-center gap-2 rounded-full bg-ink px-5 text-[13.5px] font-bold text-white disabled:opacity-50"
                 >
                   <Printer size={16} /> Сформировать договор
@@ -802,6 +1018,9 @@ export function NewBuyoutWizard({
         </footer>
       </div>
 
+      {contractOpen && dealId != null && (
+        <BuyoutContractPreview dealId={dealId} onClose={() => setContractOpen(false)} />
+      )}
       {addClient && (
         <AddClientModal
           onClose={() => setAddClient(false)}

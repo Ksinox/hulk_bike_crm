@@ -41,9 +41,14 @@ export type BuyoutProgress = {
   nextDue: { date: string; amount: number } | null;
 };
 
+/** Строка своего графика (06.09, п.15); paidAt — «уже оплачено» на дату. */
+export type CustomScheduleRow = { dueDate: string; amount: number; paidAt?: string | null };
+
 export type BuyoutDeal = {
   id: number;
   status: BuyoutStatus;
+  /** Свой график до подписания; null — автоматический. */
+  customSchedule: CustomScheduleRow[] | null;
   clientId: number | null;
   scooterId: number | null;
   managerId: number | null;
@@ -131,6 +136,8 @@ export type BuyoutDealInput = {
   blacklistChecked?: boolean;
   airtagConfirmed?: boolean;
   comment?: string | null;
+  /** 06.09 (п.15): свой график; null — автоматический. */
+  customSchedule?: CustomScheduleRow[] | null;
 };
 
 export function useCreateBuyoutDeal() {
@@ -189,6 +196,8 @@ export function useBuyoutPayment() {
       note?: string | null;
       /** Полное досрочное погашение — сервер сам возьмёт остаток. */
       payoff?: boolean;
+      /** 06.09 (п.15): дата платежа задним числом, YYYY-MM-DD. */
+      paidAt?: string;
     }) =>
       api.post<{ ok: true; closed: boolean; progress: BuyoutProgress }>(
         `/api/buyout/deals/${id}/payments`,

@@ -2349,6 +2349,13 @@ export const buyoutDeals = pgTable(
     frameNumber: text("frame_number"),
     mileage: integer("mileage"),
     comment: text("comment"),
+    /**
+     * Свой график платежей (06.09, п.15): [{dueDate, amount, paidAt?}].
+     * null — график строится автоматически при подписании.
+     */
+    customSchedule: jsonb("custom_schedule").$type<
+      { dueDate: string; amount: number; paidAt?: string | null }[] | null
+    >(),
     cancelReason: text("cancel_reason"),
     contractAt: timestamp("contract_at", { withTimezone: true }),
     signedAt: timestamp("signed_at", { withTimezone: true }),

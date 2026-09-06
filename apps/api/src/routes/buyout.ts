@@ -78,8 +78,26 @@ const DealBody = z
     blacklistChecked: z.boolean().optional(),
     airtagConfirmed: z.boolean().optional(),
     comment: z.string().max(1000).optional().nullable(),
+    /**
+     * 06.09 (п.15): свой график — даты и суммы вручную; paidAt у строки
+     * означает «уже оплачено» (сделка задним числом). null — автоматически.
+     */
+    customSchedule: z
+      .array(
+        z.object({
+          dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          amount: z.number().int().min(1),
+          paidAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+        }),
+      )
+      .max(120)
+      .optional()
+      .nullable(),
   })
   .strict();
+
+type CustomRow = { dueDate: string; amount: number; paidAt?: string | null };
+type ScheduleRowLike = { seq: number; dueDate: string; amount: number };
 
 const fmtMoney = (n: number) => n.toLocaleString("ru-RU");
 
@@ -337,11 +355,30 @@ export async function buyoutRoutes(app: FastifyInstance) {
       if (busy.length) return reply.code(409).send(activeRentalConflict(busy));
     }
     const now = new Date();
+    // 06.09 (п.15): свой график — строки как задал оператор; сумма строк
+    // обязана сойтись с остатком по договору, иначе договор врёт.
+    const custom = ((deal.customSchedule as CustomRow[] | null) ?? [])
+      .slice()
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    const useCustom = custom.length > 0;
+    const terms = await recalc(deal);
+    if (useCustom) {
+      const sum = custom.reduce((s, r) => s + r.amount, 0);
+      if (sum !== terms.financed) {
+        return reply.code(409).send({
+          error: "schedule_mismatch",
+          message: `Сумма строк графика ${fmtMoney(sum)} ₽ не равна остатку по договору ${fmtMoney(terms.financed)} ₽.`,
+        });
+      }
+    }
     const start =
       deal.startDate ??
-      new Date(now.getTime() + 86_400_000).toISOString().slice(0, 10);
-    const terms = await recalc(deal);
-    const rows = buildSchedule(terms, start);
+      (useCustom
+        ? custom[0]!.dueDate
+        : new Date(now.getTime() + 86_400_000).toISOString().slice(0, 10));
+    const rows: (ScheduleRowLike & { paidAt: string | null })[] = useCustom
+      ? custom.map((r, i) => ({ seq: i + 1, dueDate: r.dueDate, amount: r.amount, paidAt: r.paidAt ?? null }))
+      : buildSchedule(terms, start).map((r) => ({ ...r, paidAt: null }));
 
     await db.delete(buyoutSchedule).where(eq(buyoutSchedule.dealId, id));
     if (rows.length) {
@@ -351,8 +388,25 @@ export async function buyoutRoutes(app: FastifyInstance) {
           seq: r.seq,
           dueDate: r.dueDate,
           amount: r.amount,
+          paidAmount: r.paidAt ? r.amount : 0,
+          paidAt: r.paidAt ? new Date(`${r.paidAt}T12:00:00`) : null,
         })),
       );
+    }
+    // Уже оплаченные строки — поступления на их даты (сделка задним числом).
+    const prepaid = rows.filter((r) => r.paidAt);
+    for (const r of prepaid) {
+      await db.insert(buyoutPayments).values({
+        dealId: id,
+        amount: r.amount,
+        cashAmount: r.amount,
+        transferAmount: 0,
+        method: "cash",
+        kind: "regular",
+        paidAt: new Date(`${r.paidAt}T12:00:00`),
+        userId: req.user?.userId ?? null,
+        note: `Оплачено ранее (${r.paidAt}) — внесено при оформлении`,
+      });
     }
     if (deal.downPayment > 0) {
       await db.insert(buyoutPayments).values({
@@ -402,9 +456,11 @@ export async function buyoutRoutes(app: FastifyInstance) {
       summary:
         `ВЫКУП НАЧАТ: ${dealLabel(row!)} · стоимость ${fmtMoney(row!.total)} ₽ ` +
         `(техника ${fmtMoney(row!.scooterPrice)} ₽ + наценка ${fmtMoney(row!.markup)} ₽) · ` +
-        `взнос ${fmtMoney(row!.downPayment)} ₽ · ${rows.length} платежей по ${fmtMoney(row!.paymentAmount)} ₽ ` +
-        `(${row!.period === "week" ? "еженедельно" : "ежемесячно"}) с ${start}`,
-      meta: { total: row!.total, payments: rows.length },
+        `взнос ${fmtMoney(row!.downPayment)} ₽ · ` +
+        (useCustom
+          ? `${rows.length} платежей по своему графику с ${start}${prepaid.length ? ` · ${prepaid.length} уже оплачено на ${fmtMoney(prepaid.reduce((s, r) => s + r.amount, 0))} ₽` : ""}`
+          : `${rows.length} платежей по ${fmtMoney(row!.paymentAmount)} ₽ (${row!.period === "week" ? "еженедельно" : "ежемесячно"}) с ${start}`),
+      meta: { total: row!.total, payments: rows.length, custom: useCustom, prepaid: prepaid.length },
     });
     return row;
   });
@@ -424,6 +480,8 @@ export async function buyoutRoutes(app: FastifyInstance) {
         note: z.string().max(500).optional().nullable(),
         /** Полное досрочное погашение — гасим весь остаток. */
         payoff: z.boolean().optional(),
+        /** 06.09 (п.15): дата платежа задним числом (YYYY-MM-DD или ISO). */
+        paidAt: z.string().min(10).max(30).optional(),
       });
       const parsed = Body.safeParse(req.body);
       const id = Number(req.params.id);
@@ -452,7 +510,16 @@ export async function buyoutRoutes(app: FastifyInstance) {
         rows.map((r) => ({ id: r.id, amount: r.amount, paidAmount: r.paidAmount })),
         amount,
       );
-      const now = new Date();
+      const now = parsed.data.paidAt
+        ? new Date(
+            parsed.data.paidAt.length === 10
+              ? `${parsed.data.paidAt}T12:00:00`
+              : parsed.data.paidAt,
+          )
+        : new Date();
+      if (Number.isNaN(now.getTime())) {
+        return reply.code(400).send({ error: "bad paidAt" });
+      }
       for (const u of updates) {
         await db
           .update(buyoutSchedule)
@@ -482,6 +549,7 @@ export async function buyoutRoutes(app: FastifyInstance) {
         cashAmount: cashPart,
         transferAmount: transferPart,
         kind,
+        paidAt: now,
         userId: req.user?.userId ?? null,
         note: parsed.data.note ?? null,
       });
@@ -683,6 +751,12 @@ async function buildValues(
   if (input.managerId !== undefined) values.managerId = input.managerId;
   if (input.comment !== undefined) values.comment = input.comment;
   if (input.startDate !== undefined) values.startDate = input.startDate;
+  if (input.customSchedule !== undefined) {
+    values.customSchedule =
+      input.customSchedule && input.customSchedule.length > 0
+        ? [...input.customSchedule].sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+        : null;
+  }
   if (input.blacklistChecked !== undefined) {
     values.blacklistChecked = input.blacklistChecked;
   }

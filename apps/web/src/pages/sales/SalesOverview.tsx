@@ -411,12 +411,12 @@ export function SalesOverview({
                       </span>
                       <span>
                         прибыль{" "}
-                        <b className="text-emerald-700">{fmt(row.profit)} ₽</b>
+                        <Sensitive><b className="text-emerald-700">{fmt(row.profit)} ₽</b></Sensitive>
                       </span>
                       <span>ср. чек {fmt(row.avgCheck)} ₽</span>
                       {row.commission > 0 && (
                         <span>
-                          ему {fmt(row.commission)} ₽
+                          ему <Sensitive>{fmt(row.commission)} ₽</Sensitive>
                           {row.manager ? ` (${row.manager.commissionPct}%)` : ""}
                         </span>
                       )}

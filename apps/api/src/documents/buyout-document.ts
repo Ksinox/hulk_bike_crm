@@ -15,6 +15,7 @@ import {
   scooters,
 } from "../db/schema.js";
 import { LANDLORD } from "./landlord.js";
+import { buildSchedule } from "../services/buyoutMath.js";
 
 export type BuyoutBundle = {
   deal: typeof buyoutDeals.$inferSelect;
@@ -132,6 +133,7 @@ const CSS = `
   table.spec td.k { width: 42%; background: #f2f2f2; }
   table.sched th { background: #eee; font-weight: bold; }
   table.sched td.num { text-align: right; white-space: nowrap; }
+  .paid { font-size: 9pt; color: #444; }
   .sig { margin-top: 26pt; display: flex; justify-content: space-between; gap: 20pt; page-break-inside: avoid; }
   .sig > div { width: 48%; }
   .sig .line { border-bottom: 1px solid #000; height: 26pt; margin-bottom: 2pt; }
@@ -161,12 +163,47 @@ export function renderBuyoutHtmlSystem(b: BuyoutBundle): string {
   const periodWord = deal.period === "week" ? "еженедельно" : "ежемесячно";
   const tech = escape(model?.name ?? deal.modelName ?? deal.scooterName ?? "скутер");
 
-  const rows = schedule
+  // 06.09 (п.15): до подписания показываем график-прогноз — свой, если
+  // задан, иначе построенный по условиям; после подписания — фактический.
+  const rowsSrc: { seq: number; dueDate: string; amount: number; paid?: boolean }[] =
+    schedule.length > 0
+      ? schedule.map((r) => ({ seq: r.seq, dueDate: r.dueDate, amount: r.amount, paid: r.paidAmount >= r.amount }))
+      : (() => {
+          const custom = ((deal.customSchedule as { dueDate: string; amount: number; paidAt?: string | null }[] | null) ?? [])
+            .slice()
+            .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+          if (custom.length) {
+            return custom.map((r, i) => ({ seq: i + 1, dueDate: r.dueDate, amount: r.amount, paid: !!r.paidAt }));
+          }
+          const start =
+            deal.startDate ?? new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+          return buildSchedule(
+            {
+              scooterPrice: deal.scooterPrice,
+              termMonths: deal.termMonths,
+              markup: deal.markup,
+              total: deal.total,
+              downPayment: deal.downPayment,
+              financed: deal.financed,
+              period: deal.period as "month" | "week",
+              paymentAmount: deal.paymentAmount,
+              paymentsCount: deal.paymentsCount,
+            },
+            start,
+          ).map((r) => ({ ...r, paid: false }));
+        })();
+  const equalPayments =
+    rowsSrc.length > 0 && rowsSrc.every((r) => r.amount === rowsSrc[0]!.amount);
+  const scheduleText = equalPayments
+    ? `${periodWord} равными платежами по ${fmt(rowsSrc[0]!.amount)} ₽ согласно графику (раздел 3)`
+    : `платежами в размере и в сроки согласно графику (раздел 3)`;
+
+  const rows = rowsSrc
     .map(
       (r) => `<tr>
         <td class="num">${r.seq}</td>
         <td>${fmtDateRu(r.dueDate)}</td>
-        <td class="num">${fmt(r.amount)} ₽</td>
+        <td class="num">${fmt(r.amount)} ₽${r.paid ? " <span class=\"paid\">(оплачено)</span>" : ""}</td>
       </tr>`,
     )
     .join("");
@@ -203,7 +240,7 @@ export function renderBuyoutHtmlSystem(b: BuyoutBundle): string {
   <h2>2. Выкупная стоимость и порядок расчётов</h2>
   <div class="para"><b>2.1.</b> Выкупная стоимость транспортного средства составляет <b>${fmt(deal.total)}</b> (${moneyWords(deal.total)}) рублей 00 копеек, из них стоимость транспортного средства ${fmt(deal.scooterPrice)} ₽ и вознаграждение за рассрочку на срок ${deal.termMonths} мес. — ${fmt(deal.markup)} ₽.</div>
   <div class="para"><b>2.2.</b> Первоначальный взнос — <b>${fmt(deal.downPayment)}</b> (${moneyWords(deal.downPayment)}) рублей — вносится Арендатором в день подписания настоящего договора.</div>
-  <div class="para"><b>2.3.</b> Оставшаяся сумма <b>${fmt(deal.financed)}</b> (${moneyWords(deal.financed)}) рублей выплачивается ${periodWord} равными платежами по ${fmt(deal.paymentAmount)} ₽ согласно графику (раздел 3). Всего платежей: ${schedule.length || deal.paymentsCount}.</div>
+  <div class="para"><b>2.3.</b> Оставшаяся сумма <b>${fmt(deal.financed)}</b> (${moneyWords(deal.financed)}) рублей выплачивается ${scheduleText}. Всего платежей: ${rowsSrc.length || deal.paymentsCount}.</div>
   <div class="para"><b>2.4.</b> Арендатор вправе досрочно погасить остаток полностью или частично; при полном погашении право собственности переходит к Арендатору с момента внесения последнего платежа.</div>
 
   <h2>3. График платежей</h2>

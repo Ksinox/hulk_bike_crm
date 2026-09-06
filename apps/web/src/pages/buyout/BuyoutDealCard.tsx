@@ -29,6 +29,7 @@ import {
   type BuyoutDeal,
 } from "@/lib/api/buyout";
 import { fmt, ruDate } from "@/pages/sales/salesUtils";
+import { BuyoutContractPreview } from "./BuyoutContractPreview";
 
 /**
  * Карточка сделки выкупа (01.09).
@@ -56,6 +57,8 @@ export function BuyoutDealCard({
   const cancel = useCancelBuyoutDeal();
   const del = useDeleteBuyoutDeal();
   const [payOpen, setPayOpen] = useState(false);
+  /** Договор в окне CRM (06.09, п.12). */
+  const [contractOpen, setContractOpen] = useState(false);
 
   const p = deal.progress;
   const unfinished = deal.status === "draft" || deal.status === "contract";
@@ -290,11 +293,14 @@ export function BuyoutDealCard({
             <div className="flex flex-wrap gap-2 px-4 py-3">
               <button
                 type="button"
-                onClick={() => window.open(buyoutContractUrl(deal.id, "html"), "_blank")}
+                onClick={() => setContractOpen(true)}
                 className="inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-[12.5px] font-bold text-white"
               >
                 <Printer size={14} /> Договор
               </button>
+              {contractOpen && (
+                <BuyoutContractPreview dealId={deal.id} onClose={() => setContractOpen(false)} />
+              )}
               <button
                 type="button"
                 onClick={() => window.open(buyoutContractUrl(deal.id, "docx"), "_blank")}
@@ -446,6 +452,9 @@ function PaymentDialog({
   const [amount, setAmount] = useState(String(dueNow || ""));
   const [method, setMethod] = useState<PayMethod>("cash");
   const [cashPart, setCashPart] = useState(0);
+  /** 06.09 (п.15): платёж можно провести задним числом. */
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [paidAt, setPaidAt] = useState(todayIso);
 
   const value = Number(amount) || 0;
   const { cash, transfer } = splitByMethod(Math.min(value, p.left), method, cashPart);
@@ -465,6 +474,7 @@ function PaymentDialog({
         cashAmount: method === "mixed" ? cash : undefined,
         transferAmount: method === "mixed" ? transfer : undefined,
         payoff,
+        paidAt: paidAt && paidAt !== todayIso ? paidAt : undefined,
       });
       toast.success(
         res.closed
@@ -544,6 +554,22 @@ function PaymentDialog({
             </button>
           ))}
         </div>
+
+        <label className="mt-3 flex items-center gap-2 text-[12px] text-muted">
+          <span className="shrink-0">Дата платежа</span>
+          <input
+            type="date"
+            value={paidAt}
+            max={todayIso}
+            onChange={(e) => setPaidAt(e.target.value)}
+            className="h-9 flex-1 rounded-[10px] border border-border bg-surface px-2 text-[13px] tabular-nums text-ink outline-none focus:border-blue-600"
+          />
+          {paidAt !== todayIso && (
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-bold text-amber-800">
+              задним числом
+            </span>
+          )}
+        </label>
 
         <div className="mt-3">
           <PayMethodPicker
