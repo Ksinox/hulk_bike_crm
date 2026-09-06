@@ -376,9 +376,11 @@ function ItemRow({
   onPatch: (b: { qty?: number; price?: number; cost?: number }) => void;
   onDelete: () => void;
 }) {
+  // На телефоне название занимает свою строку — иначе оно схлопывается
+  // в «Замена в…», и непонятно, за что деньги.
   return (
-    <div className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 shadow-card-sm">
-      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl bg-surface px-3 py-2 shadow-card-sm">
+      <span className="w-full min-w-0 truncate text-[13px] font-semibold text-ink sm:w-auto sm:flex-1">
         {item.name}
       </span>
       <NumInput
@@ -406,7 +408,7 @@ function ItemRow({
         suffix="₽"
         onChange={(v) => onPatch({ price: v })}
       />
-      <span className="w-[92px] shrink-0 text-right text-[13px] font-bold tabular-nums text-ink">
+      <span className="ml-auto shrink-0 text-right text-[13px] font-bold tabular-nums text-ink sm:ml-0 sm:w-[92px]">
         {money(item.price * item.qty)}
       </span>
       {!locked && (
@@ -490,13 +492,13 @@ function FreeRow({
   };
 
   return (
-    <div className="flex items-center gap-2 rounded-xl border border-dashed border-border px-3 py-2">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-dashed border-border px-3 py-2">
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
         placeholder={placeholder}
-        className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-muted-2"
+        className="w-full min-w-0 bg-transparent text-[13px] text-ink outline-none placeholder:text-muted-2 sm:w-auto sm:flex-1"
       />
       <input
         value={qty}

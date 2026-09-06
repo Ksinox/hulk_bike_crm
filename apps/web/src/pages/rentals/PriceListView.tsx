@@ -218,6 +218,9 @@ export function PriceListView() {
               >
                 <Plus size={14} /> Добавить группу
               </button>
+              {/* Пересоздание из шаблона относится только к прайсу ущерба —
+                  на вкладке работ такой кнопки быть не должно. */}
+              {kind === "damage" && (
               <button
                 type="button"
                 disabled={reseed.isPending}
@@ -249,6 +252,7 @@ export function PriceListView() {
                 <RefreshCcw size={12} />
                 Пересоздать из шаблона
               </button>
+              )}
             </>
           )}
         </div>
