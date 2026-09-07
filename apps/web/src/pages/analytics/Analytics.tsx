@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
+  Eye,
   LayoutGrid,
   MonitorUp,
   Plus,
@@ -21,7 +22,6 @@ import {
   type Board,
   type BoardPeriod,
   type BoardTile,
-  type TileSize,
 } from "./board";
 import {
   METRICS,
@@ -33,20 +33,26 @@ import {
 } from "./metrics";
 import { AnalyticsTile } from "./AnalyticsTile";
 import { PlanSummaryTile } from "./PlanSummaryTile";
+import { Overview } from "./Overview";
 import { useFlip } from "./useFlip";
 import { useTileDrag } from "./useTileDrag";
 
 /**
- * Аналитика (06.09) — экран показателей.
+ * Аналитика (07.09, четвёртая правка заказчика — три раздела).
  *
- * Задумка простая: один экран отвечает на три вопроса — идём ли по плану,
- * что горит прямо сейчас и сколько денег зашло. Плитки собираются как
- * конструктор: нужное добавили, лишнее убрали, важное сделали крупнее.
- * Этот же экран открывается отдельным окном на второй монитор — там он
- * тёмный и с огромными цифрами, чтобы читалось от двери.
+ *  1. «Обзор»           — для человека: четыре направления со всеми
+ *                          показателями, планом, вердиктом и советами.
+ *  2. «Настройка стены» — конструктор доски для второго монитора:
+ *                          перетаскивание, растягивание за угол, планы.
+ *  3. «На второй монитор» — отдельное окно, которое показывает доску
+ *                          так, как её настроили.
+ *
+ * Оба экрана в CRM помещаются в монитор без прокрутки: корень занимает
+ * ровно высоту окна, блоки делят её между собой, кегли считаются от блока.
  */
 
 const PERIODS: BoardPeriod[] = ["today", "week", "month", "year"];
+type Section = "overview" | "setup";
 
 export function Analytics() {
   const isMobile = useIsMobile();
@@ -55,23 +61,23 @@ export function Analytics() {
   const boardQ = useAnalyticsBoard();
   const save = useSaveAnalyticsBoard();
 
+  const [section, setSection] = useState<Section>("overview");
   const [draft, setDraft] = useState<Board | null>(null);
   const board = draft ?? boardQ.data?.board ?? DEFAULT_BOARD;
-  const editing = draft != null;
+  const editing = section === "setup";
 
   const periodOf = useMemo(() => {
     const map = new Map(board.tiles.map((t) => [t.metric, t.period ?? null]));
     return (metricId: string): BoardPeriod => map.get(metricId) ?? board.period;
   }, [board]);
-
   const values = useMetricValues(periodOf);
 
-  /**
-   * Колонки считаем сами, а не классами: плитки знают, сколько колонок
-   * занимать, и на узком экране не должны вылезать за край сетки.
-   */
+  const boardRef = useRef(board);
+  boardRef.current = board;
+
+  /** Колонки сетки конструктора: телефон — 2, планшет — 3, компьютер — 4. */
   const [cols, setCols] = useState(() =>
-    typeof window === "undefined" ? 6 : colsFor(window.innerWidth),
+    typeof window === "undefined" ? 4 : colsFor(window.innerWidth),
   );
   useEffect(() => {
     const onResize = () => setCols(colsFor(window.innerWidth));
@@ -80,49 +86,33 @@ export function Analytics() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // move вызывается из обработчиков указателя — доску берём через ref,
-  // иначе в замыкании останется устаревший порядок плиток.
-  const boardRef = useRef(board);
-  boardRef.current = board;
-
-  const patchTile = (index: number, patch: Partial<BoardTile>) => {
+  const patchTile = (index: number, patch: Partial<BoardTile>) =>
     setDraft((prev) => {
-      const base = prev ?? board;
-      const tiles = base.tiles.map((t, i) => (i === index ? { ...t, ...patch } : t));
-      return { ...base, tiles };
+      const base = prev ?? boardRef.current;
+      return { ...base, tiles: base.tiles.map((t, i) => (i === index ? { ...t, ...patch } : t)) };
     });
-  };
-
-  const removeTile = (index: number) => {
+  const removeTile = (index: number) =>
     setDraft((prev) => {
-      const base = prev ?? board;
+      const base = prev ?? boardRef.current;
       return { ...base, tiles: base.tiles.filter((_, i) => i !== index) };
     });
-  };
-
-  const addTile = (metric: string) => {
+  const addTile = (metric: string) =>
     setDraft((prev) => {
-      const base = prev ?? board;
+      const base = prev ?? boardRef.current;
       if (base.tiles.some((t) => t.metric === metric)) return base;
       const def = METRIC_BY_ID.get(metric);
+      const big = def?.group === "plan" || def?.percentValue;
       return {
         ...base,
         tiles: [
           ...base.tiles,
-          {
-            metric,
-            size: def?.group === "plan" ? "l" : "m",
-            plan: null,
-            period: def?.defaultPeriod ?? null,
-          },
+          { metric, w: big ? 2 : 1, h: big ? 2 : 1, plan: null, period: def?.defaultPeriod ?? null },
         ],
       };
     });
-  };
 
-  /* ---- перетаскивание «как в Notion» ---- */
+  /* ---- перетаскивание ---- */
   const gridRef = useRef<HTMLDivElement>(null);
-
   const move = useCallback((from: number, to: number) => {
     setDraft((prev) => {
       const base = prev ?? boardRef.current;
@@ -133,11 +123,8 @@ export function Analytics() {
       return { ...base, tiles };
     });
   }, []);
-
   const { drag, start: startDrag } = useTileDrag(move);
-
-  // Отпечаток порядка и размеров: поменялся — плитки доезжают анимацией.
-  const flipKey = board.tiles.map((t) => `${t.metric}:${t.size}`).join("|");
+  const flipKey = board.tiles.map((t) => `${t.metric}:${t.w}x${t.h}`).join("|");
   useFlip(gridRef, flipKey, editing);
 
   const onSave = async () => {
@@ -145,7 +132,7 @@ export function Analytics() {
     try {
       await save.mutateAsync(draft);
       setDraft(null);
-      toast.success("Доска сохранена", "Её видят все, включая экран на стене");
+      toast.success("Доска сохранена", "Экран на втором мониторе обновится сам");
     } catch {
       toast.error("Не удалось сохранить доску");
     }
@@ -155,27 +142,38 @@ export function Analytics() {
     const url = `${window.location.pathname}?screen=analytics-wall`;
     const win = window.open(url, "hulk-analytics-wall");
     win?.focus?.();
-    if (!win) {
-      toast.error(
-        "Браузер заблокировал окно",
-        "Разрешите всплывающие окна для CRM — экран откроется отдельным окном.",
-      );
-    }
+    if (!win)
+      toast.error("Браузер заблокировал окно", "Разрешите всплывающие окна для CRM.");
   };
 
   const range = periodRange(board.period);
   const hidden = METRICS.filter((m) => !board.tiles.some((t) => t.metric === m.id));
+  const primaryIndex = board.tiles.findIndex((t) => t.h >= 2 && t.w >= 2);
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-4">
+    <main
+      className={cn(
+        "flex min-w-0 flex-1 flex-col gap-3",
+        // Экран помещается в окно целиком: корень — ровно высота окна.
+        !isMobile && "h-[100dvh] overflow-hidden p-[18px]",
+      )}
+    >
       {!isMobile && <Topbar />}
-      <header className="flex flex-wrap items-center gap-3">
-        <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
+
+      <header className="flex shrink-0 flex-wrap items-center gap-3">
+        <h1 className="font-display text-[30px] font-extrabold leading-none text-ink">
           Аналитика
         </h1>
-        <span className="rounded-full bg-blue-50 px-3 py-1 text-[11.5px] font-bold text-blue-700">
-          {board.tiles.length} показателей
-        </span>
+        <div className="flex gap-1 rounded-full bg-surface p-1 shadow-card-sm">
+          <SectionTab active={section === "overview"} onClick={() => setSection("overview")} icon={<Eye size={14} />}>
+            Обзор
+          </SectionTab>
+          {canEdit && (
+            <SectionTab active={section === "setup"} onClick={() => setSection("setup")} icon={<Settings2 size={14} />}>
+              Настройка стены
+            </SectionTab>
+          )}
+        </div>
         <SensitiveToggle />
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <div className="flex gap-1 rounded-full bg-surface p-1 shadow-card-sm">
@@ -183,66 +181,155 @@ export function Analytics() {
               <button
                 key={p}
                 type="button"
-                onClick={() =>
-                  setDraft((prev) => ({ ...(prev ?? board), period: p }))
-                }
+                onClick={() => setDraft((prev) => ({ ...(prev ?? board), period: p }))}
                 className={cn(
                   "rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
-                  board.period === p
-                    ? "bg-ink text-white"
-                    : "text-muted hover:text-ink",
+                  board.period === p ? "bg-ink text-white" : "text-muted hover:text-ink",
                 )}
               >
                 {PERIOD_LABEL[p]}
               </button>
             ))}
           </div>
+          <span className="hidden text-[12.5px] text-muted lg:inline">{range.label}</span>
+          {editing ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setDraft(null)}
+                disabled={!draft}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[12.5px] font-semibold text-muted shadow-card-sm hover:text-ink disabled:opacity-40"
+              >
+                <RotateCcw size={14} /> Отменить
+              </button>
+              <button
+                type="button"
+                onClick={onSave}
+                disabled={!draft || save.isPending}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-[12.5px] font-bold text-white disabled:opacity-40"
+              >
+                <Check size={14} /> Сохранить
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={openWall}
-            title="Открыть отдельным окном — можно перетащить на второй монитор и включить полный экран"
+            title="Открыть отдельным окном — перетащите на второй монитор и включите полный экран"
             className="inline-flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[12.5px] font-semibold text-ink shadow-card-sm hover:bg-surface-soft"
           >
             <MonitorUp size={14} /> На второй монитор
           </button>
-          {canEdit &&
-            (editing ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setDraft(null)}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[12.5px] font-semibold text-muted shadow-card-sm hover:text-ink"
-                >
-                  <RotateCcw size={14} /> Отменить
-                </button>
-                <button
-                  type="button"
-                  onClick={onSave}
-                  disabled={save.isPending}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-[12.5px] font-bold text-white disabled:opacity-60"
-                >
-                  <Check size={14} /> Сохранить доску
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setDraft(board)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[12.5px] font-semibold text-ink shadow-card-sm hover:bg-surface-soft"
-              >
-                <Settings2 size={14} /> Настроить
-              </button>
-            ))}
         </div>
       </header>
 
-      <div className="text-[12.5px] text-muted">
-        Показатели за период: <b className="text-ink-2">{range.label}</b>. У части
-        плиток свой период — он подписан на самой плитке.
-        {editing && " Перетаскивайте плитки, меняйте размер и задавайте план."}
-      </div>
+      {section === "overview" ? (
+        <Overview board={board} values={values} periodOf={periodOf} compact={isMobile} />
+      ) : (
+        <div className={cn("flex min-h-0 flex-1 gap-3", isMobile ? "flex-col" : "flex-row")}>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+            <div className="shrink-0 text-[12.5px] text-muted">
+              Перетаскивайте плитки за ручку, тяните за правый нижний угол — ширина и высота
+              в клетках, план — кнопкой-мишенью. Так же доска будет выглядеть на втором мониторе.
+            </div>
+            <div
+              ref={gridRef}
+              data-grid
+              className="grid min-h-0 flex-1 gap-3"
+              style={{
+                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                gridAutoRows: isMobile ? "minmax(150px, auto)" : "minmax(0, 1fr)",
+                gridAutoFlow: "row dense",
+                overflowY: isMobile ? "visible" : "auto",
+              }}
+            >
+              {board.tiles.map((tile, i) => {
+                const def = METRIC_BY_ID.get(tile.metric);
+                if (!def) return null;
+                const shared = {
+                  index: i,
+                  cols,
+                  compact: isMobile,
+                  editing: true,
+                  onRemove: () => removeTile(i),
+                  onResize: (w: number, h: number) => patchTile(i, { w, h }),
+                  onDragStart: (e: React.PointerEvent) => startDrag(i, e),
+                  ghost: drag?.index === i,
+                };
+                if (def.group === "plan") {
+                  return (
+                    <PlanSummaryTile
+                      key={tile.metric}
+                      tile={tile}
+                      tiles={board.tiles}
+                      values={values}
+                      periodOf={periodOf}
+                      {...shared}
+                    />
+                  );
+                }
+                return (
+                  <AnalyticsTile
+                    key={tile.metric}
+                    def={def}
+                    value={values[tile.metric]}
+                    tile={tile}
+                    period={periodOf(tile.metric)}
+                    primary={primaryIndex === i}
+                    onPlan={(plan) => patchTile(i, { plan })}
+                    {...shared}
+                  />
+                );
+              })}
+            </div>
+          </div>
 
-      {/* Плитка «в руке»: точная копия под курсором — видно, что несёшь. */}
+          {/* Каталог показателей */}
+          <aside className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto rounded-2xl bg-surface p-4 shadow-card-sm lg:w-[280px]">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+              <LayoutGrid size={12} /> Добавить показатель
+            </div>
+            {hidden.length === 0 ? (
+              <div className="text-[12.5px] text-muted">Все показатели уже на доске.</div>
+            ) : (
+              (["rent", "sales", "service", "buyout", "plan"] as MetricGroup[]).map((g) => {
+                const items = hidden.filter((m) => m.group === g);
+                if (items.length === 0) return null;
+                return (
+                  <div key={g} className="flex flex-col gap-1.5">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                      {METRIC_GROUP_LABEL[g]}
+                    </div>
+                    {items.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => addTile(m.id)}
+                        className="flex items-start gap-2 rounded-xl bg-surface-soft p-2.5 text-left transition-colors hover:bg-blue-50"
+                      >
+                        <Plus size={13} className="mt-0.5 shrink-0 text-blue-600" />
+                        <span className="min-w-0">
+                          <span className="block text-[13px] font-bold text-ink">
+                            {m.title}
+                            {m.comingSoon && (
+                              <span className="ml-1.5 rounded-full bg-surface px-1.5 py-0.5 text-[9.5px] font-bold uppercase text-muted-2">
+                                скоро
+                              </span>
+                            )}
+                          </span>
+                          <span className="block text-[11.5px] leading-snug text-muted">{m.about}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })
+            )}
+          </aside>
+        </div>
+      )}
+
+      {/* Плитка «в руке» при перетаскивании */}
       {drag && (
         <div
           aria-hidden
@@ -258,123 +345,36 @@ export function Analytics() {
           dangerouslySetInnerHTML={{ __html: drag.html }}
         />
       )}
-
-      <div className="flex min-w-0 flex-col gap-4 xl:flex-row">
-        {/* Доска */}
-        <div
-          ref={gridRef}
-          className="grid min-w-0 flex-1 gap-3"
-          style={{
-            gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-            gridAutoRows: `minmax(${isMobile ? 138 : 196}px, auto)`,
-          }}
-        >
-          {board.tiles.map((tile, i) => {
-            const def = METRIC_BY_ID.get(tile.metric);
-            if (!def) return null;
-            if (def.group === "plan") {
-              return (
-                <PlanSummaryTile
-                  key={tile.metric}
-                  index={i}
-                  tile={tile}
-                  tiles={board.tiles}
-                  values={values}
-                  periodOf={periodOf}
-                  cols={cols}
-                  compact={isMobile}
-                  editing={editing}
-                  onRemove={() => removeTile(i)}
-                  onSize={(size: TileSize) => patchTile(i, { size })}
-                  onDragStart={(e) => startDrag(i, e)}
-                  ghost={drag?.index === i}
-                />
-              );
-            }
-            return (
-              <AnalyticsTile
-                key={tile.metric}
-                index={i}
-                def={def}
-                value={values[tile.metric]}
-                tile={tile}
-                period={periodOf(tile.metric)}
-                cols={cols}
-                primary={
-                  board.tiles.findIndex((t) => t.size === "l") === i
-                }
-                compact={isMobile}
-                editing={editing}
-                onSize={(size) => patchTile(i, { size })}
-                onRemove={() => removeTile(i)}
-                onPlan={(plan) => patchTile(i, { plan })}
-                onDragStart={(e) => startDrag(i, e)}
-                ghost={drag?.index === i}
-              />
-            );
-          })}
-        </div>
-
-        {/* Каталог показателей */}
-        {editing && (
-          <aside className="flex w-full shrink-0 flex-col gap-3 rounded-2xl bg-surface p-4 shadow-card-sm xl:w-[300px]">
-            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              <LayoutGrid size={12} /> Добавить показатель
-            </div>
-            {hidden.length === 0 ? (
-              <div className="text-[12.5px] text-muted">
-                Все показатели уже на доске.
-              </div>
-            ) : (
-              (["rent", "sales", "service", "buyout", "plan"] as MetricGroup[]).map(
-                (g) => {
-                  const items = hidden.filter((m) => m.group === g);
-                  if (items.length === 0) return null;
-                  return (
-                    <div key={g} className="flex flex-col gap-1.5">
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                        {METRIC_GROUP_LABEL[g]}
-                      </div>
-                      {items.map((m) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => addTile(m.id)}
-                          className="flex items-start gap-2 rounded-xl bg-surface-soft p-2.5 text-left transition-colors hover:bg-blue-50"
-                        >
-                          <Plus size={13} className="mt-0.5 shrink-0 text-blue-600" />
-                          <span className="min-w-0">
-                            <span className="block text-[13px] font-bold text-ink">
-                              {m.title}
-                              {m.comingSoon && (
-                                <span className="ml-1.5 rounded-full bg-surface px-1.5 py-0.5 text-[9.5px] font-bold uppercase text-muted-2">
-                                  скоро
-                                </span>
-                              )}
-                            </span>
-                            <span className="block text-[11.5px] leading-snug text-muted">
-                              {m.about}
-                            </span>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  );
-                },
-              )
-            )}
-          </aside>
-        )}
-      </div>
     </main>
   );
 }
 
-/**
- * Аналитика — главный экран, поэтому блоков в ряду немного, зато они
- * крупные и читаются с одного взгляда: телефон — 2, планшет — 3,
- * компьютер — 4 колонки.
- */
+function SectionTab({
+  active,
+  onClick,
+  icon,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-bold transition-colors",
+        active ? "bg-ink text-white" : "text-muted hover:text-ink",
+      )}
+    >
+      {icon}
+      {children}
+    </button>
+  );
+}
+
 function colsFor(width: number): number {
   if (width < 700) return 2;
   if (width < 1180) return 3;

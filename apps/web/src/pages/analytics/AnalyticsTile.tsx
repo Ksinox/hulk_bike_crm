@@ -1,41 +1,46 @@
 import { useState } from "react";
-import { GripVertical, Target, X } from "lucide-react";
+import {
+  Bike,
+  GripVertical,
+  Receipt,
+  Target,
+  Wallet,
+  Wrench,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sensitive } from "@/components/Sensitive";
 import { useSensitiveRevealed } from "@/lib/sensitive";
-import type { BoardPeriod, BoardTile, TileSize } from "./board";
-import type { MetricDef, MetricValue } from "./metrics";
+import type { BoardPeriod, BoardTile } from "./board";
+import { METRIC_GROUP_UI, type MetricDef, type MetricValue } from "./metrics";
 import { planState, STATUS_UI } from "./status";
-import { HalfRing, PlanBarThick, StatusChip } from "./Gauge";
-import { SizePicker } from "./SizePicker";
+import { HalfRing, PlanBarThick } from "./Gauge";
 import { ResizeHandle } from "./ResizeHandle";
 
 /**
- * Плитка показателя (07.09, третья правка — «а у тебя цирк»).
+ * Плитка показателя (07.09, четвёртая правка — «с десяти метров непонятно»).
  *
- * Стилистика намеренно спокойная, как в образце заказчика: одна
- * плитка-герой на тёмном фоне с диагональной фактурой, остальные —
- * ровные карточки с тонкой рамкой. Цветом говорит только то, что должно:
- * дуга гейджа, процент выполнения и красная цифра, если горит. Заливку
- * всей плитки убрал — от неё рябило.
- *
- * Размеры внутри — в единицах контейнера (cqh/cqw/cqmin), поэтому плитка
- * одинаково аккуратна и на ноутбуке, и на большом мониторе.
+ * Схема, по которой собрана плитка:
+ *  1. Заголовок читается ПЕРВЫМ: обычный регистр, жирный, крупный (около
+ *     40% от цифры), слева иконка направления в цветном квадратике —
+ *     «это про продажи» видно раньше, чем прочитано слово.
+ *  2. Один тип визуала на один тип показателя:
+ *       • процент (загрузка парка)     → радиальный гейдж до нормы 100%;
+ *       • показатель с планом          → огромная цифра + толстая шкала + %;
+ *       • показатель без плана         → огромная цифра + подпись.
+ *  3. Цифра заполняет плитку: кегль считается от высоты плитки И от длины
+ *     числа, поэтому «4» выходит гигантской, а «274 000 ₽» — во всю ширину.
+ *  4. Всё в единицах контейнера (cqh/cqw) — ничего не обрезается ни на
+ *     ноутбуке, ни на мониторе под потолком.
  */
 
-/** Колонок и рядов под плитку. Ширина героя зависит от ширины сетки. */
-export function spanOf(size: TileSize, cols: number) {
-  if (size === "s") return { col: 1, row: 1 };
-  if (size === "m") return { col: Math.min(2, cols), row: 1 };
-  return { col: Math.min(cols, Math.max(2, Math.round(cols / 2))), row: 2 };
-}
-
-/** Спаны для расчёта числа рядов на экране-стене. */
-export const SIZE_SPAN: Record<TileSize, { col: number; row: number }> = {
-  s: { col: 1, row: 1 },
-  m: { col: 2, row: 1 },
-  l: { col: 3, row: 2 },
-};
+const GROUP_ICON = {
+  bike: Bike,
+  wallet: Wallet,
+  wrench: Wrench,
+  receipt: Receipt,
+  target: Target,
+} as const;
 
 export function AnalyticsTile({
   def,
@@ -44,10 +49,10 @@ export function AnalyticsTile({
   period,
   wall = false,
   compact = false,
-  cols = 6,
+  cols = 4,
   primary = false,
   editing = false,
-  onSize,
+  onResize,
   onRemove,
   onPlan,
   onDragStart,
@@ -59,15 +64,13 @@ export function AnalyticsTile({
   tile: BoardTile;
   period: BoardPeriod;
   wall?: boolean;
+  /** Телефон: одна колонка, высота по содержимому. */
   compact?: boolean;
   cols?: number;
-  /**
-   * Плитка-герой на тёмном фоне. Такая на доске одна — как в образце
-   * заказчика: один заметный блок, остальные ровные и спокойные.
-   */
+  /** Единственный тёмный блок-герой на светлой доске. */
   primary?: boolean;
   editing?: boolean;
-  onSize?: (size: TileSize) => void;
+  onResize?: (w: number, h: number) => void;
   onRemove?: () => void;
   onPlan?: (plan: number | null) => void;
   onDragStart?: (e: React.PointerEvent) => void;
@@ -78,13 +81,12 @@ export function AnalyticsTile({
   const [planDraft, setPlanDraft] = useState(
     tile.plan != null ? String(tile.plan) : "",
   );
-  const span = spanOf(tile.size, cols);
-  const big = tile.size === "l";
-  const hero = big && primary;
-  const tiny = tile.size === "s";
+  const w = Math.min(tile.w, cols);
+  const h = compact ? 1 : tile.h;
+  const hero = primary && !wall;
+  const dark = hero || wall;
   const revealed = useSensitiveRevealed();
   const hidden = !!def.sensitive && !revealed;
-  const dark = hero || wall;
 
   const planValue =
     !def.comingSoon && tile.plan != null && tile.plan > 0 ? tile.plan : null;
@@ -94,22 +96,23 @@ export function AnalyticsTile({
       : null;
   const tone = value?.tone ?? "neutral";
   const ui = state ? STATUS_UI[state.status] : null;
+  const group = METRIC_GROUP_UI[def.group];
+  const GroupIcon = GROUP_ICON[group.icon];
 
-  const ringIsValue = !!def.percentValue && state != null;
-  const ringState =
-    ringIsValue && state
+  // Загрузка парка: дуга рисует сам показатель, засечка — план.
+  const gaugeMode = !!def.percentValue && state != null && !compact;
+  const gaugeState =
+    gaugeMode && state
       ? {
           ...state,
           pct: Math.round(value?.value ?? 0),
           expectedPct: Math.min(100, planValue!),
         }
-      : state;
-  const withRing = state != null && !tiny && !compact;
-  // Кегль цифры считаем от реального размера плитки, а не от «геройства».
+      : null;
 
   const spanStyle = {
-    gridColumn: `span ${span.col}`,
-    gridRow: `span ${compact ? 1 : span.row}`,
+    gridColumn: `span ${w}`,
+    gridRow: `span ${h}`,
   };
 
   if (ghost) {
@@ -126,7 +129,7 @@ export function AnalyticsTile({
     );
   }
 
-  /** Цифра спокойная; красным горит только то, что требует действия. */
+  const display = value?.display ?? "—";
   const numberTone = dark
     ? tone === "bad"
       ? "text-red-400"
@@ -135,103 +138,21 @@ export function AnalyticsTile({
       ? "text-red-ink"
       : "text-ink";
 
-  const title = (
-    <span
-      style={{ fontSize: "max(9px, min(3.1cqmin, 17px))" }}
-      className={cn(
-        "flex min-w-0 items-center gap-[0.6em] font-semibold uppercase tracking-[0.16em]",
-        dark ? "text-white/45" : "text-muted-2",
-      )}
-    >
-      {state && (
-        <span
-          aria-hidden
-          className={cn(
-            "h-[0.55em] w-[0.55em] shrink-0 rounded-full",
-            dark ? ui!.barWall : ui!.bar,
-          )}
-        />
-      )}
-      <span className="truncate">{def.title}</span>
-    </span>
-  );
-
-  const number = !ringIsValue && (
-    <div
-      style={{ fontSize: numberSize(tile.size, withRing) }}
-      className={cn(
-        "truncate font-display font-extrabold leading-[0.92] tracking-[-0.035em] tabular-nums",
-        numberTone,
-      )}
-    >
-      {def.sensitive ? (
-        <Sensitive dark={dark}>{value?.display ?? "—"}</Sensitive>
-      ) : (
-        (value?.display ?? "—")
-      )}
-    </div>
-  );
-
-  const caption = value?.caption ? (
-    <div
-      style={{
-        fontSize: ringIsValue
-          ? "max(12px, min(5cqmin, 30px))"
-          : "max(10px, min(3.6cqmin, 22px))",
-      }}
-      className={cn(
-        "truncate",
-        ringIsValue ? "font-bold" : "a-hide-xs",
-        dark ? "text-white/50" : "text-muted",
-      )}
-    >
-      {value.caption}
-    </div>
-  ) : null;
-
-  const extra = value?.extra ? (
-    <div
-      style={{ fontSize: "max(9px, min(3.1cqmin, 19px))" }}
-      className={cn(
-        "a-hide-sm truncate font-semibold",
-        dark ? "text-white/35" : "text-muted-2",
-      )}
-    >
-      {value.extra}
-    </div>
-  ) : null;
-
-  const gauge =
-    withRing && ringState ? (
-      <div
-        className="flex shrink-0 items-center justify-center"
-        style={{ width: big ? "48%" : "42%" }}
-      >
-        <HalfRing
-          state={ringState}
-          wall={dark}
-          hidden={hidden}
-          showLabels={big}
-        />
-      </div>
-    ) : null;
-
   return (
     <div
       data-tile-index={index}
       data-flip-key={def.id}
       style={{
         ...spanStyle,
-        containerType: "size",
+        containerType: compact ? "inline-size" : "size",
         borderRadius: "clamp(16px, 3cqmin, 30px)",
-        padding: "clamp(12px, 3.8cqmin, 38px)",
+        padding: "clamp(12px, 4.5cqmin, 40px)",
+        minHeight: compact ? 150 : undefined,
       }}
       className={cn(
         "group/tile relative flex min-h-0 min-w-0 flex-col overflow-hidden",
         hero
-          ? wall
-            ? "bg-white/[0.08] ring-1 ring-inset ring-white/10"
-            : "bg-ink"
+          ? "bg-ink"
           : wall
             ? "bg-white/[0.035] ring-1 ring-inset ring-white/[0.07]"
             : "bg-surface ring-1 ring-inset ring-black/[0.05]",
@@ -240,8 +161,25 @@ export function AnalyticsTile({
     >
       {hero && <HeroTexture />}
 
-      <div className="relative flex shrink-0 items-start justify-between gap-2">
-        {title}
+      {/* ---- Заголовок: иконка направления + название ---- */}
+      <div className="relative flex shrink-0 items-center justify-between gap-2">
+        <div
+          style={{ fontSize: titleSize(compact) }}
+          className={cn(
+            "flex min-w-0 items-center gap-[0.5em] font-bold leading-tight",
+            dark ? "text-white/85" : "text-ink",
+          )}
+        >
+          <span
+            className={cn(
+              "flex h-[1.5em] w-[1.5em] shrink-0 items-center justify-center rounded-[0.4em]",
+              dark ? group.chipDark : group.chip,
+            )}
+          >
+            <GroupIcon className="h-[0.95em] w-[0.95em]" />
+          </span>
+          <span className="truncate">{def.title}</span>
+        </div>
         {editing && (
           <div
             className={cn(
@@ -254,22 +192,21 @@ export function AnalyticsTile({
               title="Перетащить"
               onPointerDown={onDragStart}
               className={cn(
-                "flex h-6 w-6 cursor-grab items-center justify-center rounded-md active:cursor-grabbing",
+                "flex h-7 w-7 cursor-grab items-center justify-center rounded-md active:cursor-grabbing",
                 dark
                   ? "text-white/50 hover:bg-white/15 hover:text-white"
                   : "text-muted-2 hover:bg-surface-soft hover:text-ink",
               )}
             >
-              <GripVertical size={15} />
+              <GripVertical size={16} />
             </span>
-            <SizePicker value={tile.size} onChange={(s) => onSize?.(s)} dark={dark} />
             {def.planable && !def.comingSoon && (
               <button
                 type="button"
                 title="План"
                 onClick={() => setPlanOpen((v) => !v)}
                 className={cn(
-                  "flex h-6 w-6 items-center justify-center rounded-md",
+                  "flex h-7 w-7 items-center justify-center rounded-md",
                   dark
                     ? "text-white/50 hover:bg-white/15 hover:text-white"
                     : planValue != null
@@ -277,7 +214,7 @@ export function AnalyticsTile({
                       : "text-muted-2 hover:bg-surface-soft hover:text-ink",
                 )}
               >
-                <Target size={13} />
+                <Target size={14} />
               </button>
             )}
             <button
@@ -285,76 +222,98 @@ export function AnalyticsTile({
               title="Убрать с доски"
               onClick={onRemove}
               className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-md",
+                "flex h-7 w-7 items-center justify-center rounded-md",
                 dark
                   ? "text-white/50 hover:bg-red-500/30 hover:text-white"
                   : "text-muted-2 hover:bg-red-soft hover:text-red-ink",
               )}
             >
-              <X size={13} />
+              <X size={14} />
             </button>
           </div>
         )}
       </div>
 
-      {/* Три раскладки, как в образце: герой — цифра внизу, средняя —
-          цифра слева и гейдж справа, маленькая — всё по центру. */}
-      {big ? (
-        <div className="relative flex min-h-0 flex-1 items-end gap-[3cqmin]">
-          <div className="flex min-w-0 flex-1 flex-col justify-end gap-[1.2cqmin]">
-            {number}
-            {caption}
-            {extra}
-            {state && !hidden && (
-              <StatusChip state={state} wall={dark} className="a-hide-sm" />
-            )}
+      {/* ---- Тело ---- */}
+      {gaugeMode && gaugeState ? (
+        /* Процент: гейдж до нормы занимает всё, что осталось */
+        <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center">
+          <div className="flex min-h-0 w-full flex-1 items-center justify-center py-[1cqh]">
+            <HalfRing state={gaugeState} wall={dark} hidden={hidden} showLabels fill />
           </div>
-          {gauge}
-        </div>
-      ) : tiny ? (
-        <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-[1cqmin] text-center">
-          {number}
-          {caption}
+          {value?.caption && (
+            <div
+              style={{ fontSize: captionSize(compact) }}
+              className={cn(
+                "a-hide-xs w-full truncate text-center font-semibold",
+                dark ? "text-white/60" : "text-muted",
+              )}
+            >
+              {value.caption}
+              {value.extra ? ` · ${value.extra}` : ""}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="relative flex min-h-0 flex-1 items-center gap-[2.5cqmin] overflow-hidden">
-          <div className="flex min-w-0 flex-1 flex-col justify-center gap-[1cqmin]">
-            {number}
-            {caption}
-            {extra}
-            {state && !hidden && (
-              <StatusChip state={state} wall={dark} className="a-hide-sm" />
+        <div className="relative flex min-h-0 flex-1 flex-col justify-center">
+          <div
+            style={{ fontSize: numberSize(display, !!state, compact) }}
+            className={cn(
+              "truncate font-display font-extrabold leading-[0.95] tracking-[-0.035em] tabular-nums",
+              numberTone,
             )}
+          >
+            {def.sensitive ? <Sensitive dark={dark}>{display}</Sensitive> : display}
           </div>
-          {gauge}
+          {value?.caption && (
+            <div
+              style={{ fontSize: captionSize(compact), marginTop: "0.9cqh" }}
+              className={cn(
+                "a-hide-xs truncate",
+                dark ? "text-white/55" : "text-muted",
+              )}
+            >
+              {value.caption}
+              {value.extra && <span className="a-hide-sm"> · {value.extra}</span>}
+            </div>
+          )}
         </div>
       )}
 
-      {state && !withRing && (
-        <footer
-          style={{ marginTop: "1.8cqmin", gap: "1cqmin" }}
-          className="relative flex shrink-0 flex-col"
-        >
-          <div
-            style={{ fontSize: "max(9px, min(3.1cqmin, 19px))" }}
-            className="a-hide-xxs flex items-baseline justify-between gap-2"
-          >
-            <span className={dark ? "text-white/40" : "text-muted-2"}>
-              план {def.format(planValue!)}
-            </span>
+      {/* ---- План: толстая шкала до нормы + крупный процент ---- */}
+      {state && !gaugeMode && (
+        <footer className="relative flex shrink-0 flex-col" style={{ gap: "1.1cqh" }}>
+          <div className="flex items-center" style={{ gap: "3cqw" }}>
+            <PlanBarThick state={state} wall={dark} hidden={hidden} className="min-w-0 flex-1" />
             <span
-              style={{ fontSize: "max(11px, min(4.4cqmin, 25px))" }}
-              className={cn("font-extrabold tabular-nums", dark ? ui!.inkWall : ui!.ink)}
+              style={{ fontSize: pctSize(compact) }}
+              className={cn(
+                "shrink-0 font-display font-extrabold leading-none tabular-nums",
+                dark ? ui!.inkWall : ui!.ink,
+              )}
             >
               {hidden ? <Sensitive dark={dark}>{state.pct}%</Sensitive> : `${state.pct}%`}
             </span>
           </div>
-          <PlanBarThick state={state} wall={dark} hidden={hidden} />
+          <div
+            style={{ fontSize: captionSize(compact) }}
+            className={cn(
+              "a-hide-xxs flex items-baseline justify-between gap-2",
+              dark ? "text-white/50" : "text-muted",
+            )}
+          >
+            <span className="truncate">план {def.format(planValue!)}</span>
+            {!hidden && (
+              <span className={cn("shrink-0 font-semibold", dark ? ui!.inkWall : ui!.ink)}>
+                {state.label}
+              </span>
+            )}
+          </div>
         </footer>
       )}
 
-      {editing && onSize && (
-        <ResizeHandle size={tile.size} onChange={onSize} dark={dark} />
+      {editing && onResize && !compact && (
+        <ResizeHandle w={tile.w} h={tile.h} cols={cols} onChange={onResize} dark={dark} />
       )}
 
       {editing && planOpen && (
@@ -402,12 +361,30 @@ export function AnalyticsTile({
 
 /* ------------------------------------------------------------------ */
 
-function numberSize(size: TileSize, withRing: boolean): string {
-  if (size === "l")
-    return withRing ? "max(26px, min(19cqh, 13cqw))" : "max(28px, min(32cqh, 16cqw))";
-  if (size === "m")
-    return withRing ? "max(18px, min(31cqh, 11cqw))" : "max(20px, min(40cqh, 14cqw))";
-  return "max(16px, min(32cqh, 26cqw))";
+/** Заголовок ≈ 13% высоты плитки, но не шире плитки. */
+function titleSize(compact: boolean): string {
+  return compact ? "17px" : "max(12px, min(12cqh, 7.5cqw, 36px))";
+}
+
+function captionSize(compact: boolean): string {
+  return compact ? "13px" : "max(10px, min(8.5cqh, 5cqw, 26px))";
+}
+
+function pctSize(compact: boolean): string {
+  return compact ? "22px" : "max(14px, min(20cqh, 11cqw))";
+}
+
+/**
+ * Цифра во всю ширину: ширина знака у дисплейного шрифта ≈ 0.6em, значит
+ * кегль ≤ 92cqw / (0.6 × знаков). Сверху ограничиваем высотой — чтобы
+ * с толстой шкалой и подписью всё влезло.
+ */
+function numberSize(display: string, withPlan: boolean, compact: boolean): string {
+  if (compact) return "40px";
+  const chars = Math.max(1, display.replace(/\s/g, "").length + (display.includes(" ") ? 0.4 : 0));
+  const byWidth = (92 / (0.6 * chars)).toFixed(1);
+  const byHeight = withPlan ? 44 : 52;
+  return `max(20px, min(${byHeight}cqh, ${byWidth}cqw))`;
 }
 
 /** Диагональная штриховка под радиальной маской — из образца заказчика. */

@@ -1,85 +1,121 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import type { TileSize } from "./board";
 
 /**
- * Уголок «растянуть» (07.09, третья правка).
+ * Уголок «растянуть» (07.09, четвёртая правка — «это должен быть канвас»).
  *
- * Заказчик: «сейчас я не могу уменьшить или как-то растянуть, увеличить не
- * могу». Кнопки со схемками остались, но главное теперь — потянуть плитку
- * за правый нижний угол, как окно: тянешь вправо-вниз — плитка растёт,
- * влево-вверх — уменьшается. Размер меняется сразу, на глазах.
+ * Тянешь правый нижний угол — за мышью идёт контур будущей плитки, а
+ * сама плитка перескакивает по клеткам сетки: ширина и высота меняются
+ * независимо, в любых пределах сетки. Соседние плитки расступаются с
+ * анимацией (FLIP в доске). Контур рисуется fixed-слоем, поэтому его не
+ * режет overflow плитки.
  */
-
-const ORDER: TileSize[] = ["s", "m", "l"];
-
 export function ResizeHandle({
-  size,
+  w,
+  h,
+  cols,
+  maxRows = 6,
   onChange,
   dark,
 }: {
-  size: TileSize;
-  onChange: (s: TileSize) => void;
+  w: number;
+  h: number;
+  cols: number;
+  maxRows?: number;
+  onChange: (w: number, h: number) => void;
   dark?: boolean;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const applied = useRef<TileSize>(size);
+  const applied = useRef({ w, h });
+  const [outline, setOutline] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    w: number;
+    h: number;
+  } | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
     const tile = ref.current?.closest<HTMLElement>("[data-tile-index]");
-    if (!tile) return;
+    const grid = tile?.parentElement;
+    if (!tile || !grid) return;
     e.preventDefault();
     e.stopPropagation();
-    const r = tile.getBoundingClientRect();
-    const from = { x: e.clientX, y: e.clientY, w: r.width, h: r.height };
-    const startIndex = ORDER.indexOf(size);
-    applied.current = size;
+
+    const t = tile.getBoundingClientRect();
+    const g = grid.getBoundingClientRect();
+    const gs = getComputedStyle(grid);
+    const colGap = parseFloat(gs.columnGap) || 0;
+    const rowGap = parseFloat(gs.rowGap) || 0;
+    // Размер одной клетки: по ширине — из сетки, по высоте — из самой плитки.
+    const cellW = (g.width - colGap * (cols - 1)) / cols;
+    const cellH = (t.height - rowGap * (h - 1)) / h;
+    applied.current = { w, h };
 
     const move = (ev: PointerEvent) => {
-      // Берём тот жест, который выражен сильнее: тянут обычно по диагонали.
-      const step = Math.max(
-        (ev.clientX - from.x) / from.w,
-        (ev.clientY - from.y) / from.h,
-      );
-      let i = startIndex;
-      if (step > 0.4) i = Math.min(ORDER.length - 1, startIndex + 1);
-      else if (step < -0.3) i = Math.max(0, startIndex - 1);
-      const next = ORDER[i]!;
-      if (next !== applied.current) {
-        applied.current = next;
-        onChange(next);
+      const width = Math.max(cellW * 0.6, ev.clientX - t.left);
+      const height = Math.max(cellH * 0.6, ev.clientY - t.top);
+      const nw = Math.max(1, Math.min(cols, Math.round((width + colGap) / (cellW + colGap))));
+      const nh = Math.max(1, Math.min(maxRows, Math.round((height + rowGap) / (cellH + rowGap))));
+      setOutline({ left: t.left, top: t.top, width, height, w: nw, h: nh });
+      if (nw !== applied.current.w || nh !== applied.current.h) {
+        applied.current = { w: nw, h: nh };
+        onChange(nw, nh);
       }
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      setOutline(null);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     document.body.style.cursor = "nwse-resize";
+    document.body.style.userSelect = "none";
   };
 
   return (
-    <span
-      ref={ref}
-      role="button"
-      title="Потяните, чтобы растянуть плитку"
-      onPointerDown={onPointerDown}
-      className={cn(
-        "absolute bottom-0 right-0 z-10 flex h-7 w-7 cursor-nwse-resize items-end justify-end p-1.5",
-        "opacity-0 transition-opacity group-hover/tile:opacity-100",
+    <>
+      <span
+        ref={ref}
+        role="button"
+        title="Потяните, чтобы изменить ширину и высоту"
+        onPointerDown={onPointerDown}
+        className={cn(
+          "absolute bottom-0 right-0 z-10 flex h-9 w-9 cursor-nwse-resize items-end justify-end p-2",
+          "opacity-0 transition-opacity group-hover/tile:opacity-100",
+        )}
+      >
+        <svg viewBox="0 0 10 10" className="h-full w-full">
+          <path
+            d="M9 1 L9 9 L1 9"
+            fill="none"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            stroke={dark ? "rgba(255,255,255,0.6)" : "rgba(15,23,42,0.4)"}
+          />
+        </svg>
+      </span>
+
+      {outline && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed z-[9998] rounded-[18px] border-2 border-dashed border-blue-500/80 bg-blue-500/[0.06]"
+          style={{
+            left: outline.left,
+            top: outline.top,
+            width: outline.width,
+            height: outline.height,
+          }}
+        >
+          <span className="absolute bottom-2 right-2 rounded-full bg-ink px-2.5 py-1 text-[12px] font-bold tabular-nums text-white shadow-card">
+            {outline.w} × {outline.h}
+          </span>
+        </div>
       )}
-    >
-      <svg viewBox="0 0 10 10" className="h-full w-full">
-        <path
-          d="M9 1 L9 9 L1 9"
-          fill="none"
-          strokeWidth={1.6}
-          strokeLinecap="round"
-          stroke={dark ? "rgba(255,255,255,0.55)" : "rgba(15,23,42,0.35)"}
-        />
-      </svg>
-    </span>
+    </>
   );
 }

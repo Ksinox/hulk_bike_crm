@@ -211,7 +211,8 @@ function AppShell({
   }, [route]);
   // v0.7.0: «Аренды» — на всю ширину (своя push-раскладка карточки).
   // Остальные страницы — центрированный контейнер max-w-[1440px].
-  const fullWidth = route === "rentals";
+  // Аналитика (07.09) сама держит отступы и высоту — ей нужен весь экран.
+  const fullWidth = route === "rentals" || route === "analytics";
   const scrollRef = useRef<HTMLDivElement>(null);
   // Высота скролл-области = вьюпорт минус electron-titlebar (36px).
   const shellHeight = isElectron ? "calc(100vh - 36px)" : "100vh";

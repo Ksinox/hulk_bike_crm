@@ -7,7 +7,7 @@ import {
   type BoardPeriod,
 } from "./board";
 import { METRIC_BY_ID, periodRange, useMetricValues } from "./metrics";
-import { AnalyticsTile, SIZE_SPAN } from "./AnalyticsTile";
+import { AnalyticsTile } from "./AnalyticsTile";
 import { PlanSummaryTile } from "./PlanSummaryTile";
 
 /**
@@ -74,7 +74,7 @@ export function AnalyticsWall() {
    * больше ровно настолько, насколько нужно.
    */
   const { cols, rows } = useMemo(() => {
-    const spans = tiles.map((t) => SIZE_SPAN[t.size]);
+    const spans = tiles.map((t) => ({ col: t.w, row: t.h }));
     const gridH = Math.max(120, vp.h - Math.min(vp.h * 0.16, 130));
     const gap = Math.max(6, Math.min(vp.w, vp.h) * 0.012);
     let best = { cols: 6, rows: 1, score: Number.POSITIVE_INFINITY };
@@ -187,7 +187,7 @@ export function AnalyticsWall() {
               tile={tile}
               period={periodOf(tile.metric)}
               cols={cols}
-              primary={tiles.findIndex((t) => t.size === "l") === i}
+              primary={tiles.findIndex((t) => t.h >= 2 && t.w >= 2) === i}
               wall
             />
           );

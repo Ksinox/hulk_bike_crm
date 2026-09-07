@@ -2,19 +2,18 @@ import { GripVertical, Target, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sensitive } from "@/components/Sensitive";
 import { useSensitiveRevealed } from "@/lib/sensitive";
-import type { BoardPeriod, BoardTile, TileSize } from "./board";
-import { METRIC_BY_ID, type MetricValue } from "./metrics";
-import { spanOf } from "./AnalyticsTile";
+import type { BoardPeriod, BoardTile } from "./board";
+import { METRIC_BY_ID, METRIC_GROUP_UI, type MetricValue } from "./metrics";
 import { planState, STATUS_UI, type PlanState } from "./status";
-import { SizePicker } from "./SizePicker";
 import { ResizeHandle } from "./ResizeHandle";
 
 /**
- * Плитка «План и факт» (07.09, вторая правка).
+ * Плитка «План и факт» (07.09, четвёртая правка — «тонюсенькие линии»).
  *
- * Список всех планов доски. Высота у плитки чужая — её задаёт сетка,
- * поэтому строки делят её поровну: чем больше планов, тем мельче строка,
- * но список всегда помещается целиком, без прокрутки и обрезки.
+ * Список всех планов доски. Каждая строка — название, «факт из плана»,
+ * ТОЛСТАЯ шкала до нормы (больше половины высоты строки) и крупный процент
+ * цветом статуса. Строки делят высоту плитки поровну: чем их больше, тем
+ * мельче, но всё помещается без прокрутки.
  */
 export function PlanSummaryTile({
   tile,
@@ -23,9 +22,9 @@ export function PlanSummaryTile({
   periodOf,
   wall = false,
   compact = false,
-  cols = 6,
+  cols = 4,
   editing = false,
-  onSize,
+  onResize,
   onRemove,
   onDragStart,
   ghost,
@@ -37,17 +36,17 @@ export function PlanSummaryTile({
   periodOf: (metricId: string) => BoardPeriod;
   wall?: boolean;
   compact?: boolean;
-  /** Сколько колонок в сетке — чтобы плитка не вылезала за её край. */
   cols?: number;
   editing?: boolean;
-  onSize?: (size: TileSize) => void;
+  onResize?: (w: number, h: number) => void;
   onRemove?: () => void;
   onDragStart?: (e: React.PointerEvent) => void;
   ghost?: boolean;
   index?: number;
 }) {
-  const span = spanOf(tile.size, cols);
   const revealed = useSensitiveRevealed();
+  const w = Math.min(tile.w, cols);
+  const h = compact ? 1 : tile.h;
 
   const rows = tiles
     .filter((t) => t.plan != null && t.plan > 0)
@@ -75,8 +74,8 @@ export function PlanSummaryTile({
   }[];
 
   const spanStyle = {
-    gridColumn: `span ${span.col}`,
-    gridRow: `span ${compact ? 1 : span.row}`,
+    gridColumn: `span ${w}`,
+    gridRow: `span ${h}`,
   };
 
   if (ghost) {
@@ -93,10 +92,13 @@ export function PlanSummaryTile({
     );
   }
 
-  // Строка занимает свою долю высоты: 100% / (кол-во строк) с запасом на
-  // заголовок. Дальше всё внутри строки считается от этого кегля.
+  // Строка = своя доля высоты (за вычетом заголовка). От неё считается всё:
+  // кегль названия, процент, толщина шкалы.
   const n = Math.max(1, rows.length);
-  const line = `min(${(72 / n).toFixed(2)}cqh, ${wall ? 22 : 15}px)`;
+  const line = compact
+    ? "14px"
+    : `max(10px, min(${(78 / n).toFixed(2)}cqh, ${wall ? 30 : 22}px))`;
+  const group = METRIC_GROUP_UI.plan;
 
   return (
     <div
@@ -104,9 +106,10 @@ export function PlanSummaryTile({
       data-flip-key="plan.summary"
       style={{
         ...spanStyle,
-        containerType: "size",
+        containerType: compact ? "inline-size" : "size",
         borderRadius: "clamp(16px, 3cqmin, 30px)",
-        padding: "clamp(12px, 3.4cqmin, 32px)",
+        padding: "clamp(12px, 4cqmin, 36px)",
+        minHeight: compact ? 150 : undefined,
       }}
       className={cn(
         "group/tile relative flex min-h-0 min-w-0 flex-col overflow-hidden",
@@ -116,15 +119,23 @@ export function PlanSummaryTile({
         editing && "select-none",
       )}
     >
-      <div className="flex shrink-0 items-start justify-between gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-2">
         <div
-          style={{ fontSize: "max(9px, min(3.2cqmin, 18px))", gap: "0.8em" }}
+          style={{ fontSize: compact ? "17px" : "max(12px, min(11cqh, 7cqw, 34px))" }}
           className={cn(
-            "flex items-center font-bold uppercase tracking-[0.14em]",
-            wall ? "text-white/45" : "text-muted-2",
+            "flex min-w-0 items-center gap-[0.5em] font-bold leading-tight",
+            wall ? "text-white/85" : "text-ink",
           )}
         >
-          <Target className="h-[1em] w-[1em]" /> План и факт
+          <span
+            className={cn(
+              "flex h-[1.5em] w-[1.5em] shrink-0 items-center justify-center rounded-[0.4em]",
+              wall ? group.chipDark : group.chip,
+            )}
+          >
+            <Target className="h-[0.95em] w-[0.95em]" />
+          </span>
+          <span className="truncate">План и факт</span>
         </div>
         {editing && (
           <div
@@ -137,18 +148,27 @@ export function PlanSummaryTile({
             <span
               title="Перетащить"
               onPointerDown={onDragStart}
-              className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-2 hover:bg-surface-soft hover:text-ink active:cursor-grabbing"
+              className={cn(
+                "flex h-7 w-7 cursor-grab items-center justify-center rounded-md active:cursor-grabbing",
+                wall
+                  ? "text-white/50 hover:bg-white/15 hover:text-white"
+                  : "text-muted-2 hover:bg-surface-soft hover:text-ink",
+              )}
             >
-              <GripVertical size={15} />
+              <GripVertical size={16} />
             </span>
-            <SizePicker value={tile.size} onChange={(s) => onSize?.(s)} dark={wall} />
             <button
               type="button"
               title="Убрать с доски"
               onClick={onRemove}
-              className="flex h-6 w-6 items-center justify-center rounded-md text-muted-2 hover:bg-red-soft hover:text-red-ink"
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-md",
+                wall
+                  ? "text-white/50 hover:bg-red-500/30 hover:text-white"
+                  : "text-muted-2 hover:bg-red-soft hover:text-red-ink",
+              )}
             >
-              <X size={13} />
+              <X size={14} />
             </button>
           </div>
         )}
@@ -156,99 +176,99 @@ export function PlanSummaryTile({
 
       {rows.length === 0 ? (
         <div
-          style={{ marginTop: "2cqmin", fontSize: "max(10px, min(3.6cqmin, 20px))" }}
+          style={{ marginTop: "2cqmin", fontSize: "max(11px, min(4cqmin, 20px))" }}
           className={cn("leading-snug", wall ? "text-white/50" : "text-muted")}
         >
           Планы пока не заданы. Нажмите «Настроить», выберите плитку и поставьте
           план кнопкой-мишенью — здесь появится строка «факт из плана».
         </div>
       ) : (
-        <div style={{ marginTop: "1.5cqmin" }} className="flex min-h-0 flex-1 flex-col justify-between">
+        <div
+          style={{ marginTop: compact ? 10 : "1.5cqh" }}
+          className="flex min-h-0 flex-1 flex-col justify-between gap-[0.6cqh]"
+        >
           {rows.map((r) => {
             const ui = STATUS_UI[r.state.status];
+            const tick =
+              !r.hidden && r.state.expectedPct > 3 && r.state.expectedPct < 98;
             return (
               <div
                 key={r.id}
-                style={{ gap: "0.35em", fontSize: line }}
-                className="flex min-h-0 flex-col justify-center"
+                style={{ fontSize: line }}
+                className="flex min-h-0 items-center gap-[0.9em]"
               >
-                <div className="flex items-baseline justify-between gap-[0.8em]">
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate font-semibold",
-                      wall ? "text-white/85" : "text-ink-2",
-                    )}
-                  >
-                    {r.title}
-                  </span>
-                  <span
-                    className={cn(
-                      "shrink-0 tabular-nums",
-                      wall ? "text-white/55" : "text-muted",
-                    )}
-                    style={{ fontSize: `calc(${line} * 0.88)` }}
-                  >
-                    {r.hidden ? (
-                      <>
-                        <Sensitive dark={wall}>{r.fact}</Sensitive> из {r.plan}
-                      </>
-                    ) : (
-                      <>
-                        {r.fact} из {r.plan}
-                      </>
-                    )}
-                  </span>
-                  <span
-                    className={cn(
-                      "shrink-0 text-right font-extrabold tabular-nums",
-                      wall ? ui.inkWall : ui.ink,
-                    )}
-                    style={{ fontSize: `calc(${line} * 1.12)`, width: "4.2em" }}
-                  >
-                    {r.hidden ? (
-                      <Sensitive dark={wall}>{r.state.pct}%</Sensitive>
-                    ) : (
-                      `${r.state.pct}%`
-                    )}
-                  </span>
-                </div>
-                <div
+                <span
                   className={cn(
-                    "relative w-full overflow-hidden rounded-full",
-                    wall ? ui.trackWall : ui.track,
+                    "min-w-0 flex-[1.15] truncate font-bold",
+                    wall ? "text-white/85" : "text-ink",
                   )}
-                  style={{ height: `calc(${line} * 0.42)` }}
                 >
-                  <div
+                  {r.title}
+                </span>
+                <span
+                  className={cn(
+                    "hidden shrink-0 tabular-nums sm:inline",
+                    wall ? "text-white/50" : "text-muted",
+                  )}
+                  style={{ fontSize: "0.82em" }}
+                >
+                  {r.hidden ? (
+                    <>
+                      <Sensitive dark={wall}>{r.fact}</Sensitive> из {r.plan}
+                    </>
+                  ) : (
+                    <>
+                      {r.fact} из {r.plan}
+                    </>
+                  )}
+                </span>
+                {/* Толстая шкала — больше половины высоты строки */}
+                <span
+                  className={cn(
+                    "relative min-w-0 flex-[1.4] overflow-hidden rounded-full",
+                    wall ? "bg-white/[0.12]" : "bg-ink/[0.08]",
+                  )}
+                  style={{ height: "0.62em" }}
+                >
+                  <span
                     className={cn(
-                      "h-full rounded-full transition-[width] duration-700",
+                      "block h-full rounded-full transition-[width] duration-700",
                       wall ? ui.barWall : ui.bar,
                     )}
-                    style={{
-                      width: r.hidden ? 0 : `${Math.min(100, r.state.pct)}%`,
-                    }}
+                    style={{ width: r.hidden ? 0 : `${Math.min(100, r.state.pct)}%` }}
                   />
-                  {!r.hidden &&
-                    r.state.expectedPct > 3 &&
-                    r.state.expectedPct < 98 && (
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "absolute top-0 h-full w-[2px] rounded-full",
-                          wall ? "bg-white/80" : "bg-ink/50",
-                        )}
-                        style={{ left: `calc(${r.state.expectedPct}% - 1px)` }}
-                      />
-                    )}
-                </div>
+                  {tick && (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "absolute top-0 h-full w-[3px] rounded-full",
+                        wall ? "bg-white/90" : "bg-ink/60",
+                      )}
+                      style={{ left: `calc(${r.state.expectedPct}% - 1.5px)` }}
+                    />
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 text-right font-display font-extrabold tabular-nums",
+                    wall ? ui.inkWall : ui.ink,
+                  )}
+                  style={{ fontSize: "1.25em", width: "3.6em" }}
+                >
+                  {r.hidden ? (
+                    <Sensitive dark={wall}>{r.state.pct}%</Sensitive>
+                  ) : (
+                    `${r.state.pct}%`
+                  )}
+                </span>
               </div>
             );
           })}
         </div>
       )}
 
-      {editing && onSize && (
-        <ResizeHandle size={tile.size} onChange={onSize} dark={wall} />
+      {editing && onResize && !compact && (
+        <ResizeHandle w={tile.w} h={tile.h} cols={cols} onChange={onResize} dark={wall} />
       )}
     </div>
   );

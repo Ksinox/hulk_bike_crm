@@ -20,8 +20,13 @@ const KEY = "analytics_board";
 const TileSchema = z.object({
   /** Идентификатор показателя, напр. "rent.park_load". */
   metric: z.string().min(1).max(64),
-  /** Размер плитки на доске. */
-  size: z.enum(["s", "m", "l"]).default("m"),
+  /**
+   * Размер плитки в клетках сетки (07.09: канвас — ширину и высоту тянут
+   * за угол). `size` остался для досок, сохранённых до этого.
+   */
+  w: z.number().int().min(1).max(8).optional(),
+  h: z.number().int().min(1).max(6).optional(),
+  size: z.enum(["s", "m", "l"]).optional(),
   /** Ручной план (для количественных показателей). null — плана нет. */
   plan: z.number().min(0).nullable().optional(),
   /** Свой период плитки; null — берётся общий период доски. */

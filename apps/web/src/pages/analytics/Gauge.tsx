@@ -3,25 +3,24 @@ import { cn } from "@/lib/utils";
 import { STATUS_UI, type PlanState } from "./status";
 
 /**
- * Шкалы выполнения плана (07.09, вторая правка заказчика).
+ * Шкалы выполнения плана (07.09).
  *
  * Заказчик: «есть норма, норма это к примеру сто процентов, и нам нужно до
- * этой нормы дойти» + «всё должно подстраиваться под монитор». Поэтому:
- *
- *  • полукруг с подписями 0% и 100% — норма видна как правый край дуги;
- *  • вся геометрия и цифра живут ВНУТРИ svg (viewBox), поэтому гейдж
- *    масштабируется вместе с плиткой без единой строчки на JS;
- *  • заливка и счётчик анимируются при появлении — дуга доезжает до нормы.
+ * этой нормы дойти». Полукруг с подписями 0% и 100% — норма это правый
+ * край дуги. Вся геометрия и цифра живут внутри svg (viewBox), а сам svg
+ * вписывается в выделенный ему бокс целиком (preserveAspectRatio meet) —
+ * поэтому гейдж никогда не обрезается, каким бы ни был размер плитки.
  */
 
 const VB_W = 300;
-const VB_H = 186;
+const VB_H = 176;
 
 export function HalfRing({
   state,
   wall = false,
   hidden = false,
   showLabels = true,
+  fill = false,
   className,
 }: {
   state: PlanState;
@@ -29,21 +28,21 @@ export function HalfRing({
   /** Прибыль под ключом директора — дугу и цифру не показываем. */
   hidden?: boolean;
   showLabels?: boolean;
+  /** Занять весь бокс родителя (высоту и ширину), сохранив пропорции. */
+  fill?: boolean;
   className?: string;
 }) {
   const ui = STATUS_UI[state.status];
   const shown = useCountUp(hidden ? 0 : state.pct);
 
-  const stroke = 26;
-  const radius = (VB_W - stroke) / 2 - 8;
+  const stroke = 30;
+  const radius = (VB_W - stroke) / 2 - 6;
   const cx = VB_W / 2;
-  const cy = VB_H - 26;
+  const cy = VB_H - 30;
   const circ = Math.PI * radius;
   const filled = hidden ? 0 : Math.min(100, state.pct) / 100;
 
-  // Тонкая внутренняя дуга — как в образце, добавляет аккуратности.
-  const innerR = radius - stroke - 5;
-  // Засечка «где мы должны быть сегодня».
+  const innerR = radius - stroke - 6;
   const tickA = (Math.min(100, state.expectedPct) / 100) * Math.PI - Math.PI;
   const showTick = !hidden && state.expectedPct > 3 && state.expectedPct < 98;
 
@@ -52,30 +51,24 @@ export function HalfRing({
 
   const track = wall ? "rgba(255,255,255,0.14)" : "rgba(15,23,42,0.08)";
   const hair = wall ? "rgba(255,255,255,0.22)" : "rgba(15,23,42,0.14)";
-  const label = wall ? "rgba(255,255,255,0.45)" : "rgba(15,23,42,0.35)";
+  const label = wall ? "rgba(255,255,255,0.5)" : "rgba(15,23,42,0.4)";
 
   return (
     <svg
       viewBox={`0 0 ${VB_W} ${VB_H}`}
-      className={cn("h-auto w-full", className)}
+      preserveAspectRatio="xMidYMid meet"
+      className={cn(fill ? "h-full w-full" : "h-auto w-full", className)}
       role="img"
-      aria-label={`${state.pct}% от плана`}
+      aria-label={`${state.pct}% от нормы`}
     >
       <path d={arc(innerR)} fill="none" stroke={hair} strokeWidth={1.5} />
-      <path
-        d={arc(radius)}
-        fill="none"
-        stroke={track}
-        strokeWidth={stroke}
-        strokeLinecap="butt"
-      />
+      <path d={arc(radius)} fill="none" stroke={track} strokeWidth={stroke} />
       {filled > 0 && (
         <path
           d={arc(radius)}
           fill="none"
           stroke={wall ? ui.hexWall : ui.hex}
           strokeWidth={stroke}
-          strokeLinecap="butt"
           strokeDasharray={circ}
           strokeDashoffset={circ * (1 - filled)}
           style={{
@@ -85,10 +78,10 @@ export function HalfRing({
       )}
       {showTick && (
         <line
-          x1={cx + Math.cos(tickA) * (radius - stroke / 2 - 3)}
-          y1={cy + Math.sin(tickA) * (radius - stroke / 2 - 3)}
-          x2={cx + Math.cos(tickA) * (radius + stroke / 2 + 3)}
-          y2={cy + Math.sin(tickA) * (radius + stroke / 2 + 3)}
+          x1={cx + Math.cos(tickA) * (radius - stroke / 2 - 4)}
+          y1={cy + Math.sin(tickA) * (radius - stroke / 2 - 4)}
+          x2={cx + Math.cos(tickA) * (radius + stroke / 2 + 4)}
+          y2={cy + Math.sin(tickA) * (radius + stroke / 2 + 4)}
           stroke={wall ? "rgba(255,255,255,0.9)" : "rgba(15,23,42,0.6)"}
           strokeWidth={5}
           strokeLinecap="round"
@@ -97,12 +90,12 @@ export function HalfRing({
 
       <text
         x={cx}
-        y={cy - 6}
+        y={cy - 4}
         textAnchor="middle"
-        fontSize={62}
+        fontSize={hidden ? 46 : shown >= 100 ? 62 : 70}
         fontWeight={800}
-        letterSpacing={-2}
-        fill={hidden ? label : wall ? ui.hexWall : ui.hex}
+        letterSpacing={-2.5}
+        fill={hidden ? label : wall ? "#ffffff" : "#0f172a"}
         style={{ fontVariantNumeric: "tabular-nums" }}
       >
         {hidden ? "•••" : `${shown}%`}
@@ -110,10 +103,10 @@ export function HalfRing({
 
       {showLabels && (
         <>
-          <text x={cx - radius} y={cy + 24} textAnchor="middle" fontSize={20} fill={label}>
+          <text x={cx - radius} y={cy + 26} textAnchor="middle" fontSize={22} fontWeight={600} fill={label}>
             0%
           </text>
-          <text x={cx + radius} y={cy + 24} textAnchor="middle" fontSize={20} fill={label}>
+          <text x={cx + radius} y={cy + 26} textAnchor="middle" fontSize={22} fontWeight={600} fill={label}>
             100%
           </text>
         </>
@@ -123,8 +116,8 @@ export function HalfRing({
 }
 
 /**
- * Толстая шкала — для узких плиток, где полукруг не помещается.
- * Норма (100%) отмечена правым краем, засечка — ожидаемый темп.
+ * Толстая шкала до нормы: правый край — 100%, засечка — где должны быть
+ * сегодня. Высота ≈ десятая часть плитки, чтобы читалась издалека.
  */
 export function PlanBarThick({
   state,
@@ -141,10 +134,10 @@ export function PlanBarThick({
   const showTick = !hidden && state.expectedPct > 3 && state.expectedPct < 98;
   return (
     <div
-      style={{ height: "max(6px, min(2.4cqh, 15px))" }}
+      style={{ height: "max(8px, min(9cqh, 26px))" }}
       className={cn(
         "relative w-full overflow-hidden rounded-full",
-        wall ? ui.trackWall : ui.track,
+        wall ? "bg-white/[0.12]" : "bg-ink/[0.08]",
         className,
       )}
     >
@@ -160,7 +153,7 @@ export function PlanBarThick({
           aria-hidden
           className={cn(
             "absolute top-0 h-full w-[3px] rounded-full",
-            wall ? "bg-white/85" : "bg-ink/55",
+            wall ? "bg-white/90" : "bg-ink/60",
           )}
           style={{ left: `calc(${state.expectedPct}% - 1.5px)` }}
         />

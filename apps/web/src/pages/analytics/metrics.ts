@@ -53,6 +53,8 @@ export type MetricValue = {
   caption?: string;
   extra?: string;
   tone?: "good" | "warn" | "bad" | "neutral";
+  /** Сырые числа для советов на «Обзоре» (07.09): простой, долг, неоплата. */
+  raw?: Record<string, number>;
 };
 
 const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} ₽`;
@@ -65,6 +67,23 @@ export const METRIC_GROUP_LABEL: Record<MetricGroup, string> = {
   service: "Ремонты",
   buyout: "Выкуп",
   plan: "Сводка",
+};
+
+/**
+ * Иконка и мягкий цвет направления (07.09, правка заказчика: «либо шрифт,
+ * либо иконку»). Цвет здесь категориальный — один на всё направление,
+ * чтобы с десяти метров было видно «это про продажи», ещё до чтения
+ * заголовка. Статус (хорошо/плохо) он не изображает.
+ */
+export const METRIC_GROUP_UI: Record<
+  MetricGroup,
+  { icon: "bike" | "wallet" | "wrench" | "receipt" | "target"; chip: string; chipDark: string }
+> = {
+  rent: { icon: "bike", chip: "bg-blue-600/10 text-blue-700", chipDark: "bg-sky-400/15 text-sky-200" },
+  sales: { icon: "wallet", chip: "bg-violet-600/10 text-violet-700", chipDark: "bg-violet-400/15 text-violet-200" },
+  service: { icon: "wrench", chip: "bg-amber-600/10 text-amber-800", chipDark: "bg-amber-400/15 text-amber-100" },
+  buyout: { icon: "receipt", chip: "bg-emerald-600/10 text-emerald-800", chipDark: "bg-emerald-400/15 text-emerald-100" },
+  plan: { icon: "target", chip: "bg-ink/[0.06] text-ink-2", chipDark: "bg-white/10 text-white/70" },
 };
 
 export const METRICS: MetricDef[] = [
@@ -321,6 +340,11 @@ export function useMetricValues(periodOf: (metricId: string) => BoardPeriod) {
           : undefined,
       tone:
         dash.loadPercent >= 85 ? "good" : dash.loadPercent >= 60 ? "warn" : "bad",
+      raw: {
+        active: dash.activePetrolCount,
+        rentable: dash.rentableFleet,
+        idle: Math.max(0, dash.rentableFleet - dash.activePetrolCount),
+      },
     };
     out["rent.active"] = {
       value: dash.activeRentalsCount,
@@ -343,6 +367,7 @@ export function useMetricValues(periodOf: (metricId: string) => BoardPeriod) {
       caption: dash.overdueCount > 0 ? "требуют звонка" : "просрочек нет",
       extra: dash.overdueSum > 0 ? `долг ${money(dash.overdueSum)}` : undefined,
       tone: dash.overdueCount > 0 ? "bad" : "good",
+      raw: { debt: dash.overdueSum },
     };
 
     // Выручка с аренды за период — те же правила, что в блоке «Выручка».
@@ -469,15 +494,17 @@ export function useMetricValues(periodOf: (metricId: string) => BoardPeriod) {
         const t = new Date(o.acceptedAt).getTime();
         return t >= rc.from.getTime() && t <= rc.to.getTime();
       });
+      const unpaid = inRc.filter((o) => o.status !== "paid");
       out["service.count"] = {
         value: inRc.length,
         display: count(inRc.length),
         caption: `принято ${rc.label}`,
-        extra:
-          inRc.filter((o) => o.status !== "paid").length > 0
-            ? `ждут оплату: ${inRc.filter((o) => o.status !== "paid").length}`
-            : undefined,
+        extra: unpaid.length > 0 ? `ждут оплату: ${unpaid.length}` : undefined,
         tone: "neutral",
+        raw: {
+          unpaid: unpaid.length,
+          unpaidSum: unpaid.reduce((sum, o) => sum + o.totals.revenue, 0),
+        },
       };
 
       const rr = rangeFor("service.revenue");
@@ -531,6 +558,7 @@ export function useMetricValues(periodOf: (metricId: string) => BoardPeriod) {
             ? `просрочено ${money(overdue.reduce((s, d) => s + d.progress.overdueAmount, 0))}`
             : undefined,
         tone: overdue.length > 0 ? "bad" : "good",
+        raw: { amount: overdue.reduce((s, d) => s + d.progress.overdueAmount, 0) },
       };
       const r = rangeFor("buyout.collected");
       // Считаем по закрытым строкам графика: дата закрытия = дата платежа.
