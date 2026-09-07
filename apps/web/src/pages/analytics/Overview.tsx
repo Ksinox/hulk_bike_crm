@@ -70,8 +70,9 @@ export function Overview({
         compact ? "flex flex-col" : "grid grid-cols-[1fr_1fr_0.85fr] grid-rows-2",
       )}
     >
-      {/* Советы — правая колонка на всю высоту; направления заполняют 2×2 слева */}
-      <AdvicePanel items={advice} compact={compact} />
+      {/* Советы — правая колонка на всю высоту; направления заполняют 2×2
+          слева. На телефоне советы идут после направлений. */}
+      {!compact && <AdvicePanel items={advice} compact={compact} />}
       {GROUPS.map((g) => (
         <GroupPanel
           key={g}
@@ -83,6 +84,7 @@ export function Overview({
           compact={compact}
         />
       ))}
+      {compact && <AdvicePanel items={advice} compact={compact} />}
     </div>
   );
 }
@@ -185,7 +187,7 @@ function GroupPanel({
       {/* Заголовок направления + вердикт */}
       <div className="flex shrink-0 items-center justify-between gap-2">
         <div
-          style={{ fontSize: compact ? "18px" : "max(13px, min(9cqh, 6cqw, 30px))" }}
+          style={{ fontSize: compact ? "18px" : "max(13px, min(8cqh, 5.5cqw, 24px))" }}
           className="flex min-w-0 items-center gap-[0.5em] font-bold text-ink"
         >
           <span
@@ -225,7 +227,7 @@ function GroupPanel({
               {lead.title}
             </div>
             <div
-              style={{ fontSize: compact ? "38px" : "max(22px, min(22cqh, 13cqw, 90px))" }}
+              style={{ fontSize: compact ? "38px" : "max(22px, min(20cqh, 12cqw, 64px))" }}
               className={cn(
                 "truncate font-display font-extrabold leading-[0.95] tracking-[-0.03em] tabular-nums",
                 leadValue.tone === "bad" ? "text-red-ink" : "text-ink",
@@ -244,7 +246,7 @@ function GroupPanel({
           {leadState && !leadHidden && (
             <div className="shrink-0 text-right">
               <div
-                style={{ fontSize: compact ? "26px" : "max(16px, min(14cqh, 8cqw, 54px))" }}
+                style={{ fontSize: compact ? "26px" : "max(16px, min(12cqh, 7cqw, 40px))" }}
                 className={cn(
                   "font-display font-extrabold leading-none tabular-nums",
                   STATUS_UI[leadState.status].ink,
@@ -304,7 +306,7 @@ function GroupPanel({
                 <>
                   <span
                     className="relative hidden shrink-0 overflow-hidden rounded-full bg-ink/[0.08] sm:block"
-                    style={{ height: "0.55em", width: "26%" }}
+                    style={{ height: "0.55em", width: "20%" }}
                   >
                     <span
                       className={cn("block h-full rounded-full", STATUS_UI[st.status].bar)}
@@ -324,7 +326,7 @@ function GroupPanel({
               ) : (
                 <span
                   className="hidden shrink-0 truncate text-right text-muted sm:inline"
-                  style={{ fontSize: "0.82em", maxWidth: "38%" }}
+                  style={{ fontSize: "0.82em", maxWidth: "34%" }}
                 >
                   {v.caption}
                 </span>
@@ -339,8 +341,8 @@ function GroupPanel({
 
 function rowSize(n: number): string {
   // Строки делят нижнюю половину блока; чем больше строк, тем мельче.
-  const share = (44 / Math.max(2, n)).toFixed(1);
-  return `max(11px, min(${share}cqh, 4cqw, 22px))`;
+  const share = (42 / Math.max(2, n)).toFixed(1);
+  return `max(11px, min(${share}cqh, 3.8cqw, 18px))`;
 }
 
 function Bar({ state, style }: { state: PlanState; style?: React.CSSProperties }) {
@@ -363,7 +365,7 @@ function AdvicePanel({ items, compact }: { items: Advice[]; compact: boolean }) 
   return (
     <Panel compact={compact} dark className={cn(!compact && "col-start-3 row-start-1 row-span-2")}>
       <div
-        style={{ fontSize: compact ? "18px" : "max(13px, min(4.6cqh, 8cqw, 30px))" }}
+        style={{ fontSize: compact ? "18px" : "max(13px, min(4.2cqh, 7cqw, 24px))" }}
         className="relative flex shrink-0 items-center gap-[0.5em] font-bold"
       >
         <span className="flex h-[1.5em] w-[1.5em] shrink-0 items-center justify-center rounded-[0.4em] bg-white/10 text-amber-300">
@@ -397,9 +399,9 @@ function AdvicePanel({ items, compact }: { items: Advice[]; compact: boolean }) 
                 )}
               />
               <div className="min-w-0">
-                <div className="line-clamp-2 font-bold leading-snug">{a.title}</div>
+                <div className={cn("font-bold leading-snug", !compact && "line-clamp-2")}>{a.title}</div>
                 <div
-                  className="a-hide-xs mt-[0.2em] line-clamp-2 leading-snug text-white/60"
+                  className={cn("mt-[0.2em] leading-snug text-white/60", !compact && "a-hide-xs line-clamp-3")}
                   style={{ fontSize: "0.86em" }}
                 >
                   {a.text}
@@ -415,6 +417,6 @@ function AdvicePanel({ items, compact }: { items: Advice[]; compact: boolean }) 
 
 function adviceSize(n: number): string {
   // На каждый совет — своя доля высоты; заголовок + две строки текста.
-  const share = (16 / Math.max(2, n)).toFixed(1);
-  return `max(11px, min(${share}cqh, 4.6cqw, 20px))`;
+  const share = (15 / Math.max(2, n)).toFixed(1);
+  return `max(11px, min(${share}cqh, 4.4cqw, 17px))`;
 }

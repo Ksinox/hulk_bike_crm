@@ -97,7 +97,7 @@ export function PlanSummaryTile({
   const n = Math.max(1, rows.length);
   const line = compact
     ? "14px"
-    : `max(10px, min(${(40 / n).toFixed(2)}cqh, 5cqw, ${wall ? 26 : 20}px))`;
+    : `max(10px, min(${(66 / n).toFixed(2)}cqh, 4.5cqw, ${wall ? 26 : 20}px))`;
   const group = METRIC_GROUP_UI.plan;
 
   return (
@@ -193,52 +193,48 @@ export function PlanSummaryTile({
           {rows.map((r) => {
             const ui = STATUS_UI[r.state.status];
             return (
-              <div key={r.id} style={{ fontSize: line }} className="flex min-h-0 flex-col gap-[0.25em]">
-                <div className="flex items-baseline justify-between gap-[0.8em]">
-                  <span className={cn("min-w-0 truncate font-bold", wall ? "text-white/85" : "text-ink")}>
-                    {r.title}
-                  </span>
-                  <span
-                    className={cn("shrink-0 tabular-nums", wall ? "text-white/50" : "text-muted")}
-                    style={{ fontSize: "0.82em" }}
-                  >
-                    {r.hidden ? (
-                      <>
-                        <Sensitive dark={wall}>{r.fact}</Sensitive> из {r.plan}
-                      </>
-                    ) : (
-                      <>
-                        {r.fact} из {r.plan}
-                      </>
-                    )}
-                  </span>
-                </div>
-                <div className="flex items-center gap-[0.8em]">
-                  <span
-                    className={cn(
-                      "relative min-w-0 flex-1 overflow-hidden rounded-full",
-                      wall ? "bg-white/[0.12]" : "bg-ink/[0.08]",
-                    )}
-                    style={{ height: "0.6em" }}
-                  >
-                    <span
-                      className={cn(
-                        "block h-full rounded-full transition-[width] duration-700",
-                        wall ? ui.barWall : ui.bar,
-                      )}
-                      style={{ width: r.hidden ? 0 : `${Math.min(100, r.state.pct)}%` }}
-                    />
-                  </span>
+              <div key={r.id} style={{ fontSize: line }} className="flex min-h-0 items-center gap-[0.7em]">
+                <span className={cn("min-w-0 flex-1 truncate font-bold", wall ? "text-white/85" : "text-ink")}>
+                  {r.title}
+                </span>
+                <span
+                  className={cn("hidden shrink-0 truncate tabular-nums md:inline", wall ? "text-white/50" : "text-muted")}
+                  style={{ fontSize: "0.8em", maxWidth: "30%" }}
+                >
+                  {r.hidden ? (
+                    <>
+                      <Sensitive dark={wall}>{r.fact}</Sensitive> из {r.plan}
+                    </>
+                  ) : (
+                    <>
+                      {r.fact} из {r.plan}
+                    </>
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    "relative shrink-0 overflow-hidden rounded-full",
+                    wall ? "bg-white/[0.12]" : "bg-ink/[0.08]",
+                  )}
+                  style={{ height: "0.6em", width: "24%" }}
+                >
                   <span
                     className={cn(
-                      "shrink-0 text-right font-display font-extrabold leading-none tabular-nums",
-                      wall ? ui.inkWall : ui.ink,
+                      "block h-full rounded-full transition-[width] duration-700",
+                      wall ? ui.barWall : ui.bar,
                     )}
-                    style={{ fontSize: "1.2em", width: "3.4em" }}
-                  >
-                    {r.hidden ? <Sensitive dark={wall}>{r.state.pct}%</Sensitive> : `${r.state.pct}%`}
-                  </span>
-                </div>
+                    style={{ width: r.hidden ? 0 : `${Math.min(100, r.state.pct)}%` }}
+                  />
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 text-right font-display font-extrabold leading-none tabular-nums",
+                    wall ? ui.inkWall : ui.ink,
+                  )}
+                  style={{ fontSize: "1.2em", width: "3.4em" }}
+                >
+                  {r.hidden ? <Sensitive dark={wall}>{r.state.pct}%</Sensitive> : `${r.state.pct}%`}
+                </span>
               </div>
             );
           })}

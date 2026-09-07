@@ -189,7 +189,8 @@ export function AnalyticsTile({
         {editing && (
           <div
             className={cn(
-              "flex shrink-0 items-center gap-0.5 transition-opacity",
+              "absolute -right-1 -top-1 z-10 flex shrink-0 items-center gap-0.5 rounded-lg px-1 transition-opacity",
+              dark ? "bg-ink/80" : "bg-surface/90",
               compact ? "opacity-100" : "opacity-0 group-hover/tile:opacity-100",
             )}
             onPointerDown={(e) => e.stopPropagation()}
@@ -261,7 +262,7 @@ export function AnalyticsTile({
           )}
         </div>
       ) : (
-        <div className="relative flex min-h-0 flex-1 flex-col justify-center">
+        <div className="relative flex min-h-0 flex-1 flex-col justify-center overflow-hidden">
           <div
             style={{ fontSize: numberSize(display, !!state, compact) }}
             className={cn(
@@ -371,7 +372,7 @@ export function AnalyticsTile({
 
 /** Заголовок ≈ 13% высоты плитки, но не шире плитки. */
 function titleSize(compact: boolean): string {
-  return compact ? "17px" : "max(12px, min(12cqh, 7.5cqw, 36px))";
+  return compact ? "17px" : "max(12px, min(11cqh, 6.2cqw, 34px))";
 }
 
 function captionSize(compact: boolean): string {
@@ -390,8 +391,10 @@ function pctSize(compact: boolean): string {
 function numberSize(display: string, withPlan: boolean, compact: boolean): string {
   if (compact) return "40px";
   const chars = Math.max(1, display.replace(/\s/g, "").length + (display.includes(" ") ? 0.4 : 0));
-  const byWidth = (92 / (0.6 * chars)).toFixed(1);
-  const byHeight = withPlan ? 44 : 52;
+  const byWidth = (86 / (0.6 * chars)).toFixed(1);
+  // По высоте: заголовок ~12%, отступы ~18%, подвал с планом ~24% —
+  // цифре остаётся треть плитки, без плана — почти половина.
+  const byHeight = withPlan ? 30 : 42;
   return `max(20px, min(${byHeight}cqh, ${byWidth}cqw))`;
 }
 

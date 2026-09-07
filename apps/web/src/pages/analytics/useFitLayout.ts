@@ -46,7 +46,10 @@ export function useFitLayout(
       const aspect = Math.abs(cellW / cellH - 1.45);
       const small = cellH < minCellH ? (minCellH - cellH) / 40 : 0;
       const narrow = cellW < minCellW ? (minCellW - cellW) / 60 : 0;
-      const score = aspect + small + narrow;
+      // Пустые клетки — тоже плохо: экран должен быть заполнен.
+      const used = spans.reduce((a, s) => a + Math.min(s.w, c) * s.h, 0);
+      const waste = Math.max(0, 1 - used / (c * r)) * 1.6;
+      const score = aspect + small + narrow + waste;
       if (score < best.score) best = { cols: c, rows: r, score };
     }
     void key;

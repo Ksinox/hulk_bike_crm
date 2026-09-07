@@ -55,8 +55,8 @@ export function HalfRing({
   const ly2 = ly1 - Math.sin(angle) * 30;
 
   const good = state.status === "ahead" || state.status === "ontrack";
-  const fontSize = Math.max(16, SIZE * 0.1) * 1.9;
-  const labelFontSize = Math.max(12, SIZE * 0.04) * 1.6;
+  const fontSize = Math.max(16, SIZE * 0.1) * 1.45;
+  const labelFontSize = Math.max(12, SIZE * 0.04) * 1.35;
   const arc = (r: number) =>
     `M ${center - r} ${center} A ${r} ${r} 0 0 1 ${center + r} ${center}`;
 
@@ -170,7 +170,7 @@ export function HalfRing({
       {/* Счётчик в центре */}
       <text
         x={center}
-        y={center + 40}
+        y={center + 34}
         textAnchor="middle"
         fontSize={fontSize}
         fontWeight={800}
@@ -185,7 +185,7 @@ export function HalfRing({
         <>
           <text
             x={center - radius - 5}
-            y={center + strokeWidth / 2 + labelFontSize}
+            y={center + strokeWidth / 2 + labelFontSize * 1.15}
             fontSize={labelFontSize}
             fontWeight={500}
             fill="#9ca3af"
@@ -193,8 +193,8 @@ export function HalfRing({
             0%
           </text>
           <text
-            x={center + radius - 20}
-            y={center + strokeWidth / 2 + labelFontSize}
+            x={center + radius - 24}
+            y={center + strokeWidth / 2 + labelFontSize * 1.15}
             fontSize={labelFontSize}
             fontWeight={500}
             fill="#9ca3af"
