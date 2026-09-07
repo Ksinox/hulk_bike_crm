@@ -129,9 +129,13 @@ export function Analytics() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   const wallBox = useMemo(() => {
+    // На телефоне окно вертикальное, а второй монитор — горизонтальный.
+    // Считать миниатюру по форме телефона было бы враньём, поэтому там
+    // берём обычный монитор 16:9.
+    if (isMobile) return { w: 1600, h: 780 };
     const vmin = Math.min(win.w, win.h) / 100;
     return { w: win.w - 3.2 * vmin, h: win.h - 3.2 * vmin - 11 * vmin };
-  }, [win]);
+  }, [win, isMobile]);
   const fit = useFitLayout(gridRef, spans, { gap: 14, minCellH: 130, box: wallBox });
   // На телефоне сетка не «в экран»: две колонки и высота по содержимому.
   const cols = isMobile ? 2 : fit.cols;
