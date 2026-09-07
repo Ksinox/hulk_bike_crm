@@ -485,17 +485,18 @@
    Заказчик просил, чтобы всё помещалось на любом мониторе — значит, на
    низкой плитке лишние строки не сжимаются в кашу, а честно уходят,
    оставляя главное: заголовок, цифру и шкалу плана. */
-@container (max-height: 165px) {
+/* Пороги считаны по content-box плитки (отступы уже вычтены). */
+@container (max-height: 108px) {
   .a-hide-sm {
     display: none !important;
   }
 }
-@container (max-height: 120px) {
+@container (max-height: 76px) {
   .a-hide-xs {
     display: none !important;
   }
 }
-@container (max-height: 92px) {
+@container (max-height: 54px) {
   .a-hide-xxs {
     display: none !important;
   }
