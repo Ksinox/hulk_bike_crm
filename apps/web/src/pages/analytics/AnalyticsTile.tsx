@@ -267,7 +267,7 @@ export function AnalyticsTile({
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col justify-center overflow-hidden">
           <div
-            style={{ fontSize: numberSize(display, !!state, compact) }}
+            style={{ fontSize: numberSize(display, !!state, compact), lineHeight: 1 }}
             className={cn(
               "truncate font-display font-extrabold leading-[0.95] tracking-[-0.035em] tabular-nums",
               numberTone,
@@ -421,7 +421,7 @@ function numberSize(display: string, withPlan: boolean, compact: boolean): strin
   const byWidth = (86 / (0.6 * chars)).toFixed(1);
   // По высоте: заголовок ~12%, отступы ~18%, подвал с планом ~24% —
   // цифре остаётся треть плитки, без плана — почти половина.
-  const byHeight = withPlan ? 30 : 42;
+  const byHeight = withPlan ? 26 : 40;
   return `max(20px, min(${byHeight}cqh, ${byWidth}cqw))`;
 }
 

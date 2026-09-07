@@ -240,10 +240,11 @@ function GroupPanel({
               <div
                 style={{ fontSize: compact ? "26px" : "max(16px, min(12cqh, 7cqw, 30px))" }}
                 className={cn(
-                  "font-display font-extrabold leading-none tabular-nums",
+                  "flex items-center justify-end gap-[0.3em] font-display font-extrabold leading-none tabular-nums",
                   STATUS_UI[leadState.status].ink,
                 )}
               >
+                {leadState.done && <DoneBadge withText={false} className="p-0 text-[0.8em]" />}
                 {leadState.pct}%
               </div>
               <div
