@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils";
 import type { RouteId } from "@/app/route";
 import { useMe, useLogout } from "@/lib/api/auth";
 import { openCalculator } from "@/lib/calc/calcStore";
-import { FabProvider, type PageFab } from "./fab";
+import { FabProvider, usePageFab, type PageFab } from "./fab";
+import { openDeal } from "@/pages/clients/CreateDealMenu";
 import { useSheetDrag, SheetHandle } from "./ui";
 import {
   buildMoreItems,
@@ -175,18 +176,22 @@ function MobilePage({
     case "sales":
       // Раздел свёрстан адаптивно: на телефоне таблицы заменяются
       // карточными списками, мастер продажи — полноэкранный.
+      //
+      // 07.09: на компьютере новую сделку заводят из шапки, которая видна на
+      // любой странице. На телефоне шапки нет, поэтому кнопка живёт прямо в
+      // разделе — иначе за продажей пришлось бы возвращаться на «Главную».
       return (
-        <div className="px-1 pb-4">
+        <WithFab label="Продажа" onClick={() => openDeal("sale")}>
           <Sales />
-        </div>
+        </WithFab>
       );
     case "rassrochki":
       // Раздел свёрстан адаптивно: списки — карточками, мастер выкупа
       // полноэкранный (паритет с десктопом).
       return (
-        <div className="px-1 pb-4">
+        <WithFab label="Выкуп" onClick={() => openDeal("buyout")}>
           <Buyout />
-        </div>
+        </WithFab>
       );
     case "partners":
       // Пункт 11: страница адаптивна (таблица со своим скроллом) —
@@ -406,4 +411,22 @@ function MoreSheet({
 
 function isMoreRoute(route: RouteId): boolean {
   return !tabItems.some((t) => t.id === route);
+}
+
+/**
+ * Десктопная страница в мобильной обёртке + своя плавающая кнопка.
+ * Нужна там, где страница общая с компьютером и сама про мобильный FAB
+ * ничего не знает (Продажи, Выкуп).
+ */
+function WithFab({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  usePageFab(label, onClick);
+  return <div className="px-1 pb-4">{children}</div>;
 }
