@@ -84,7 +84,6 @@ export function Overview({
           group={g}
           values={values}
           planOf={planOf}
-          periodOf={periodOf}
           revealed={revealed}
           compact={compact}
         />
@@ -147,14 +146,12 @@ function GroupPanel({
   group,
   values,
   planOf,
-  periodOf,
   revealed,
   compact,
 }: {
   group: MetricGroup;
   values: Record<string, MetricValue>;
   planOf: (id: string) => number | null;
-  periodOf: (id: string) => BoardPeriod;
   revealed: boolean;
   compact: boolean;
 }) {
