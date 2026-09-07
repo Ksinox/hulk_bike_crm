@@ -75,7 +75,9 @@ export function Overview({
         // до бесконечности — есть максимальный размер, дальше — воздух.
         compact
           ? columns === 2
-            ? "grid grid-cols-2 content-start"
+            // items-start: короткий блок не растягивается на высоту соседа —
+            // иначе внутри карточки зияет пустота (правка 07.09).
+            ? "grid grid-cols-2 content-start items-start"
             : "flex flex-col"
           : "mx-auto grid w-full max-w-[1400px] grid-cols-[1fr_1fr_0.85fr] grid-rows-2 max-h-[760px]",
       )}
