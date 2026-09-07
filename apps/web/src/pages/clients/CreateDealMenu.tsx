@@ -49,14 +49,28 @@ export const DEAL_TYPES: {
   {
     id: "repair",
     label: "Ремонт",
-    hint: "Ремонт стороннего скутера клиента",
+    hint: "Заказ-наряд на чужую технику: работы и запчасти",
     icon: Wrench,
     blockIfBlacklisted: false,
   },
 ];
 
-/** Типы сделки, которые уже работают (правка 31.08: продажи запущены). */
-const READY_TYPES: DealType[] = ["rental", "sale", "buyout"];
+/**
+ * Типы сделки, которые уже работают. 07.09: заработал «Ремонт» — блок
+ * сторонних ремонтов запущен, поэтому «скоро» не осталось вовсе.
+ */
+export const READY_TYPES: DealType[] = ["rental", "sale", "buyout", "repair"];
+
+/**
+ * Куда ведёт выбор типа сделки. Один обработчик на десктоп и мобилу —
+ * иначе мобильная версия отстаёт (07.09: на телефоне «Продажа» и «Выкуп»
+ * оставались серыми, хотя на компьютере работали).
+ */
+export function openDeal(type: DealType, clientId?: number): void {
+  if (type === "sale") navigate({ route: "sales", newSale: true, clientId });
+  else if (type === "buyout") navigate({ route: "rassrochki", newSale: true, clientId });
+  else if (type === "repair") navigate({ route: "service", newSale: true, clientId });
+}
 
 /**
  * Список типов сделки внутри выпадающего меню — общий для карточки клиента
@@ -162,13 +176,7 @@ export function NewDealButton({
     if (type === "rental") {
       if (onRental) onRental();
       else setRentalOpen(true);
-    } else if (type === "sale") {
-      // Продажа оформляется мастером в своём разделе — ведём туда и сразу
-      // открываем мастер (правка 31.08).
-      navigate({ route: "sales", newSale: true });
-    } else if (type === "buyout") {
-      navigate({ route: "rassrochki", newSale: true });
-    }
+    } else openDeal(type);
   };
 
   return (
@@ -248,12 +256,7 @@ export function CreateDealMenu({
   const handlePick = (type: DealType) => {
     setOpen(false);
     if (type === "rental") setRentalOpen(true);
-    else if (type === "sale") {
-      // Продажа — мастер в разделе «Продажи», клиент уже выбран.
-      navigate({ route: "sales", newSale: true, clientId: client.id });
-    } else if (type === "buyout") {
-      navigate({ route: "rassrochki", newSale: true, clientId: client.id });
-    }
+    else openDeal(type, client.id);
   };
 
   return (

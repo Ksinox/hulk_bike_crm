@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Banknote,
   Bike,
@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { consumePending, onNavigate } from "@/app/navigationStore";
 import {
   useCreateServiceOrder,
   useServiceOrders,
@@ -56,6 +57,18 @@ export function ServiceOrders() {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+
+  // «Новая сделка» → «Ремонт» (и на компьютере, и на телефоне) ведёт сюда
+  // и сразу открывает приём чужой техники.
+  useEffect(() => {
+    if (consumePending("service")?.newSale) setCreating(true);
+    return onNavigate((req) => {
+      if (req.route === "service" && req.newSale) {
+        consumePending("service");
+        setCreating(true);
+      }
+    });
+  }, []);
 
   const bounds = periodBounds(period);
 

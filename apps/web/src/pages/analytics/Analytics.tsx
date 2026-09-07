@@ -34,6 +34,7 @@ import {
 import { AnalyticsTile } from "./AnalyticsTile";
 import { PlanSummaryTile } from "./PlanSummaryTile";
 import { Overview } from "./Overview";
+import { MobileBoardEditor } from "./MobileBoardEditor";
 import { useFlip } from "./useFlip";
 import { useFitLayout } from "./useFitLayout";
 import { useTileDrag } from "./useTileDrag";
@@ -164,16 +165,24 @@ export function Analytics() {
       className={cn(
         "flex min-w-0 flex-1 flex-col gap-3",
         // Экран помещается в окно целиком: корень — ровно высота окна.
+        // На телефоне высоту не фиксируем: там страница прокручивается.
         !isMobile && "h-[100dvh] overflow-hidden p-[18px]",
       )}
     >
       {!isMobile && <Topbar />}
 
-      <header className="flex shrink-0 flex-wrap items-center gap-3">
-        <h1 className="font-display text-[30px] font-extrabold leading-none text-ink">
-          Аналитика
-        </h1>
-        <div className="flex gap-1 rounded-full bg-surface p-1 shadow-card-sm">
+      <header
+        className={cn(
+          "flex shrink-0 items-center gap-3",
+          isMobile ? "flex-nowrap overflow-x-auto pb-1" : "flex-wrap",
+        )}
+      >
+        {!isMobile && (
+          <h1 className="font-display text-[30px] font-extrabold leading-none text-ink">
+            Аналитика
+          </h1>
+        )}
+        <div className="flex shrink-0 gap-1 rounded-full bg-surface p-1 shadow-card-sm">
           <SectionTab active={section === "overview"} onClick={() => setSection("overview")} icon={<Eye size={14} />}>
             Обзор
           </SectionTab>
@@ -183,9 +192,14 @@ export function Analytics() {
             </SectionTab>
           )}
         </div>
-        <SensitiveToggle />
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <div className="flex gap-1 rounded-full bg-surface p-1 shadow-card-sm">
+        <SensitiveToggle className="shrink-0" />
+        <div
+          className={cn(
+            "flex items-center gap-2",
+            isMobile ? "shrink-0" : "ml-auto flex-wrap",
+          )}
+        >
+          <div className="flex shrink-0 gap-1 rounded-full bg-surface p-1 shadow-card-sm">
             {PERIODS.map((p) => (
               <button
                 key={p}
@@ -200,14 +214,16 @@ export function Analytics() {
               </button>
             ))}
           </div>
-          <span className="hidden text-[12.5px] text-muted lg:inline">{range.label}</span>
+          {!isMobile && (
+            <span className="hidden text-[12.5px] text-muted lg:inline">{range.label}</span>
+          )}
           {editing ? (
             <>
               <button
                 type="button"
                 onClick={() => setDraft(null)}
                 disabled={!draft}
-                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[12.5px] font-semibold text-muted shadow-card-sm hover:text-ink disabled:opacity-40"
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[12.5px] font-semibold text-muted shadow-card-sm hover:text-ink disabled:opacity-40"
               >
                 <RotateCcw size={14} /> Отменить
               </button>
@@ -215,20 +231,23 @@ export function Analytics() {
                 type="button"
                 onClick={onSave}
                 disabled={!draft || save.isPending}
-                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-[12.5px] font-bold text-white disabled:opacity-40"
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-ink px-4 text-[12.5px] font-bold text-white disabled:opacity-40"
               >
                 <Check size={14} /> Сохранить
               </button>
             </>
           ) : null}
-          <button
-            type="button"
-            onClick={openWall}
-            title="Открыть отдельным окном — перетащите на второй монитор и включите полный экран"
-            className="inline-flex h-9 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[12.5px] font-semibold text-ink shadow-card-sm hover:bg-surface-soft"
-          >
-            <MonitorUp size={14} /> На второй монитор
-          </button>
+          {/* На телефоне второго монитора нет — кнопку не показываем. */}
+          {!isMobile && (
+            <button
+              type="button"
+              onClick={openWall}
+              title="Открыть отдельным окном — перетащите на второй монитор и включите полный экран"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[12.5px] font-semibold text-ink shadow-card-sm hover:bg-surface-soft"
+            >
+              <MonitorUp size={14} /> На второй монитор
+            </button>
+          )}
         </div>
       </header>
 
@@ -238,27 +257,26 @@ export function Analytics() {
         <div className={cn("flex min-h-0 flex-1 gap-3", isMobile ? "flex-col" : "flex-row")}>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             <div className="shrink-0 text-[12.5px] text-muted">
-              Это второй монитор в миниатюре: те же колонки и ряды. Перетаскивайте плитки за
-              ручку, тяните за правый нижний угол — ширина и высота в клетках, план — кнопкой-мишенью.
+              {isMobile
+                ? "Сверху — как доска ляжет на второй монитор. Ниже порядок и размеры плиток: стрелками и кнопками, план — полем."
+                : "Это второй монитор в миниатюре: те же колонки и ряды. Перетаскивайте плитки за ручку, тяните за правый нижний угол — ширина и высота в клетках, план — кнопкой-мишенью."}
             </div>
             {/* Тёмный бокс пропорций экрана — стена как она есть, только меньше */}
-            <div className="flex min-h-0 flex-1 items-start justify-center">
+            <div
+              className={cn(
+                "flex min-h-0 items-start justify-center",
+                isMobile ? "shrink-0" : "flex-1",
+              )}
+            >
             <div
               ref={gridRef}
               data-grid
-              className={cn(
-                "grid gap-[0.7vmin]",
-                isMobile ? "w-full" : "max-h-full max-w-full rounded-[18px] bg-[#070b14] p-[0.8vmin]",
-              )}
+              className="grid max-h-full max-w-full gap-[0.7vmin] rounded-[18px] bg-[#070b14] p-[0.8vmin]"
               style={{
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                ...(isMobile
-                  ? { gridAutoRows: "minmax(150px, auto)" }
-                  : {
-                      gridTemplateRows: `repeat(${fit.rows}, minmax(0, 1fr))`,
-                      aspectRatio: `${wallBox.w} / ${wallBox.h}`,
-                      width: "100%",
-                    }),
+                gridTemplateRows: `repeat(${fit.rows}, minmax(0, 1fr))`,
+                aspectRatio: `${wallBox.w} / ${wallBox.h}`,
+                width: "100%",
                 gridAutoFlow: "row dense",
               }}
             >
@@ -268,9 +286,8 @@ export function Analytics() {
                 const shared = {
                   index: i,
                   cols,
-                  compact: isMobile,
-                  wall: !isMobile,
-                  editing: true,
+                  wall: true,
+                  editing: !isMobile,
                   onRemove: () => removeTile(i),
                   onResize: (w: number, h: number) => patchTile(i, { w, h }),
                   onDragStart: (e: React.PointerEvent) => startDrag(i, e),
@@ -302,10 +319,28 @@ export function Analytics() {
               })}
             </div>
             </div>
+
+            {/* На телефоне доску правим списком — пальцем это надёжнее,
+                чем тянуть уголки в миниатюре. */}
+            {isMobile && (
+              <MobileBoardEditor
+                board={board}
+                cols={cols}
+                onMove={(from, to) => move(from, to)}
+                onResize={(i, w, h) => patchTile(i, { w, h })}
+                onPlan={(i, plan) => patchTile(i, { plan })}
+                onRemove={(i) => removeTile(i)}
+              />
+            )}
           </div>
 
           {/* Каталог показателей */}
-          <aside className="flex w-full shrink-0 flex-col gap-3 overflow-y-auto rounded-2xl bg-surface p-4 shadow-card-sm lg:w-[280px]">
+          <aside
+            className={cn(
+              "flex w-full shrink-0 flex-col gap-3 rounded-2xl bg-surface p-4 shadow-card-sm lg:w-[280px]",
+              !isMobile && "overflow-y-auto",
+            )}
+          >
             <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
               <LayoutGrid size={12} /> Добавить показатель
             </div>

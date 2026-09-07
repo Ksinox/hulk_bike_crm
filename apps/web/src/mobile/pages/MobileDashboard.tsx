@@ -26,7 +26,11 @@ import { MobileRevenueScreen } from "./MobileRevenueScreen";
 import { RowCallButton, useCallClient } from "../call";
 import { usePageFab } from "../fab";
 import { MobileBottomSheet } from "../BottomSheet";
-import { DEAL_TYPES, type DealType } from "@/pages/clients/CreateDealMenu";
+import {
+  DEAL_TYPES,
+  READY_TYPES,
+  openDeal,
+} from "@/pages/clients/CreateDealMenu";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -401,8 +405,9 @@ export function MobileDashboard({
           нижний лист из mobile/call. */}
       {callSheet}
 
-      {/* Пункт 5: нижний лист «Новая сделка» — крупные пункты под палец,
-          пункты включаются по мере готовности (живая пока «Аренда»). */}
+      {/* Нижний лист «Новая сделка» — крупные пункты под палец. 07.09:
+          типы те же, что на компьютере (READY_TYPES), включая «Ремонт»;
+          раньше на мобиле жила только «Аренда». */}
       {dealSheetOpen && (
         <MobileBottomSheet onClose={() => setDealSheetOpen(false)}>
           {({ close }) => (
@@ -416,7 +421,7 @@ export function MobileDashboard({
               <div className="flex flex-col gap-2">
                 {DEAL_TYPES.map((dt) => {
                   const Icon = dt.icon;
-                  const enabled = dt.id === ("rental" as DealType);
+                  const enabled = READY_TYPES.includes(dt.id);
                   return (
                     <button
                       key={dt.id}
@@ -426,10 +431,10 @@ export function MobileDashboard({
                         enabled
                           ? () => {
                               close();
-                              window.setTimeout(
-                                () => setNewRentalOpen(true),
-                                290,
-                              );
+                              window.setTimeout(() => {
+                                if (dt.id === "rental") setNewRentalOpen(true);
+                                else openDeal(dt.id);
+                              }, 290);
                             }
                           : undefined
                       }
@@ -443,9 +448,7 @@ export function MobileDashboard({
                       <div
                         className={cn(
                           "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-                          enabled
-                            ? "bg-blue-600 text-white"
-                            : "bg-surface text-muted-2",
+                          enabled ? "bg-blue-600 text-white" : "bg-surface text-muted-2",
                         )}
                       >
                         <Icon size={20} />
@@ -459,9 +462,7 @@ export function MobileDashboard({
                             </span>
                           )}
                         </div>
-                        <div className="mt-0.5 text-[12px] text-muted">
-                          {dt.hint}
-                        </div>
+                        <div className="mt-0.5 text-[12px] text-muted">{dt.hint}</div>
                       </div>
                     </button>
                   );
