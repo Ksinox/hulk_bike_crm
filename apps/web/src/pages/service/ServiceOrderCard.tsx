@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Banknote,
   Check,
-  CreditCard,
   Package,
   Plus,
   Trash2,
@@ -22,6 +21,7 @@ import {
   type ServiceOrderItem,
 } from "@/lib/api/service-orders";
 import { usePriceList } from "@/lib/api/price-list";
+import { PayMethodPicker, splitByMethod, type PayMethod } from "@/components/PayMethodPicker";
 import { money, StatusBadge } from "./serviceOrderUi";
 
 /**
@@ -197,7 +197,11 @@ export function ServiceOrderCard({
           {order.status === "paid" && (
             <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-[12.5px] font-semibold text-emerald-800">
               Оплачено {money(order.paidAmount ?? order.totals.revenue)} ·{" "}
-              {order.paymentMethod === "transfer" ? "перевод" : "наличные"}
+              {order.paymentMethod === "mixed"
+                ? `наличные ${money(order.cashAmount)} + перевод ${money(order.transferAmount)}`
+                : order.paymentMethod === "transfer"
+                  ? "перевод"
+                  : "наличные"}
               {order.paidAt
                 ? ` · ${new Date(order.paidAt).toLocaleDateString("ru-RU")}`
                 : ""}
@@ -269,12 +273,15 @@ export function ServiceOrderCard({
         <PayDialog
           total={order.totals.revenue}
           onClose={() => setPayOpen(false)}
-          onPay={async (amount, method) => {
-            await pay.mutateAsync({ id: order.id, amount, method });
+          onPay={async (amount, method, cashAmount) => {
+            await pay.mutateAsync({ id: order.id, amount, method, cashAmount });
             setPayOpen(false);
+            const { cash, transfer } = splitByMethod(amount, method, cashAmount);
             toast.success(
               "Оплата подтверждена",
-              `${money(amount)} · ${method === "cash" ? "наличные" : "перевод"}`,
+              method === "mixed"
+                ? `${money(amount)} · наличные ${money(cash)} + перевод ${money(transfer)}`
+                : `${money(amount)} · ${method === "cash" ? "наличные" : "перевод"}`,
             );
           }}
         />
@@ -619,18 +626,21 @@ function PayDialog({
 }: {
   total: number;
   onClose: () => void;
-  onPay: (amount: number, method: "cash" | "transfer") => void;
+  onPay: (amount: number, method: PayMethod, cashAmount: number) => void;
 }) {
   const [amount, setAmount] = useState(String(total));
-  const [method, setMethod] = useState<"cash" | "transfer">("cash");
+  const [method, setMethod] = useState<PayMethod>("cash");
+  const [cash, setCash] = useState(0);
+  const sum = Number(amount || 0);
   return (
     <div className="absolute inset-0 z-40 flex items-end justify-center bg-ink/30 p-4 sm:items-center">
-      <div className="w-full max-w-[380px] rounded-3xl bg-surface p-4 shadow-card-lg">
+      <div className="w-full max-w-[400px] rounded-3xl bg-surface p-4 shadow-card-lg">
         <div className="font-display text-[17px] font-extrabold text-ink">
           Подтвердить оплату
         </div>
         <div className="mt-1 text-[12.5px] text-muted">
-          Отметим, что деньги за ремонт получены. Сумма попадёт в выручку блока.
+          Отметим, что деньги за ремонт получены. Сумма попадёт в выручку блока,
+          доли наличных и перевода — в статистику.
         </div>
         <input
           autoFocus
@@ -639,27 +649,9 @@ function PayDialog({
           onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
           className="mt-3 h-12 w-full rounded-xl border border-border bg-surface px-3 text-right font-display text-[22px] font-extrabold tabular-nums outline-none focus:border-blue-600"
         />
-        <div className="mt-2 flex gap-2">
-          {(
-            [
-              { id: "cash", label: "Наличные", icon: <Banknote size={14} /> },
-              { id: "transfer", label: "Перевод", icon: <CreditCard size={14} /> },
-            ] as const
-          ).map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => setMethod(m.id)}
-              className={cn(
-                "inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl text-[13px] font-bold transition-colors",
-                method === m.id
-                  ? "bg-ink text-white"
-                  : "bg-surface-soft text-muted hover:text-ink",
-              )}
-            >
-              {m.icon} {m.label}
-            </button>
-          ))}
+        {/* Способ расчёта — тот же компонент, что в выкупах, продажах и выплатах */}
+        <div className="mt-3">
+          <PayMethodPicker total={sum} method={method} onMethod={setMethod} cash={cash} onCash={setCash} />
         </div>
         <div className="mt-3 flex gap-2">
           <button
@@ -671,8 +663,9 @@ function PayDialog({
           </button>
           <button
             type="button"
-            onClick={() => onPay(Number(amount || 0), method)}
-            className="h-11 flex-[1.4] rounded-xl bg-green text-[13px] font-bold text-white"
+            onClick={() => onPay(sum, method, cash)}
+            disabled={sum <= 0}
+            className="h-11 flex-[1.4] rounded-xl bg-green text-[13px] font-bold text-white disabled:opacity-40"
           >
             Оплата прошла
           </button>

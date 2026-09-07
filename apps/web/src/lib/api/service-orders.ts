@@ -47,8 +47,11 @@ export type ServiceOrder = {
   acceptedAt: string;
   completedAt: string | null;
   paidAt: string | null;
-  paymentMethod: "cash" | "transfer" | null;
+  paymentMethod: "cash" | "transfer" | "mixed" | null;
   paidAmount: number | null;
+  /** Доли смешанной оплаты. */
+  cashAmount: number;
+  transferAmount: number;
   masterUserId: number | null;
   createdByUserId: number | null;
   createdAt: string;
@@ -175,14 +178,17 @@ export function usePayServiceOrder() {
       id,
       amount,
       method,
+      cashAmount,
     }: {
       id: number;
       amount?: number;
-      method: "cash" | "transfer";
+      method: "cash" | "transfer" | "mixed";
+      cashAmount?: number;
     }) =>
       api.post<{ order: ServiceOrder }>(`/api/service-orders/${id}/pay`, {
         amount,
         method,
+        cashAmount,
       }),
     onSuccess: invalidate,
   });

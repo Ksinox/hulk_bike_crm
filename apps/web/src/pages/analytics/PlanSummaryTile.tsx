@@ -204,11 +204,11 @@ export function PlanSummaryTile({
                 >
                   {r.hidden ? (
                     <>
-                      <Sensitive dark={wall}>{r.fact}</Sensitive> из {r.plan}
+                      <Sensitive dark={wall}>{r.fact}</Sensitive> /{r.plan}
                     </>
                   ) : (
                     <>
-                      {r.fact} из {r.plan}
+                      {r.fact} /{r.plan}
                     </>
                   )}
                 </span>

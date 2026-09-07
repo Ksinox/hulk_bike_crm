@@ -214,7 +214,10 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     const body = z
       .object({
         amount: z.number().int().min(0).optional(),
-        method: z.enum(["cash", "transfer"]).default("cash"),
+        /** Наличные, перевод или смешанно — единый набор по всей CRM. */
+        method: z.enum(["cash", "transfer", "mixed"]).default("cash"),
+        /** Наличная часть при смешанной оплате; перевод — остаток. */
+        cashAmount: z.number().int().min(0).optional(),
         paidAt: z.string().datetime().optional(),
       })
       .parse(req.body ?? {});
@@ -225,12 +228,23 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "cancelled" });
     const amount = body.amount ?? order.totals.revenue;
     const paidAt = body.paidAt ? new Date(body.paidAt) : new Date();
+    // Доли считаем здесь, той же формулой, что у выкупов: «наличными» — всё
+    // в кассу, «переводом» — всё на счёт, «смешанно» — указанное + остаток.
+    const cashPart =
+      body.method === "cash"
+        ? amount
+        : body.method === "transfer"
+          ? 0
+          : Math.min(amount, Math.max(0, body.cashAmount ?? 0));
+    const transferPart = amount - cashPart;
     await db
       .update(serviceOrders)
       .set({
         status: "paid",
         paidAmount: amount,
         paymentMethod: body.method,
+        cashAmount: cashPart,
+        transferAmount: transferPart,
         paidAt,
         completedAt: order.completedAt ?? paidAt,
         updatedAt: new Date(),
@@ -239,7 +253,11 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     await logActivity(req, {
       action: "service_order_paid",
       summary: `Оплачен сторонний ремонт №${order.number}: ${amount.toLocaleString("ru-RU")} ₽ (${
-        body.method === "cash" ? "наличные" : "перевод"
+        body.method === "cash"
+          ? "наличные"
+          : body.method === "transfer"
+            ? "перевод"
+            : `смешанно: наличные ${cashPart.toLocaleString("ru-RU")} ₽ + перевод ${transferPart.toLocaleString("ru-RU")} ₽`
       })`,
       entity: "service_order",
       entityId: id,

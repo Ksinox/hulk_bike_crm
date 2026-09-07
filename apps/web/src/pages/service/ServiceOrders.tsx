@@ -66,10 +66,13 @@ export function ServiceOrders() {
       if (!bounds.from) return true;
       return new Date(o.acceptedAt) >= bounds.from;
     });
+    const paid = inPeriod.filter((o) => o.status === "paid");
     return {
       count: inPeriod.length,
       revenue: inPeriod.reduce((s, o) => s + o.totals.revenue, 0),
       profit: inPeriod.reduce((s, o) => s + o.totals.profit, 0),
+      cash: paid.reduce((s, o) => s + (o.cashAmount ?? 0), 0),
+      transfer: paid.reduce((s, o) => s + (o.transferAmount ?? 0), 0),
       unpaid: inPeriod
         .filter((o) => o.status !== "paid")
         .reduce((s, o) => s + o.totals.revenue, 0),
@@ -138,7 +141,11 @@ export function ServiceOrders() {
             icon={<Banknote size={14} />}
             label="Выручка"
             value={money(stats.revenue)}
-            caption="работы и запчасти"
+            caption={
+              stats.cash + stats.transfer > 0
+                ? `нал ${money(stats.cash)} · перевод ${money(stats.transfer)}`
+                : "работы и запчасти"
+            }
             tone="good"
           />
           <Kpi

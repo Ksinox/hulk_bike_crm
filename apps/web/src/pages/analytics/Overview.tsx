@@ -226,6 +226,11 @@ function GroupPanel({
               )}
             >
               {leadHidden ? <Sensitive>{leadValue.display}</Sensitive> : leadValue.display}
+              {leadPlan != null && leadPlan > 0 && !leadHidden && (
+                <span className="ml-[0.12em] font-bold text-muted-2" style={{ fontSize: "0.46em" }}>
+                  /{lead.format(leadPlan)}
+                </span>
+              )}
             </div>
             <div
               style={{ fontSize: compact ? "12px" : "max(10px, min(6cqh, 4cqw, 19px))" }}
@@ -246,12 +251,6 @@ function GroupPanel({
               >
                 {leadState.done && <DoneBadge withText={false} className="p-0 text-[0.8em]" />}
                 {leadState.pct}%
-              </div>
-              <div
-                style={{ fontSize: compact ? "11px" : "max(9px, min(5.5cqh, 3.6cqw, 17px))" }}
-                className="text-muted-2"
-              >
-                план {lead.format(leadPlan!)}
               </div>
             </div>
           )}
@@ -294,6 +293,11 @@ function GroupPanel({
                 style={{ fontSize: "1.2em" }}
               >
                 {hidden ? <Sensitive>{v.display}</Sensitive> : v.display}
+                {plan != null && plan > 0 && !hidden && (
+                  <span className="ml-[0.1em] font-bold text-muted-2" style={{ fontSize: "0.72em" }}>
+                    /{d.format(plan)}
+                  </span>
+                )}
               </span>
               {st ? (
                 <>

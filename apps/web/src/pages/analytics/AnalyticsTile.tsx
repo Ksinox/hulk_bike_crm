@@ -261,19 +261,26 @@ export function AnalyticsTile({
             >
               {value.caption}
               {value.extra ? ` · ${value.extra}` : ""}
+              {planValue != null ? ` · норма ${def.format(planValue)}` : ""}
             </div>
           )}
         </div>
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col justify-center overflow-hidden">
           <div
-            style={{ fontSize: numberSize(display, !!state, compact), lineHeight: 1 }}
+            style={{ fontSize: numberSize(planValue != null ? `${display} /${def.format(planValue)}` : display, !!state, compact), lineHeight: 1 }}
             className={cn(
               "truncate font-display font-extrabold leading-[0.95] tracking-[-0.035em] tabular-nums",
               numberTone,
             )}
           >
             {def.sensitive ? <Sensitive dark={dark}>{display}</Sensitive> : display}
+            {planValue != null && (
+              // План сразу за цифрой: «4 /50» читается как «4 из 50» с одного взгляда.
+              <span className={cn("ml-[0.12em] font-bold", dark ? "text-white/40" : "text-muted-2")} style={{ fontSize: "0.46em" }}>
+                /{def.format(planValue)}
+              </span>
+            )}
           </div>
           {value?.caption && (
             <div
@@ -304,16 +311,6 @@ export function AnalyticsTile({
             >
               {hidden ? <Sensitive dark={dark}>{state.pct}%</Sensitive> : `${state.pct}%`}
             </span>
-          </div>
-          <div
-            style={{ fontSize: captionSize(compact) }}
-            className={cn(
-              "a-hide-xxs flex items-baseline justify-between gap-2",
-              dark ? "text-white/50" : "text-muted",
-            )}
-          >
-            <span className="truncate">план {def.format(planValue!)}</span>
-            {!hidden && state.done && <DoneBadge wall={dark} />}
           </div>
         </footer>
       )}
@@ -417,7 +414,10 @@ function pctSize(compact: boolean): string {
  */
 function numberSize(display: string, withPlan: boolean, compact: boolean): string {
   if (compact) return "40px";
-  const chars = Math.max(1, display.replace(/\s/g, "").length + (display.includes(" ") ? 0.4 : 0));
+  const [main, tail] = display.split(" /");
+  const chars =
+    Math.max(1, main!.replace(/\s/g, "").length + (main!.includes(" ") ? 0.4 : 0)) +
+    (tail ? (tail.replace(/\s/g, "").length + 1) * 0.46 : 0);
   const byWidth = (86 / (0.6 * chars)).toFixed(1);
   // По высоте: заголовок ~12%, отступы ~18%, подвал с планом ~24% —
   // цифре остаётся треть плитки, без плана — почти половина.

@@ -2490,9 +2490,12 @@ export const serviceOrders = pgTable(
       .defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     paidAt: timestamp("paid_at", { withTimezone: true }),
-    /** 'cash' | 'transfer' */
+    /** 'cash' | 'transfer' | 'mixed' */
     paymentMethod: text("payment_method"),
     paidAmount: integer("paid_amount"),
+    /** Доли смешанной оплаты (07.09) — как у выкупов и продаж. */
+    cashAmount: integer("cash_amount").notNull().default(0),
+    transferAmount: integer("transfer_amount").notNull().default(0),
 
     masterUserId: bigint("master_user_id", { mode: "number" }).references(
       () => users.id,
