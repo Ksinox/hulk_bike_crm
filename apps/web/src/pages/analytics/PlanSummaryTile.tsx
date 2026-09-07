@@ -198,7 +198,7 @@ export function PlanSummaryTile({
                   {r.title}
                 </span>
                 <span
-                  className={cn("hidden shrink-0 truncate tabular-nums md:inline", wall ? "text-white/50" : "text-muted")}
+                  className={cn("a-hide-narrow shrink-0 truncate tabular-nums", wall ? "text-white/50" : "text-muted")}
                   style={{ fontSize: "0.8em", maxWidth: "30%" }}
                 >
                   {r.hidden ? (

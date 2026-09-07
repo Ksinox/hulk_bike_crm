@@ -22,7 +22,7 @@ const board = {
     { metric: "service.count", w: 1, h: 1, plan: 8 },
     { metric: "service.revenue", w: 2, h: 1, plan: 40000 },
     { metric: "buyout.active", w: 1, h: 1, plan: 5 },
-    { metric: "plan.summary", w: 2, h: 2 },
+    { metric: "plan.summary", w: 3, h: 2 },
   ],
 };
 const put = await fetch(API + "/api/analytics/board", {

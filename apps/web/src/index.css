@@ -501,3 +501,9 @@
     display: none !important;
   }
 }
+/* Узкая плитка сводки: «факт из плана» уходит, название остаётся целым. */
+@container (max-width: 640px) {
+  .a-hide-narrow {
+    display: none !important;
+  }
+}
