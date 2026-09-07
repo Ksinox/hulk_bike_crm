@@ -137,8 +137,9 @@ export function Analytics() {
     return { w: win.w - 3.2 * vmin, h: win.h - 3.2 * vmin - 11 * vmin };
   }, [win, isMobile]);
   const fit = useFitLayout(gridRef, spans, { gap: 14, minCellH: 130, box: wallBox });
-  // На телефоне сетка не «в экран»: две колонки и высота по содержимому.
-  const cols = isMobile ? 2 : fit.cols;
+  // Колонки берём из раскладки стены и на телефоне тоже: миниатюра должна
+  // показывать ровно то, что окажется на втором мониторе.
+  const cols = fit.cols;
   const flipKey = board.tiles.map((t) => `${t.metric}:${t.w}x${t.h}`).join("|");
   useFlip(gridRef, flipKey, editing);
 
