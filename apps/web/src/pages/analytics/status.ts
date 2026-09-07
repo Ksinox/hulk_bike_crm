@@ -13,6 +13,23 @@ import type { BoardPeriod } from "./board";
  *   • done — план выполнен (100%+): зелёный + галочка.
  */
 
+/**
+ * Хвост плана рядом с крупной цифрой: «16 500 ₽ /100 000».
+ *
+ * Единицу в хвосте не повторяем — она уже стоит у факта. На узком экране
+ * (планшет, 07.09) полный «/100 000 ₽» не помещался и обрезал само число.
+ */
+export function planTail(display: string, planText: string): string {
+  const fact = display.trimEnd();
+  let tail = planText.trimEnd();
+  for (const unit of ["₽", "%"]) {
+    if (fact.endsWith(unit) && tail.endsWith(unit)) {
+      return tail.slice(0, -unit.length).trimEnd();
+    }
+  }
+  return tail;
+}
+
 export type PlanStatus = "weak" | "good" | "done";
 
 /** Порог «хорошо»: от этой доли плана заливка становится зелёной. */

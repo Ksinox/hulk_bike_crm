@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useMe } from "@/lib/api/auth";
 import { Topbar } from "@/pages/dashboard/Topbar";
-import { useIsMobile } from "@/lib/useIsMobile";
+import { useIsMobile, useIsTabletScreen } from "@/lib/useIsMobile";
 import { SensitiveToggle } from "@/components/Sensitive";
 import {
   DEFAULT_BOARD,
@@ -58,6 +58,11 @@ type Section = "overview" | "setup";
 
 export function Analytics() {
   const isMobile = useIsMobile();
+  // Планшет (07.09): оболочка десктопная, но экран узкий и работают пальцем.
+  // Такой экран получает поточную раскладку — как на телефоне, только в две
+  // колонки; плотная сетка «обзора» на нём обрезала половину заголовков.
+  const isTablet = useIsTabletScreen() && !isMobile;
+  const flow = isMobile || isTablet;
   const { data: me } = useMe();
   const canEdit = me?.role === "director" || me?.role === "creator" || me?.role === "admin";
   const boardQ = useAnalyticsBoard();
@@ -132,10 +137,10 @@ export function Analytics() {
     // На телефоне окно вертикальное, а второй монитор — горизонтальный.
     // Считать миниатюру по форме телефона было бы враньём, поэтому там
     // берём обычный монитор 16:9.
-    if (isMobile) return { w: 1600, h: 780 };
+    if (flow) return { w: 1600, h: 780 };
     const vmin = Math.min(win.w, win.h) / 100;
     return { w: win.w - 3.2 * vmin, h: win.h - 3.2 * vmin - 11 * vmin };
-  }, [win, isMobile]);
+  }, [win, flow]);
   const fit = useFitLayout(gridRef, spans, { gap: 14, minCellH: 130, box: wallBox });
   // Колонки берём из раскладки стены и на телефоне тоже: миниатюра должна
   // показывать ровно то, что окажется на втором мониторе.
@@ -170,8 +175,10 @@ export function Analytics() {
       className={cn(
         "flex min-w-0 flex-1 flex-col gap-3",
         // Экран помещается в окно целиком: корень — ровно высота окна.
-        // На телефоне высоту не фиксируем: там страница прокручивается.
-        !isMobile && "h-[100dvh] overflow-hidden p-[18px]",
+        // На телефоне и планшете высоту не фиксируем: там страница
+        // прокручивается, иначе блоки сплющиваются в нечитаемую кашу.
+        !flow && "h-[100dvh] overflow-hidden p-[18px]",
+        isTablet && "min-h-[100dvh] p-[18px]",
       )}
     >
       {!isMobile && <Topbar />}
@@ -257,12 +264,18 @@ export function Analytics() {
       </header>
 
       {section === "overview" ? (
-        <Overview board={board} values={values} periodOf={periodOf} compact={isMobile} />
+        <Overview
+          board={board}
+          values={values}
+          periodOf={periodOf}
+          compact={flow}
+          columns={isTablet ? 2 : 1}
+        />
       ) : (
-        <div className={cn("flex min-h-0 flex-1 gap-3", isMobile ? "flex-col" : "flex-row")}>
+        <div className={cn("flex min-h-0 flex-1 gap-3", flow ? "flex-col" : "flex-row")}>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             <div className="shrink-0 text-[12.5px] text-muted">
-              {isMobile
+              {flow
                 ? "Сверху — как доска ляжет на второй монитор. Ниже порядок и размеры плиток: стрелками и кнопками, план — полем."
                 : "Это второй монитор в миниатюре: те же колонки и ряды. Перетаскивайте плитки за ручку, тяните за правый нижний угол — ширина и высота в клетках, план — кнопкой-мишенью."}
             </div>
@@ -270,7 +283,7 @@ export function Analytics() {
             <div
               className={cn(
                 "flex min-h-0 items-start justify-center",
-                isMobile ? "shrink-0" : "flex-1",
+                flow ? "shrink-0" : "flex-1",
               )}
             >
             <div
@@ -292,7 +305,7 @@ export function Analytics() {
                   index: i,
                   cols,
                   wall: true,
-                  editing: !isMobile,
+                  editing: !flow,
                   onRemove: () => removeTile(i),
                   onResize: (w: number, h: number) => patchTile(i, { w, h }),
                   onDragStart: (e: React.PointerEvent) => startDrag(i, e),
@@ -327,7 +340,7 @@ export function Analytics() {
 
             {/* На телефоне доску правим списком — пальцем это надёжнее,
                 чем тянуть уголки в миниатюре. */}
-            {isMobile && (
+            {flow && (
               <MobileBoardEditor
                 board={board}
                 cols={cols}
@@ -343,7 +356,7 @@ export function Analytics() {
           <aside
             className={cn(
               "flex w-full shrink-0 flex-col gap-3 rounded-2xl bg-surface p-4 shadow-card-sm lg:w-[280px]",
-              !isMobile && "overflow-y-auto",
+              !flow && "overflow-y-auto",
             )}
           >
             <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">

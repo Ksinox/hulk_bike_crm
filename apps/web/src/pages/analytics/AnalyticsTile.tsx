@@ -13,7 +13,7 @@ import { Sensitive } from "@/components/Sensitive";
 import { useSensitiveRevealed } from "@/lib/sensitive";
 import type { BoardPeriod, BoardTile } from "./board";
 import { METRIC_GROUP_UI, type MetricDef, type MetricValue } from "./metrics";
-import { planState, STATUS_UI } from "./status";
+import { planState, planTail, STATUS_UI } from "./status";
 import { DoneBadge, HalfRing, PlanBarThick } from "./Gauge";
 import { ResizeHandle } from "./ResizeHandle";
 
@@ -268,7 +268,7 @@ export function AnalyticsTile({
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col justify-center overflow-hidden">
           <div
-            style={{ fontSize: numberSize(planValue != null ? `${display} /${def.format(planValue)}` : display, !!state, compact), lineHeight: 1 }}
+            style={{ fontSize: numberSize(planValue != null ? `${display} /${planTail(display, def.format(planValue))}` : display, !!state, compact), lineHeight: 1 }}
             className={cn(
               "truncate font-display font-extrabold leading-[0.95] tracking-[-0.035em] tabular-nums",
               numberTone,
@@ -278,7 +278,7 @@ export function AnalyticsTile({
             {planValue != null && (
               // План сразу за цифрой: «4 /50» читается как «4 из 50» с одного взгляда.
               <span className={cn("ml-[0.12em] font-bold", dark ? "text-white/40" : "text-muted-2")} style={{ fontSize: "0.46em" }}>
-                /{def.format(planValue)}
+                /{planTail(display, def.format(planValue))}
               </span>
             )}
           </div>

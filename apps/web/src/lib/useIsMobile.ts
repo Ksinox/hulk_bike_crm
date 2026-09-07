@@ -85,6 +85,37 @@ export function useIsMobile(breakpoint = 768): boolean {
 }
 
 /**
+ * Планшет и узкое окно (07.09, заказчик купил планшет).
+ *
+ * Это НЕ мобильный слой: оболочка остаётся десктопной (сайдбар, топбар).
+ * Но экран узкий и работают пальцем, поэтому плотные десктопные сетки на
+ * нём разъезжаются — колонки ужимаются, заголовки обрезаются. Такие
+ * экраны получают «поточную» раскладку: меньше колонок и прокрутка.
+ *
+ * Порог 1200px по ширине: ниже него «обзор» аналитики ужимал колонку до
+ * ~250px, и половина строк заканчивалась многоточием.
+ */
+export function useIsTabletScreen(breakpoint = 1200): boolean {
+  const compute = () => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth < breakpoint;
+  };
+  const [tablet, setTablet] = useState<boolean>(compute);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const update = () => setTablet(compute());
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, [breakpoint]);
+  return tablet;
+}
+
+/**
  * Правка 28.08: «тесный» экран — небольшой ноутбук (13–14"), где крупные
  * справочные блоки съедают рабочее место. Отличается от useIsMobile: это
  * НЕ мобильный слой, а обычный десктоп, которому нужна плотная вёрстка.

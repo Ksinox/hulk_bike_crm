@@ -18,7 +18,7 @@ import {
   type MetricGroup,
   type MetricValue,
 } from "./metrics";
-import { planState, STATUS_UI, type PlanState } from "./status";
+import { planState, planTail, STATUS_UI, type PlanState } from "./status";
 import { DoneBadge } from "./Gauge";
 import { buildAdvice, type Advice } from "./advice";
 
@@ -53,11 +53,14 @@ export function Overview({
   values,
   periodOf,
   compact = false,
+  columns = 1,
 }: {
   board: Board;
   values: Record<string, MetricValue>;
   periodOf: (metricId: string) => BoardPeriod;
   compact?: boolean;
+  /** Сколько колонок в поточной раскладке: телефон — 1, планшет — 2. */
+  columns?: 1 | 2;
 }) {
   const revealed = useSensitiveRevealed();
   const advice = buildAdvice(values, board, periodOf);
@@ -71,7 +74,9 @@ export function Overview({
         // Человек сидит за монитором: на большом экране блоки не растут
         // до бесконечности — есть максимальный размер, дальше — воздух.
         compact
-          ? "flex flex-col"
+          ? columns === 2
+            ? "grid grid-cols-2 content-start"
+            : "flex flex-col"
           : "mx-auto grid w-full max-w-[1400px] grid-cols-[1fr_1fr_0.85fr] grid-rows-2 max-h-[760px]",
       )}
     >
@@ -88,7 +93,9 @@ export function Overview({
           compact={compact}
         />
       ))}
-      {compact && <AdvicePanel items={advice} compact={compact} />}
+      {compact && (
+        <AdvicePanel items={advice} compact={compact} className={cn(columns === 2 && "col-span-2")} />
+      )}
     </div>
   );
 }
@@ -228,7 +235,7 @@ function GroupPanel({
               {leadHidden ? <Sensitive>{leadValue.display}</Sensitive> : leadValue.display}
               {leadPlan != null && leadPlan > 0 && !leadHidden && (
                 <span className="ml-[0.12em] font-bold text-muted-2" style={{ fontSize: "0.46em" }}>
-                  /{lead.format(leadPlan)}
+                  /{planTail(leadValue.display, lead.format(leadPlan))}
                 </span>
               )}
             </div>
@@ -295,14 +302,14 @@ function GroupPanel({
                 {hidden ? <Sensitive>{v.display}</Sensitive> : v.display}
                 {plan != null && plan > 0 && !hidden && (
                   <span className="ml-[0.1em] font-bold text-muted-2" style={{ fontSize: "0.72em" }}>
-                    /{d.format(plan)}
+                    /{planTail(v.display, d.format(plan))}
                   </span>
                 )}
               </span>
               {st ? (
                 <>
                   <span
-                    className="relative hidden shrink-0 overflow-hidden rounded-full bg-ink/[0.08] sm:block"
+                    className="a-hide-tight relative hidden shrink-0 overflow-hidden rounded-full bg-ink/[0.08] sm:block"
                     style={{ height: "0.55em", width: "20%" }}
                   >
                     <span
@@ -322,7 +329,7 @@ function GroupPanel({
                 </>
               ) : (
                 <span
-                  className="hidden shrink-0 truncate text-right text-muted sm:inline"
+                  className="a-hide-tight hidden shrink-0 truncate text-right text-muted sm:inline"
                   style={{ fontSize: "0.82em", maxWidth: "34%" }}
                 >
                   {v.caption}
@@ -356,11 +363,23 @@ function Bar({ state, style }: { state: PlanState; style?: React.CSSProperties }
 
 /* ------------------------------------------------------------------ */
 
-function AdvicePanel({ items, compact }: { items: Advice[]; compact: boolean }) {
+function AdvicePanel({
+  items,
+  compact,
+  className,
+}: {
+  items: Advice[];
+  compact: boolean;
+  className?: string;
+}) {
   // На экране помещается не всё: сначала «горит», потом остальное.
   const shown = compact ? items : items.slice(0, 5);
   return (
-    <Panel compact={compact} dark className={cn(!compact && "col-start-3 row-start-1 row-span-2")}>
+    <Panel
+      compact={compact}
+      dark
+      className={cn(!compact && "col-start-3 row-start-1 row-span-2", className)}
+    >
       <div
         style={{ fontSize: compact ? "18px" : "max(13px, min(4.2cqh, 7cqw, 20px))" }}
         className="relative flex shrink-0 items-center gap-[0.5em] font-bold"
