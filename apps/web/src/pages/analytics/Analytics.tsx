@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Eye,
@@ -115,7 +115,23 @@ export function Analytics() {
   }, []);
   const { drag, start: startDrag } = useTileDrag(move);
   const spans = useMemo(() => board.tiles.map((t) => ({ w: t.w, h: t.h })), [board.tiles]);
-  const fit = useFitLayout(gridRef, spans, { gap: 12, minCellH: 120 });
+  // Конструктор — стена в миниатюре: раскладку считаем от размера ЭКРАНА,
+  // как её посчитает второй монитор, а рисуем в уменьшенном боксе той же
+  // пропорции. Что настроил — то и увидишь.
+  const [win, setWin] = useState(() => ({
+    w: typeof window === "undefined" ? 1920 : window.innerWidth,
+    h: typeof window === "undefined" ? 1080 : window.innerHeight,
+  }));
+  useEffect(() => {
+    const onResize = () => setWin({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const wallBox = useMemo(() => {
+    const vmin = Math.min(win.w, win.h) / 100;
+    return { w: win.w - 3.2 * vmin, h: win.h - 3.2 * vmin - 11 * vmin };
+  }, [win]);
+  const fit = useFitLayout(gridRef, spans, { gap: 14, minCellH: 130, box: wallBox });
   // На телефоне сетка не «в экран»: две колонки и высота по содержимому.
   const cols = isMobile ? 2 : fit.cols;
   const flipKey = board.tiles.map((t) => `${t.metric}:${t.w}x${t.h}`).join("|");
@@ -142,7 +158,6 @@ export function Analytics() {
 
   const range = periodRange(board.period);
   const hidden = METRICS.filter((m) => !board.tiles.some((t) => t.metric === m.id));
-  const primaryIndex = board.tiles.findIndex((t) => t.h >= 2 && t.w >= 2);
 
   return (
     <main
@@ -223,18 +238,27 @@ export function Analytics() {
         <div className={cn("flex min-h-0 flex-1 gap-3", isMobile ? "flex-col" : "flex-row")}>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             <div className="shrink-0 text-[12.5px] text-muted">
-              Перетаскивайте плитки за ручку, тяните за правый нижний угол — ширина и высота
-              в клетках, план — кнопкой-мишенью. Так же доска будет выглядеть на втором мониторе.
+              Это второй монитор в миниатюре: те же колонки и ряды. Перетаскивайте плитки за
+              ручку, тяните за правый нижний угол — ширина и высота в клетках, план — кнопкой-мишенью.
             </div>
+            {/* Тёмный бокс пропорций экрана — стена как она есть, только меньше */}
+            <div className="flex min-h-0 flex-1 items-start justify-center">
             <div
               ref={gridRef}
               data-grid
-              className="grid min-h-0 flex-1 gap-3"
+              className={cn(
+                "grid gap-[0.7vmin]",
+                isMobile ? "w-full" : "max-h-full max-w-full rounded-[18px] bg-[#070b14] p-[0.8vmin]",
+              )}
               style={{
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
                 ...(isMobile
                   ? { gridAutoRows: "minmax(150px, auto)" }
-                  : { gridTemplateRows: `repeat(${fit.rows}, minmax(0, 1fr))` }),
+                  : {
+                      gridTemplateRows: `repeat(${fit.rows}, minmax(0, 1fr))`,
+                      aspectRatio: `${wallBox.w} / ${wallBox.h}`,
+                      width: "100%",
+                    }),
                 gridAutoFlow: "row dense",
               }}
             >
@@ -245,6 +269,7 @@ export function Analytics() {
                   index: i,
                   cols,
                   compact: isMobile,
+                  wall: !isMobile,
                   editing: true,
                   onRemove: () => removeTile(i),
                   onResize: (w: number, h: number) => patchTile(i, { w, h }),
@@ -270,12 +295,12 @@ export function Analytics() {
                     value={values[tile.metric]}
                     tile={tile}
                     period={periodOf(tile.metric)}
-                    primary={primaryIndex === i}
                     onPlan={(plan) => patchTile(i, { plan })}
                     {...shared}
                   />
                 );
               })}
+            </div>
             </div>
           </div>
 

@@ -14,7 +14,7 @@ import { useSensitiveRevealed } from "@/lib/sensitive";
 import type { BoardPeriod, BoardTile } from "./board";
 import { METRIC_GROUP_UI, type MetricDef, type MetricValue } from "./metrics";
 import { planState, STATUS_UI } from "./status";
-import { HalfRing, PlanBarThick } from "./Gauge";
+import { DoneBadge, HalfRing, PlanBarThick } from "./Gauge";
 import { ResizeHandle } from "./ResizeHandle";
 
 /**
@@ -185,6 +185,9 @@ export function AnalyticsTile({
             <GroupIcon className="h-[0.95em] w-[0.95em]" />
           </span>
           <span className="truncate">{def.title}</span>
+          {state?.done && !hidden && (
+            <DoneBadge wall={dark} withText={false} className="ml-[0.2em]" />
+          )}
         </div>
         {editing && (
           <div
@@ -310,11 +313,7 @@ export function AnalyticsTile({
             )}
           >
             <span className="truncate">план {def.format(planValue!)}</span>
-            {!hidden && (
-              <span className={cn("shrink-0 font-semibold", dark ? ui!.inkWall : ui!.ink)}>
-                {state.label}
-              </span>
-            )}
+            {!hidden && state.done && <DoneBadge wall={dark} />}
           </div>
         </footer>
       )}
@@ -327,17 +326,31 @@ export function AnalyticsTile({
 
       {editing && planOpen && (
         <div
-          className="absolute inset-x-3 bottom-3 z-20 flex items-center gap-1.5 rounded-xl border border-border bg-surface p-2 shadow-card"
+          className="absolute inset-x-3 bottom-3 z-20 flex flex-col gap-1.5 rounded-xl border border-border bg-surface p-2.5 shadow-card"
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <input
-            autoFocus
-            inputMode="numeric"
-            value={planDraft}
-            onChange={(e) => setPlanDraft(e.target.value.replace(/[^\d]/g, ""))}
-            placeholder="план"
-            className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-surface px-2 text-[13px] font-bold tabular-nums outline-none focus:border-blue-600"
-          />
+          <div className="text-[11.5px] leading-snug text-muted">
+            <b className="text-ink">План — {planHint(def)}.</b>{" "}
+            {def.periodic ? "Сколько должно быть за выбранный период." : "Сколько должно быть сейчас."}
+          </div>
+          <div className="flex items-center gap-1.5">
+          <div className="relative min-w-0 flex-1">
+            <input
+              autoFocus
+              inputMode="numeric"
+              value={planDraft}
+              onChange={(e) => {
+                let v = e.target.value.replace(/[^\d]/g, "");
+                if (def.percentValue && Number(v) > 100) v = "100";
+                setPlanDraft(v);
+              }}
+              placeholder={def.percentValue ? "например, 90" : def.format(1).includes("₽") ? "например, 300000" : "например, 10"}
+              className="h-8 w-full rounded-lg border border-border bg-surface pl-2 pr-9 text-[13px] font-bold tabular-nums outline-none focus:border-blue-600"
+            />
+            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[12px] font-bold text-muted-2">
+              {planUnit(def)}
+            </span>
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -362,10 +375,24 @@ export function AnalyticsTile({
               <X size={13} />
             </button>
           )}
+          </div>
         </div>
       )}
     </div>
   );
+}
+
+/** Единица плана: %, ₽ или штуки — чтобы было понятно, что вбивать. */
+function planUnit(def: MetricDef): string {
+  if (def.percentValue) return "%";
+  if (def.format(1).includes("₽")) return "₽";
+  return "шт";
+}
+
+function planHint(def: MetricDef): string {
+  if (def.percentValue) return "в процентах, норма загрузки (например, 90)";
+  if (def.format(1).includes("₽")) return "сумма в рублях";
+  return "количество, штук";
 }
 
 /* ------------------------------------------------------------------ */

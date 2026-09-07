@@ -6,6 +6,7 @@ import type { BoardPeriod, BoardTile } from "./board";
 import { METRIC_BY_ID, METRIC_GROUP_UI, type MetricValue } from "./metrics";
 import { planState, STATUS_UI, type PlanState } from "./status";
 import { ResizeHandle } from "./ResizeHandle";
+import { DoneBadge } from "./Gauge";
 
 /**
  * Плитка «План и факт» (07.09, четвёртая правка — «тонюсенькие линии»).
@@ -231,9 +232,16 @@ export function PlanSummaryTile({
                     "shrink-0 text-right font-display font-extrabold leading-none tabular-nums",
                     wall ? ui.inkWall : ui.ink,
                   )}
-                  style={{ fontSize: "1.2em", width: "3.4em" }}
+                  style={{ fontSize: "1.2em", width: r.state.done ? "4.6em" : "3.4em" }}
                 >
-                  {r.hidden ? <Sensitive dark={wall}>{r.state.pct}%</Sensitive> : `${r.state.pct}%`}
+                  {r.hidden ? (
+                    <Sensitive dark={wall}>{r.state.pct}%</Sensitive>
+                  ) : (
+                    <span className="inline-flex items-center justify-end gap-[0.3em]">
+                      {r.state.done && <DoneBadge wall={wall} withText={false} className="p-0" />}
+                      {`${r.state.pct}%`}
+                    </span>
+                  )}
                 </span>
               </div>
             );

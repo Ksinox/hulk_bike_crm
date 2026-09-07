@@ -54,7 +54,7 @@ export function HalfRing({
   const lx2 = lx1 - Math.cos(angle) * 30;
   const ly2 = ly1 - Math.sin(angle) * 30;
 
-  const good = state.status === "ahead" || state.status === "ontrack";
+  const good = state.status !== "weak";
   const fontSize = Math.max(16, SIZE * 0.1) * 1.45;
   const labelFontSize = Math.max(12, SIZE * 0.04) * 1.35;
   const arc = (r: number) =>
@@ -242,30 +242,34 @@ export function PlanBarThick({
   );
 }
 
-/** Чип статуса: «идём с опережением» / «отстаём от графика». */
-export function StatusChip({
-  state,
+/**
+ * Метка «план выполнен» — галочка в зелёном кружке, как принято в
+ * современных дашбордах: видна издалека и не требует чтения процентов.
+ */
+export function DoneBadge({
   wall = false,
+  withText = true,
   className,
 }: {
-  state: PlanState;
   wall?: boolean;
+  withText?: boolean;
   className?: string;
 }) {
-  const ui = STATUS_UI[state.status];
   return (
     <span
-      style={{
-        fontSize: "max(9px, min(3.4cqmin, 18px))",
-        padding: "max(2px,0.7cqmin) max(6px,1.7cqmin)",
-      }}
       className={cn(
-        "inline-flex w-fit shrink-0 items-center truncate rounded-full font-bold",
-        wall ? ui.chipWall : ui.chip,
+        "inline-flex w-fit shrink-0 items-center gap-[0.35em] rounded-full font-bold",
+        withText ? "px-[0.7em] py-[0.25em]" : "p-[0.25em]",
+        wall ? "bg-emerald-400/20 text-emerald-200" : "bg-emerald-500/15 text-emerald-800",
         className,
       )}
+      title="План выполнен"
     >
-      {state.label}
+      <svg viewBox="0 0 20 20" className="h-[1.15em] w-[1.15em]" aria-hidden>
+        <circle cx="10" cy="10" r="10" fill={wall ? "#34d399" : "#10b981"} />
+        <path d="M5.5 10.5 8.5 13.5 14.5 7" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {withText && <span>план выполнен</span>}
     </span>
   );
 }

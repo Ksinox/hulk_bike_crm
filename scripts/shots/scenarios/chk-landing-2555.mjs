@@ -20,7 +20,7 @@ export async function run(page, ctx) {
   })));
   await S("l-01-list");
 
-  for (const id of ["2.62", "2.63", "2.64"]) {
+  for (const id of ["2.65", "2.66", "2.67"]) {
     const opened = await page.evaluate((needle) => {
       const el = [...document.querySelectorAll("button, [role=button]")].find(
         (x) => (x.textContent || "").trim().startsWith(needle) && (x.textContent || "").length < 400,

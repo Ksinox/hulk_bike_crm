@@ -10,53 +10,63 @@ import { useEffect, useMemo, useState } from "react";
 
 export type Span = { w: number; h: number };
 
+export type FitOpts = { gap?: number; minCellW?: number; minCellH?: number };
+
+/** Подбор колонок и рядов под бокс заданного размера (чистая функция). */
+export function fitLayout(box: { w: number; h: number }, spans: Span[], opts: FitOpts = {}) {
+  const gap = opts.gap ?? 12;
+  const minCellW = opts.minCellW ?? 150;
+  const minCellH = opts.minCellH ?? 120;
+  let best = { cols: 4, rows: 1, score: Number.POSITIVE_INFINITY };
+  const minCols = box.w < 760 ? 2 : 3;
+  const maxCols = box.w < 760 ? 3 : 10;
+  for (let c = minCols; c <= maxCols; c++) {
+    const r = packedRows(spans, c);
+    const cellW = (box.w - gap * (c - 1)) / c;
+    const cellH = (box.h - gap * (r - 1)) / r;
+    if (cellW <= 0 || cellH <= 0) continue;
+    // Целевая пропорция клетки — чуть шире квадрата; штрафуем мелкие клетки
+    // и пустые места: экран должен быть заполнен.
+    const aspect = Math.abs(cellW / cellH - 1.45);
+    const small = cellH < minCellH ? (minCellH - cellH) / 40 : 0;
+    const narrow = cellW < minCellW ? (minCellW - cellW) / 60 : 0;
+    const used = spans.reduce((a, s) => a + Math.min(s.w, c) * s.h, 0);
+    const waste = Math.max(0, 1 - used / (c * r)) * 1.6;
+    const score = aspect + small + narrow + waste;
+    if (score < best.score) best = { cols: c, rows: r, score };
+  }
+  return { cols: best.cols, rows: best.rows };
+}
+
 export function useFitLayout(
   ref: React.RefObject<HTMLElement | null>,
   spans: Span[],
-  opts: { gap?: number; minCellW?: number; minCellH?: number } = {},
+  opts: FitOpts & { box?: { w: number; h: number } } = {},
 ) {
-  const [box, setBox] = useState({ w: 1200, h: 700 });
+  const [measured, setMeasured] = useState({ w: 1200, h: 700 });
 
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || opts.box) return;
     const ro = new ResizeObserver(([entry]) => {
       const r = entry?.contentRect;
       if (r && r.width > 0 && r.height > 0)
-        setBox((b) => (Math.abs(b.w - r.width) < 1 && Math.abs(b.h - r.height) < 1 ? b : { w: r.width, h: r.height }));
+        setMeasured((b) =>
+          Math.abs(b.w - r.width) < 1 && Math.abs(b.h - r.height) < 1 ? b : { w: r.width, h: r.height },
+        );
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [ref]);
+  }, [ref, opts.box]);
 
-  return useMemo(() => {
-    const gap = opts.gap ?? 12;
-    const minCellW = opts.minCellW ?? 150;
-    const minCellH = opts.minCellH ?? 120;
-    const key = spans.map((s) => `${s.w}x${s.h}`).join(",");
-    let best = { cols: 4, rows: 1, score: Number.POSITIVE_INFINITY };
-    const minCols = box.w < 760 ? 2 : 3;
-    const maxCols = box.w < 760 ? 3 : 10;
-    for (let c = minCols; c <= maxCols; c++) {
-      const r = packedRows(spans, c);
-      const cellW = (box.w - gap * (c - 1)) / c;
-      const cellH = (box.h - gap * (r - 1)) / r;
-      if (cellW <= 0 || cellH <= 0) continue;
-      // Целевая пропорция клетки — чуть шире квадрата; штрафуем мелкие клетки.
-      const aspect = Math.abs(cellW / cellH - 1.45);
-      const small = cellH < minCellH ? (minCellH - cellH) / 40 : 0;
-      const narrow = cellW < minCellW ? (minCellW - cellW) / 60 : 0;
-      // Пустые клетки — тоже плохо: экран должен быть заполнен.
-      const used = spans.reduce((a, s) => a + Math.min(s.w, c) * s.h, 0);
-      const waste = Math.max(0, 1 - used / (c * r)) * 1.6;
-      const score = aspect + small + narrow + waste;
-      if (score < best.score) best = { cols: c, rows: r, score };
-    }
-    void key;
-    return { cols: best.cols, rows: best.rows, box };
+  const box = opts.box ?? measured;
+  const key = spans.map((s) => `${s.w}x${s.h}`).join(",");
+  return useMemo(
+    () => ({ ...fitLayout(box, spans, opts), box }),
     // spans пересобираются каждый рендер — сравниваем по отпечатку
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [box, spans.map((s) => `${s.w}x${s.h}`).join(","), opts.gap, opts.minCellW, opts.minCellH]);
+    [box.w, box.h, key, opts.gap, opts.minCellW, opts.minCellH],
+  );
 }
 
 /**

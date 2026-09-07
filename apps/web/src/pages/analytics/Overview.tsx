@@ -19,6 +19,7 @@ import {
   type MetricValue,
 } from "./metrics";
 import { planState, STATUS_UI, type PlanState } from "./status";
+import { DoneBadge } from "./Gauge";
 import { buildAdvice, type Advice } from "./advice";
 
 /**
@@ -67,7 +68,11 @@ export function Overview({
     <div
       className={cn(
         "min-h-0 flex-1 gap-3",
-        compact ? "flex flex-col" : "grid grid-cols-[1fr_1fr_0.85fr] grid-rows-2",
+        // Человек сидит за монитором: на большом экране блоки не растут
+        // до бесконечности — есть максимальный размер, дальше — воздух.
+        compact
+          ? "flex flex-col"
+          : "mx-auto grid w-full max-w-[1400px] grid-cols-[1fr_1fr_0.85fr] grid-rows-2 max-h-[760px]",
       )}
     >
       {/* Советы — правая колонка на всю высоту; направления заполняют 2×2
@@ -161,24 +166,22 @@ function GroupPanel({
   const lead = defs.find((d) => d.id === LEAD[group]) ?? defs[0];
   const rest = defs.filter((d) => d !== lead);
 
-  // Вердикт направления — по худшему из его планов.
+  // Все планы направления выполнены — галочка в шапке блока.
   const states = defs
     .map((d) => {
       const plan = planOf(d.id);
       const v = values[d.id];
       if (!plan || !v) return null;
-      return planState(v.value, plan, !!d.periodic, periodOf(d.id));
+      return planState(v.value, plan);
     })
     .filter(Boolean) as PlanState[];
-  const rank = { behind: 0, risk: 1, ontrack: 2, ahead: 3 } as const;
-  const worst = states.sort((a, b) => rank[a.status] - rank[b.status])[0] ?? null;
-  const verdictUi = worst ? STATUS_UI[worst.status] : null;
+  const allDone = states.length > 0 && states.every((st) => st.done);
 
   const leadValue = lead ? values[lead.id] : undefined;
   const leadPlan = lead ? planOf(lead.id) : null;
   const leadState =
     lead && leadValue && leadPlan
-      ? planState(leadValue.value, leadPlan, !!lead.periodic, periodOf(lead.id))
+      ? planState(leadValue.value, leadPlan)
       : null;
   const leadHidden = !!lead?.sensitive && !revealed;
 
@@ -187,7 +190,7 @@ function GroupPanel({
       {/* Заголовок направления + вердикт */}
       <div className="flex shrink-0 items-center justify-between gap-2">
         <div
-          style={{ fontSize: compact ? "18px" : "max(13px, min(8cqh, 5.5cqw, 24px))" }}
+          style={{ fontSize: compact ? "18px" : "max(13px, min(8cqh, 5.5cqw, 20px))" }}
           className="flex min-w-0 items-center gap-[0.5em] font-bold text-ink"
         >
           <span
@@ -200,16 +203,8 @@ function GroupPanel({
           </span>
           <span className="truncate">{METRIC_GROUP_LABEL[group]}</span>
         </div>
-        {worst && verdictUi && (
-          <span
-            style={{ fontSize: compact ? "12px" : "max(10px, min(6cqh, 4cqw, 18px))" }}
-            className={cn(
-              "shrink-0 rounded-full px-[0.9em] py-[0.35em] font-bold",
-              verdictUi.chip,
-            )}
-          >
-            {worst.label}
-          </span>
+        {allDone && (
+          <DoneBadge className={compact ? "text-[12px]" : "text-[max(10px,min(6cqh,4cqw,15px))]"} />
         )}
       </div>
 
@@ -227,7 +222,7 @@ function GroupPanel({
               {lead.title}
             </div>
             <div
-              style={{ fontSize: compact ? "38px" : "max(22px, min(20cqh, 12cqw, 64px))" }}
+              style={{ fontSize: compact ? "38px" : "max(22px, min(20cqh, 12cqw, 48px))" }}
               className={cn(
                 "truncate font-display font-extrabold leading-[0.95] tracking-[-0.03em] tabular-nums",
                 leadValue.tone === "bad" ? "text-red-ink" : "text-ink",
@@ -246,7 +241,7 @@ function GroupPanel({
           {leadState && !leadHidden && (
             <div className="shrink-0 text-right">
               <div
-                style={{ fontSize: compact ? "26px" : "max(16px, min(12cqh, 7cqw, 40px))" }}
+                style={{ fontSize: compact ? "26px" : "max(16px, min(12cqh, 7cqw, 30px))" }}
                 className={cn(
                   "font-display font-extrabold leading-none tabular-nums",
                   STATUS_UI[leadState.status].ink,
@@ -285,7 +280,7 @@ function GroupPanel({
         {rest.map((d) => {
           const v = values[d.id]!;
           const plan = planOf(d.id);
-          const st = plan ? planState(v.value, plan, !!d.periodic, periodOf(d.id)) : null;
+          const st = plan ? planState(v.value, plan) : null;
           const hidden = !!d.sensitive && !revealed;
           return (
             <div
@@ -342,7 +337,7 @@ function GroupPanel({
 function rowSize(n: number): string {
   // Строки делят нижнюю половину блока; чем больше строк, тем мельче.
   const share = (42 / Math.max(2, n)).toFixed(1);
-  return `max(11px, min(${share}cqh, 3.8cqw, 18px))`;
+  return `max(11px, min(${share}cqh, 3.8cqw, 15px))`;
 }
 
 function Bar({ state, style }: { state: PlanState; style?: React.CSSProperties }) {
@@ -365,7 +360,7 @@ function AdvicePanel({ items, compact }: { items: Advice[]; compact: boolean }) 
   return (
     <Panel compact={compact} dark className={cn(!compact && "col-start-3 row-start-1 row-span-2")}>
       <div
-        style={{ fontSize: compact ? "18px" : "max(13px, min(4.2cqh, 7cqw, 24px))" }}
+        style={{ fontSize: compact ? "18px" : "max(13px, min(4.2cqh, 7cqw, 20px))" }}
         className="relative flex shrink-0 items-center gap-[0.5em] font-bold"
       >
         <span className="flex h-[1.5em] w-[1.5em] shrink-0 items-center justify-center rounded-[0.4em] bg-white/10 text-amber-300">
@@ -418,5 +413,5 @@ function AdvicePanel({ items, compact }: { items: Advice[]; compact: boolean }) 
 function adviceSize(n: number): string {
   // На каждый совет — своя доля высоты; заголовок + две строки текста.
   const share = (15 / Math.max(2, n)).toFixed(1);
-  return `max(11px, min(${share}cqh, 4.4cqw, 17px))`;
+  return `max(11px, min(${share}cqh, 4.4cqw, 14.5px))`;
 }

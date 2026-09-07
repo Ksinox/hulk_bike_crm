@@ -1,15 +1,15 @@
 import type { Board, BoardPeriod } from "./board";
 import { METRIC_BY_ID, type MetricValue } from "./metrics";
-import { periodProgress, planState } from "./status";
+import { GOOD_FROM_PCT, planState } from "./status";
 
 /**
  * Советы на «Обзоре» (07.09, задание заказчика: «в дальнейшем аналитика
  * должна давать советы, что и как лучше двигаться»).
  *
- * Первая версия — честные правила без магии: смотрим на просрочки, простой
- * парка, темп по планам и неоплаченные ремонты и говорим, что делать
- * сегодня и сколько не хватает до плана. Каждый совет — одно действие
- * с цифрой, а не «обратите внимание».
+ * Честные правила без магии: просрочки, простой парка, доля плана и
+ * неоплаченные ремонты. Каждый совет — одно действие с цифрой. Никаких
+ * «отстаём от графика» — только сколько сделано, сколько не хватает и
+ * сколько это в день до конца периода.
  */
 
 export type Advice = {
@@ -89,28 +89,29 @@ export function buildAdvice(
     }
   }
 
-  /* --- темп по планам --- */
+  /* --- планы за период --- */
   for (const t of board.tiles) {
     const def = METRIC_BY_ID.get(t.metric);
     const val = values[t.metric];
     if (!def || !val || !def.periodic || def.comingSoon || t.plan == null || t.plan <= 0) continue;
     const period = periodOf(t.metric);
-    const st = planState(val.value, t.plan, true, period, now);
+    const st = planState(val.value, t.plan);
     const left = daysLeft(period, now);
     const remaining = Math.max(0, t.plan - val.value);
-    if (st.pct >= 100) continue;
-    if (st.pace < 0.85 && left > 0) {
-      const perDay = remaining / left;
-      out.push({
-        tone: st.pace < 0.6 ? "bad" : "warn",
-        title: `${def.title}: ${st.pct}% плана, отстаём`,
-        text: `До плана не хватает ${def.format(remaining)}. Чтобы закрыть его в срок, нужно примерно ${def.format(perDay)} в день ${left} ${plural(left, "день", "дня", "дней")}.`,
-      });
-    } else if (st.pace >= 1.15 && periodProgress(period, now) < 0.95) {
+    if (st.done) {
       out.push({
         tone: "good",
-        title: `${def.title}: идём с опережением`,
-        text: `Темп выше плана на ${Math.round((st.pace - 1) * 100)}% — при таком ходе план закроется раньше срока.`,
+        title: `${def.title}: план выполнен`,
+        text: `${def.format(val.value)} при плане ${def.format(t.plan)}. Можно поднимать планку.`,
+      });
+      continue;
+    }
+    if (st.pct < GOOD_FROM_PCT && left > 0) {
+      const perDay = remaining / left;
+      out.push({
+        tone: st.pct < 25 ? "bad" : "warn",
+        title: `${def.title}: ${st.pct}% плана`,
+        text: `До плана не хватает ${def.format(remaining)} — это примерно ${def.format(perDay)} в день, впереди ${left} ${plural(left, "день", "дня", "дней")}.`,
       });
     }
   }
@@ -129,7 +130,7 @@ export function buildAdvice(
     out.push({
       tone: "good",
       title: "Всё по плану",
-      text: "Просрочек нет, планы в темпе. Хороший момент проверить, не пора ли поднять планку.",
+      text: "Просрочек нет, планы наполняются. Хороший момент проверить, не пора ли поднять планку.",
     });
   }
 
