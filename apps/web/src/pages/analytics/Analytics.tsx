@@ -300,6 +300,9 @@ export function Analytics() {
                 tile={tile}
                 period={periodOf(tile.metric)}
                 cols={cols}
+                primary={
+                  board.tiles.findIndex((t) => t.size === "l") === i
+                }
                 compact={isMobile}
                 editing={editing}
                 onSize={(size) => patchTile(i, { size })}

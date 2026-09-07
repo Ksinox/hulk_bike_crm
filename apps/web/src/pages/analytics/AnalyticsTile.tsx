@@ -45,6 +45,7 @@ export function AnalyticsTile({
   wall = false,
   compact = false,
   cols = 6,
+  primary = false,
   editing = false,
   onSize,
   onRemove,
@@ -60,6 +61,11 @@ export function AnalyticsTile({
   wall?: boolean;
   compact?: boolean;
   cols?: number;
+  /**
+   * Плитка-герой на тёмном фоне. Такая на доске одна — как в образце
+   * заказчика: один заметный блок, остальные ровные и спокойные.
+   */
+  primary?: boolean;
   editing?: boolean;
   onSize?: (size: TileSize) => void;
   onRemove?: () => void;
@@ -73,7 +79,8 @@ export function AnalyticsTile({
     tile.plan != null ? String(tile.plan) : "",
   );
   const span = spanOf(tile.size, cols);
-  const hero = tile.size === "l";
+  const big = tile.size === "l";
+  const hero = big && primary;
   const tiny = tile.size === "s";
   const revealed = useSensitiveRevealed();
   const hidden = !!def.sensitive && !revealed;
@@ -98,6 +105,7 @@ export function AnalyticsTile({
         }
       : state;
   const withRing = state != null && !tiny && !compact;
+  // Кегль цифры считаем от реального размера плитки, а не от «геройства».
 
   const spanStyle = {
     gridColumn: `span ${span.col}`,
@@ -197,13 +205,13 @@ export function AnalyticsTile({
     withRing && ringState ? (
       <div
         className="flex shrink-0 items-center justify-center"
-        style={{ width: hero ? "48%" : "42%" }}
+        style={{ width: big ? "48%" : "42%" }}
       >
         <HalfRing
           state={ringState}
           wall={dark}
           hidden={hidden}
-          showLabels={hero}
+          showLabels={big}
         />
       </div>
     ) : null;
@@ -291,13 +299,15 @@ export function AnalyticsTile({
 
       {/* Три раскладки, как в образце: герой — цифра внизу, средняя —
           цифра слева и гейдж справа, маленькая — всё по центру. */}
-      {hero ? (
+      {big ? (
         <div className="relative flex min-h-0 flex-1 items-end gap-[3cqmin]">
           <div className="flex min-w-0 flex-1 flex-col justify-end gap-[1.2cqmin]">
             {number}
             {caption}
             {extra}
-            {state && !hidden && <StatusChip state={state} wall className="a-hide-sm" />}
+            {state && !hidden && (
+              <StatusChip state={state} wall={dark} className="a-hide-sm" />
+            )}
           </div>
           {gauge}
         </div>

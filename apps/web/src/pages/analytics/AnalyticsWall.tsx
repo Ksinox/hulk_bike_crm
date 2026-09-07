@@ -164,7 +164,7 @@ export function AnalyticsWall() {
           gridAutoFlow: "row dense",
         }}
       >
-        {tiles.map((tile) => {
+        {tiles.map((tile, i) => {
           const def = METRIC_BY_ID.get(tile.metric)!;
           if (def.group === "plan") {
             return (
@@ -187,6 +187,7 @@ export function AnalyticsWall() {
               tile={tile}
               period={periodOf(tile.metric)}
               cols={cols}
+              primary={tiles.findIndex((t) => t.size === "l") === i}
               wall
             />
           );
