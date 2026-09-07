@@ -4,9 +4,10 @@ import { Sensitive } from "@/components/Sensitive";
 import { useSensitiveRevealed } from "@/lib/sensitive";
 import type { BoardPeriod, BoardTile, TileSize } from "./board";
 import { METRIC_BY_ID, type MetricValue } from "./metrics";
-import { SIZE_SPAN } from "./AnalyticsTile";
+import { spanOf } from "./AnalyticsTile";
 import { planState, STATUS_UI, type PlanState } from "./status";
 import { SizePicker } from "./SizePicker";
+import { ResizeHandle } from "./ResizeHandle";
 
 /**
  * Плитка «План и факт» (07.09, вторая правка).
@@ -45,7 +46,7 @@ export function PlanSummaryTile({
   ghost?: boolean;
   index?: number;
 }) {
-  const span = SIZE_SPAN[tile.size];
+  const span = spanOf(tile.size, cols);
   const revealed = useSensitiveRevealed();
 
   const rows = tiles
@@ -74,7 +75,7 @@ export function PlanSummaryTile({
   }[];
 
   const spanStyle = {
-    gridColumn: `span ${Math.min(span.col, cols)}`,
+    gridColumn: `span ${span.col}`,
     gridRow: `span ${compact ? 1 : span.row}`,
   };
 
@@ -83,8 +84,11 @@ export function PlanSummaryTile({
       <div
         data-tile-index={index}
         data-flip-key="plan.summary"
-        style={spanStyle}
-        className="rounded-[clamp(14px,2.5cqmin,28px)] border-2 border-dashed border-blue-500/70 bg-blue-500/[0.07]"
+        style={{ ...spanStyle, borderRadius: "clamp(16px, 3cqmin, 30px)" }}
+        className={cn(
+          "border-2 border-dashed",
+          wall ? "border-white/25 bg-white/[0.03]" : "border-ink/20 bg-ink/[0.03]",
+        )}
       />
     );
   }
@@ -101,14 +105,14 @@ export function PlanSummaryTile({
       style={{
         ...spanStyle,
         containerType: "size",
-        borderRadius: "clamp(14px, 3cqmin, 30px)",
-        padding: "clamp(9px, 3.2cqmin, 28px)",
+        borderRadius: "clamp(16px, 3cqmin, 30px)",
+        padding: "clamp(12px, 3.4cqmin, 32px)",
       }}
       className={cn(
         "group/tile relative flex min-h-0 min-w-0 flex-col overflow-hidden",
         wall
-          ? "border border-white/[0.07] bg-white/[0.04]"
-          : "border border-black/[0.04] bg-surface shadow-card-sm",
+          ? "bg-white/[0.035] ring-1 ring-inset ring-white/[0.07]"
+          : "bg-surface ring-1 ring-inset ring-black/[0.05]",
         editing && "select-none",
       )}
     >
@@ -125,7 +129,7 @@ export function PlanSummaryTile({
         {editing && (
           <div
             className={cn(
-              "flex shrink-0 items-center gap-0.5 transition-opacity",
+              "relative z-10 flex shrink-0 items-center gap-0.5 transition-opacity",
               compact ? "opacity-100" : "opacity-0 group-hover/tile:opacity-100",
             )}
             onPointerDown={(e) => e.stopPropagation()}
@@ -137,7 +141,7 @@ export function PlanSummaryTile({
             >
               <GripVertical size={15} />
             </span>
-            <SizePicker value={tile.size} onChange={(s) => onSize?.(s)} />
+            <SizePicker value={tile.size} onChange={(s) => onSize?.(s)} dark={wall} />
             <button
               type="button"
               title="Убрать с доски"
@@ -241,6 +245,10 @@ export function PlanSummaryTile({
             );
           })}
         </div>
+      )}
+
+      {editing && onSize && (
+        <ResizeHandle size={tile.size} onChange={onSize} dark={wall} />
       )}
     </div>
   );

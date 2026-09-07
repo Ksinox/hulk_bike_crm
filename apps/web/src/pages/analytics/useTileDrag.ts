@@ -33,6 +33,8 @@ export function useTileDrag(move: (from: number, to: number) => void) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const ref = useRef<DragState | null>(null);
   ref.current = drag;
+  /** Где случилась прошлая перестановка — от неё считаем «уже отъехали». */
+  const lastSwap = useRef({ x: 0, y: 0 });
 
   const start = useCallback((index: number, e: React.PointerEvent) => {
     const tile = (e.currentTarget as HTMLElement).closest<HTMLElement>(
@@ -47,6 +49,7 @@ export function useTileDrag(move: (from: number, to: number) => void) {
     clone.style.gridRow = "";
     clone.style.width = `${r.width}px`;
     clone.style.height = `${r.height}px`;
+    lastSwap.current = { x: e.clientX, y: e.clientY };
     setDrag({
       index,
       html: clone.outerHTML,
@@ -67,7 +70,9 @@ export function useTileDrag(move: (from: number, to: number) => void) {
       if (!cur) return;
       setDrag({ ...cur, x: e.clientX, y: e.clientY });
 
-      // Под курсором ищем соседнюю плитку — и меняемся с ней местами.
+      // Под курсором ищем соседнюю плитку. Меняемся местами не сразу:
+      // сначала курсор должен зайти за середину чужой плитки и отъехать
+      // от места прошлой перестановки — иначе доска дёргается на месте.
       const under = document
         .elementsFromPoint(e.clientX, e.clientY)
         .find((el) => (el as HTMLElement).dataset?.tileIndex != null) as
@@ -76,6 +81,21 @@ export function useTileDrag(move: (from: number, to: number) => void) {
       if (!under) return;
       const to = Number(under.dataset.tileIndex);
       if (Number.isNaN(to) || to === cur.index) return;
+
+      const far =
+        Math.hypot(e.clientX - lastSwap.current.x, e.clientY - lastSwap.current.y) >
+        28;
+      if (!far) return;
+
+      const r = under.getBoundingClientRect();
+      const inside =
+        e.clientX > r.left + r.width * 0.22 &&
+        e.clientX < r.right - r.width * 0.22 &&
+        e.clientY > r.top + r.height * 0.22 &&
+        e.clientY < r.bottom - r.height * 0.22;
+      if (!inside) return;
+
+      lastSwap.current = { x: e.clientX, y: e.clientY };
       move(cur.index, to);
       ref.current = { ...cur, index: to, x: e.clientX, y: e.clientY };
       setDrag(ref.current);

@@ -20,9 +20,12 @@ const OPTIONS: { size: TileSize; label: string; cells: [number, number] }[] = [
 export function SizePicker({
   value,
   onChange,
+  dark,
 }: {
   value: TileSize;
   onChange: (size: TileSize) => void;
+  /** Плитка тёмная — иконку делаем светлой. */
+  dark?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -43,8 +46,14 @@ export function SizePicker({
         title="Размер плитки"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex h-6 w-6 items-center justify-center rounded-md hover:bg-white/60",
-          open ? "bg-white/70 text-ink" : "text-muted-2 hover:text-ink",
+          "flex h-6 w-6 items-center justify-center rounded-md",
+          dark
+            ? open
+              ? "bg-white/20 text-white"
+              : "text-white/50 hover:bg-white/15 hover:text-white"
+            : open
+              ? "bg-surface-soft text-ink"
+              : "text-muted-2 hover:bg-surface-soft hover:text-ink",
         )}
       >
         <Scaling size={13} />

@@ -266,7 +266,7 @@ export function Analytics() {
           className="grid min-w-0 flex-1 gap-3"
           style={{
             gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-            gridAutoRows: `minmax(${isMobile ? 132 : 150}px, auto)`,
+            gridAutoRows: `minmax(${isMobile ? 138 : 196}px, auto)`,
           }}
         >
           {board.tiles.map((tile, i) => {
@@ -367,9 +367,13 @@ export function Analytics() {
   );
 }
 
-/** Сколько колонок помещается: телефон — 2, планшет — 4, компьютер — 6. */
+/**
+ * Аналитика — главный экран, поэтому блоков в ряду немного, зато они
+ * крупные и читаются с одного взгляда: телефон — 2, планшет — 3,
+ * компьютер — 4 колонки.
+ */
 function colsFor(width: number): number {
   if (width < 700) return 2;
-  if (width < 1180) return 4;
-  return 6;
+  if (width < 1180) return 3;
+  return 4;
 }

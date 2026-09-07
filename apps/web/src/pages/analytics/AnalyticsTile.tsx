@@ -5,26 +5,32 @@ import { Sensitive } from "@/components/Sensitive";
 import { useSensitiveRevealed } from "@/lib/sensitive";
 import type { BoardPeriod, BoardTile, TileSize } from "./board";
 import type { MetricDef, MetricValue } from "./metrics";
-import { planState, STATUS_UI, TONE_UI } from "./status";
+import { planState, STATUS_UI } from "./status";
 import { HalfRing, PlanBarThick, StatusChip } from "./Gauge";
 import { SizePicker } from "./SizePicker";
+import { ResizeHandle } from "./ResizeHandle";
 
 /**
- * Плитка показателя (07.09, вторая правка заказчика).
+ * Плитка показателя (07.09, третья правка — «а у тебя цирк»).
  *
- * Два требования, из которых вырос весь этот файл:
+ * Стилистика намеренно спокойная, как в образце заказчика: одна
+ * плитка-герой на тёмном фоне с диагональной фактурой, остальные —
+ * ровные карточки с тонкой рамкой. Цветом говорит только то, что должно:
+ * дуга гейджа, процент выполнения и красная цифра, если горит. Заливку
+ * всей плитки убрал — от неё рябило.
  *
- * 1. «Аккуратно» — бенто-сетка: крупная плитка-герой с фактурой и мягкой
- *    маской, остальные спокойные, с тонкой рамкой; ничего не кричит,
- *    кроме цифры.
- * 2. «Должно подстраиваться под монитор» — ни одного фиксированного
- *    кегля. Плитка объявлена контейнером (container-type: size), и все
- *    размеры внутри заданы в cqmin/cqh: стала плитка меньше (мелкий
- *    монитор или много показателей) — пропорционально уменьшились цифра,
- *    подписи, отступы и гейдж. Ничего не обрезается и не переносится.
+ * Размеры внутри — в единицах контейнера (cqh/cqw/cqmin), поэтому плитка
+ * одинаково аккуратна и на ноутбуке, и на большом мониторе.
  */
 
-/** Ширина плитки в колонках 6-колоночной бенто-сетки и высота в рядах. */
+/** Колонок и рядов под плитку. Ширина героя зависит от ширины сетки. */
+export function spanOf(size: TileSize, cols: number) {
+  if (size === "s") return { col: 1, row: 1 };
+  if (size === "m") return { col: Math.min(2, cols), row: 1 };
+  return { col: Math.min(cols, Math.max(2, Math.round(cols / 2))), row: 2 };
+}
+
+/** Спаны для расчёта числа рядов на экране-стене. */
 export const SIZE_SPAN: Record<TileSize, { col: number; row: number }> = {
   s: { col: 1, row: 1 },
   m: { col: 2, row: 1 },
@@ -50,12 +56,9 @@ export function AnalyticsTile({
   def: MetricDef;
   value: MetricValue | undefined;
   tile: BoardTile;
-  /** Действующий период плитки — от него считается ожидаемый темп. */
   period: BoardPeriod;
   wall?: boolean;
-  /** Узкий экран: высокие плитки не растягиваем на две строки. */
   compact?: boolean;
-  /** Сколько колонок в сетке — чтобы плитка не вылезала за её край. */
   cols?: number;
   editing?: boolean;
   onSize?: (size: TileSize) => void;
@@ -69,10 +72,12 @@ export function AnalyticsTile({
   const [planDraft, setPlanDraft] = useState(
     tile.plan != null ? String(tile.plan) : "",
   );
-  const span = SIZE_SPAN[tile.size];
+  const span = spanOf(tile.size, cols);
   const hero = tile.size === "l";
+  const tiny = tile.size === "s";
   const revealed = useSensitiveRevealed();
   const hidden = !!def.sensitive && !revealed;
+  const dark = hero || wall;
 
   const planValue =
     !def.comingSoon && tile.plan != null && tile.plan > 0 ? tile.plan : null;
@@ -81,10 +86,8 @@ export function AnalyticsTile({
       ? planState(value?.value ?? 0, planValue, !!def.periodic, period)
       : null;
   const tone = value?.tone ?? "neutral";
-  const toneUi = TONE_UI[tone];
   const ui = state ? STATUS_UI[state.status] : null;
 
-  // Загрузка парка сама в процентах: дуга рисует показатель, засечка — план.
   const ringIsValue = !!def.percentValue && state != null;
   const ringState =
     ringIsValue && state
@@ -94,11 +97,10 @@ export function AnalyticsTile({
           expectedPct: Math.min(100, planValue!),
         }
       : state;
-  // Полукруг помещается только там, где плитка шире одной колонки.
-  const withRing = state != null && tile.size !== "s" && !compact;
+  const withRing = state != null && !tiny && !compact;
 
   const spanStyle = {
-    gridColumn: `span ${Math.min(span.col, cols)}`,
+    gridColumn: `span ${span.col}`,
     gridRow: `span ${compact ? 1 : span.row}`,
   };
 
@@ -107,11 +109,104 @@ export function AnalyticsTile({
       <div
         data-tile-index={index}
         data-flip-key={def.id}
-        style={spanStyle}
-        className="rounded-[clamp(14px,2.5cqmin,28px)] border-2 border-dashed border-blue-500/70 bg-blue-500/[0.07]"
+        style={{ ...spanStyle, borderRadius: "clamp(16px, 3cqmin, 30px)" }}
+        className={cn(
+          "border-2 border-dashed",
+          wall ? "border-white/25 bg-white/[0.03]" : "border-ink/20 bg-ink/[0.03]",
+        )}
       />
     );
   }
+
+  /** Цифра спокойная; красным горит только то, что требует действия. */
+  const numberTone = dark
+    ? tone === "bad"
+      ? "text-red-400"
+      : "text-white"
+    : tone === "bad"
+      ? "text-red-ink"
+      : "text-ink";
+
+  const title = (
+    <span
+      style={{ fontSize: "max(9px, min(3.1cqmin, 17px))" }}
+      className={cn(
+        "flex min-w-0 items-center gap-[0.6em] font-semibold uppercase tracking-[0.16em]",
+        dark ? "text-white/45" : "text-muted-2",
+      )}
+    >
+      {state && (
+        <span
+          aria-hidden
+          className={cn(
+            "h-[0.55em] w-[0.55em] shrink-0 rounded-full",
+            dark ? ui!.barWall : ui!.bar,
+          )}
+        />
+      )}
+      <span className="truncate">{def.title}</span>
+    </span>
+  );
+
+  const number = !ringIsValue && (
+    <div
+      style={{ fontSize: numberSize(tile.size, withRing) }}
+      className={cn(
+        "truncate font-display font-extrabold leading-[0.92] tracking-[-0.035em] tabular-nums",
+        numberTone,
+      )}
+    >
+      {def.sensitive ? (
+        <Sensitive dark={dark}>{value?.display ?? "—"}</Sensitive>
+      ) : (
+        (value?.display ?? "—")
+      )}
+    </div>
+  );
+
+  const caption = value?.caption ? (
+    <div
+      style={{
+        fontSize: ringIsValue
+          ? "max(12px, min(5cqmin, 30px))"
+          : "max(10px, min(3.6cqmin, 22px))",
+      }}
+      className={cn(
+        "truncate",
+        ringIsValue ? "font-bold" : "a-hide-xs",
+        dark ? "text-white/50" : "text-muted",
+      )}
+    >
+      {value.caption}
+    </div>
+  ) : null;
+
+  const extra = value?.extra ? (
+    <div
+      style={{ fontSize: "max(9px, min(3.1cqmin, 19px))" }}
+      className={cn(
+        "a-hide-sm truncate font-semibold",
+        dark ? "text-white/35" : "text-muted-2",
+      )}
+    >
+      {value.extra}
+    </div>
+  ) : null;
+
+  const gauge =
+    withRing && ringState ? (
+      <div
+        className="flex shrink-0 items-center justify-center"
+        style={{ width: hero ? "48%" : "42%" }}
+      >
+        <HalfRing
+          state={ringState}
+          wall={dark}
+          hidden={hidden}
+          showLabels={hero}
+        />
+      </div>
+    ) : null;
 
   return (
     <div
@@ -120,42 +215,25 @@ export function AnalyticsTile({
       style={{
         ...spanStyle,
         containerType: "size",
-        borderRadius: "clamp(14px, 3cqmin, 30px)",
-        padding: "clamp(9px, 3.6cqmin, 32px)",
+        borderRadius: "clamp(16px, 3cqmin, 30px)",
+        padding: "clamp(12px, 3.8cqmin, 38px)",
       }}
       className={cn(
         "group/tile relative flex min-h-0 min-w-0 flex-col overflow-hidden",
-        heroSurface(hero, wall, ui),
+        hero
+          ? wall
+            ? "bg-white/[0.08] ring-1 ring-inset ring-white/10"
+            : "bg-ink"
+          : wall
+            ? "bg-white/[0.035] ring-1 ring-inset ring-white/[0.07]"
+            : "bg-surface ring-1 ring-inset ring-black/[0.05]",
         editing && "select-none",
       )}
     >
-      {hero && <HeroTexture wall={wall} />}
+      {hero && <HeroTexture />}
 
-      {/* Заголовок: пилюля у героя, микро-строчка у остальных */}
-      <header className="relative flex shrink-0 items-start justify-between gap-2">
-        <span
-          style={{
-            fontSize: "max(9px, min(3.2cqmin, 18px))",
-            ...(hero
-              ? {
-                  padding: "max(3px,0.9cqmin) max(7px,1.8cqmin)",
-                  borderRadius: 999,
-                }
-              : {}),
-          }}
-          className={cn(
-            "min-w-0 truncate font-bold uppercase tracking-[0.14em]",
-            hero
-              ? wall
-                ? "bg-white/10 text-white/70"
-                : "bg-ink/[0.06] text-ink/55"
-              : wall
-                ? "text-white/45"
-                : "text-muted-2",
-          )}
-        >
-          {def.title}
-        </span>
+      <div className="relative flex shrink-0 items-start justify-between gap-2">
+        {title}
         {editing && (
           <div
             className={cn(
@@ -167,19 +245,28 @@ export function AnalyticsTile({
             <span
               title="Перетащить"
               onPointerDown={onDragStart}
-              className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-2 hover:bg-white/60 hover:text-ink active:cursor-grabbing"
+              className={cn(
+                "flex h-6 w-6 cursor-grab items-center justify-center rounded-md active:cursor-grabbing",
+                dark
+                  ? "text-white/50 hover:bg-white/15 hover:text-white"
+                  : "text-muted-2 hover:bg-surface-soft hover:text-ink",
+              )}
             >
               <GripVertical size={15} />
             </span>
-            <SizePicker value={tile.size} onChange={(s) => onSize?.(s)} />
+            <SizePicker value={tile.size} onChange={(s) => onSize?.(s)} dark={dark} />
             {def.planable && !def.comingSoon && (
               <button
                 type="button"
                 title="План"
                 onClick={() => setPlanOpen((v) => !v)}
                 className={cn(
-                  "flex h-6 w-6 items-center justify-center rounded-md hover:bg-white/60",
-                  planValue != null ? "text-blue-600" : "text-muted-2 hover:text-ink",
+                  "flex h-6 w-6 items-center justify-center rounded-md",
+                  dark
+                    ? "text-white/50 hover:bg-white/15 hover:text-white"
+                    : planValue != null
+                      ? "text-blue-600 hover:bg-surface-soft"
+                      : "text-muted-2 hover:bg-surface-soft hover:text-ink",
                 )}
               >
                 <Target size={13} />
@@ -189,128 +276,75 @@ export function AnalyticsTile({
               type="button"
               title="Убрать с доски"
               onClick={onRemove}
-              className="flex h-6 w-6 items-center justify-center rounded-md text-muted-2 hover:bg-red-soft hover:text-red-ink"
+              className={cn(
+                "flex h-6 w-6 items-center justify-center rounded-md",
+                dark
+                  ? "text-white/50 hover:bg-red-500/30 hover:text-white"
+                  : "text-muted-2 hover:bg-red-soft hover:text-red-ink",
+              )}
             >
               <X size={13} />
             </button>
           </div>
         )}
-      </header>
-
-      {/* Тело: цифра слева, гейдж справа */}
-      <div
-        style={withRing ? { gap: "2.5cqmin" } : undefined}
-        className={cn(
-          "relative flex min-h-0 flex-1 overflow-hidden",
-          withRing ? "items-center" : "flex-col justify-center",
-        )}
-      >
-        <div
-          style={{ gap: "max(2px, 1.1cqmin)" }}
-          className={cn(
-            "flex min-w-0 flex-col justify-center",
-            withRing ? "flex-1" : "w-full",
-          )}
-        >
-          {!ringIsValue && (
-            <div
-              style={{ fontSize: numberSize(tile.size, withRing) }}
-              className={cn(
-                "truncate font-display font-extrabold leading-[0.9] tracking-[-0.03em] tabular-nums",
-                hero
-                  ? wall
-                    ? "text-white"
-                    : "text-ink"
-                  : ui
-                    ? wall
-                      ? ui.inkWall
-                      : ui.ink
-                    : wall
-                      ? toneUi.inkWall
-                      : toneUi.ink,
-              )}
-            >
-              {def.sensitive ? (
-                <Sensitive dark={wall}>{value?.display ?? "—"}</Sensitive>
-              ) : (
-                (value?.display ?? "—")
-              )}
-            </div>
-          )}
-
-          {value?.caption && (
-            <div
-              style={{
-                fontSize: ringIsValue
-                  ? "max(12px, min(5.2cqmin, 32px))"
-                  : "max(10px, min(3.8cqmin, 23px))",
-              }}
-              className={cn(
-                "truncate",
-                ringIsValue ? "font-bold" : "a-hide-xs",
-                wall ? "text-white/60" : "text-muted",
-              )}
-            >
-              {value.caption}
-            </div>
-          )}
-          {value?.extra && (
-            <div
-              style={{ fontSize: "max(9px, min(3.2cqmin, 20px))" }}
-              className={cn(
-                "a-hide-sm truncate font-semibold",
-                wall ? "text-white/45" : "text-muted-2",
-              )}
-            >
-              {value.extra}
-            </div>
-          )}
-          {state && !hidden && (
-            <StatusChip state={state} wall={wall} className="a-hide-sm" />
-          )}
-        </div>
-
-        {withRing && ringState && (
-          <div
-            className={cn(
-              "flex shrink-0 items-center justify-center",
-              hero ? "w-[46%]" : "w-[40%]",
-            )}
-          >
-            <HalfRing
-              state={ringState}
-              wall={wall}
-              hidden={hidden}
-              showLabels={hero}
-            />
-          </div>
-        )}
       </div>
 
-      {/* План внизу: подпись + шкала там, где нет полукруга */}
-      {state && (
+      {/* Три раскладки, как в образце: герой — цифра внизу, средняя —
+          цифра слева и гейдж справа, маленькая — всё по центру. */}
+      {hero ? (
+        <div className="relative flex min-h-0 flex-1 items-end gap-[3cqmin]">
+          <div className="flex min-w-0 flex-1 flex-col justify-end gap-[1.2cqmin]">
+            {number}
+            {caption}
+            {extra}
+            {state && !hidden && <StatusChip state={state} wall className="a-hide-sm" />}
+          </div>
+          {gauge}
+        </div>
+      ) : tiny ? (
+        <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-[1cqmin] text-center">
+          {number}
+          {caption}
+        </div>
+      ) : (
+        <div className="relative flex min-h-0 flex-1 items-center gap-[2.5cqmin] overflow-hidden">
+          <div className="flex min-w-0 flex-1 flex-col justify-center gap-[1cqmin]">
+            {number}
+            {caption}
+            {extra}
+            {state && !hidden && (
+              <StatusChip state={state} wall={dark} className="a-hide-sm" />
+            )}
+          </div>
+          {gauge}
+        </div>
+      )}
+
+      {state && !withRing && (
         <footer
-          style={{ marginTop: "1.8cqmin", gap: "1.1cqmin" }}
+          style={{ marginTop: "1.8cqmin", gap: "1cqmin" }}
           className="relative flex shrink-0 flex-col"
         >
           <div
-            style={{ fontSize: "max(9px, min(3.2cqmin, 20px))" }}
+            style={{ fontSize: "max(9px, min(3.1cqmin, 19px))" }}
             className="a-hide-xxs flex items-baseline justify-between gap-2"
           >
-            <span className={wall ? "text-white/45" : "text-muted-2"}>
+            <span className={dark ? "text-white/40" : "text-muted-2"}>
               план {def.format(planValue!)}
             </span>
-            {!withRing && (
-              <span
-                style={{ fontSize: "max(11px, min(4.6cqmin, 26px))" }}
-                className={cn("font-extrabold tabular-nums", wall ? ui!.inkWall : ui!.ink)}
-              >
-                {hidden ? <Sensitive dark={wall}>{state.pct}%</Sensitive> : `${state.pct}%`}
-              </span>
-            )}
+            <span
+              style={{ fontSize: "max(11px, min(4.4cqmin, 25px))" }}
+              className={cn("font-extrabold tabular-nums", dark ? ui!.inkWall : ui!.ink)}
+            >
+              {hidden ? <Sensitive dark={dark}>{state.pct}%</Sensitive> : `${state.pct}%`}
+            </span>
           </div>
-          {!withRing && <PlanBarThick state={state} wall={wall} hidden={hidden} />}
+          <PlanBarThick state={state} wall={dark} hidden={hidden} />
         </footer>
+      )}
+
+      {editing && onSize && (
+        <ResizeHandle size={tile.size} onChange={onSize} dark={dark} />
       )}
 
       {editing && planOpen && (
@@ -358,52 +392,27 @@ export function AnalyticsTile({
 
 /* ------------------------------------------------------------------ */
 
-/** Кегль цифры — в единицах контейнера, поэтому едет вместе с плиткой. */
 function numberSize(size: TileSize, withRing: boolean): string {
   if (size === "l")
-    return withRing
-      ? "max(22px, min(17cqh, 12cqw))"
-      : "max(24px, min(30cqh, 15cqw))";
+    return withRing ? "max(26px, min(19cqh, 13cqw))" : "max(28px, min(32cqh, 16cqw))";
   if (size === "m")
-    return withRing
-      ? "max(18px, min(30cqh, 10cqw))"
-      : "max(20px, min(38cqh, 13cqw))";
-  return "max(16px, min(30cqh, 24cqw))";
+    return withRing ? "max(18px, min(31cqh, 11cqw))" : "max(20px, min(40cqh, 14cqw))";
+  return "max(16px, min(32cqh, 26cqw))";
 }
 
-/** Поверхность плитки: герой заметный, остальные спокойные. */
-function heroSurface(
-  hero: boolean,
-  wall: boolean,
-  ui: (typeof STATUS_UI)[keyof typeof STATUS_UI] | null,
-): string {
-  if (wall) {
-    return hero
-      ? cn("border border-white/10", ui ? ui.fillWall : "bg-white/[0.07]")
-      : cn("border border-white/[0.07]", ui ? ui.fillWall : "bg-white/[0.04]");
-  }
-  return hero
-    ? cn("border border-black/[0.04] shadow-card", ui ? ui.fill : "bg-surface")
-    : cn("border border-black/[0.04] shadow-card-sm", ui ? ui.fill : "bg-surface");
-}
-
-/**
- * Фактура плитки-героя: тонкая диагональная штриховка, погашенная
- * радиальной маской — как в образце заказчика. Чистый CSS, ничего не грузим.
- */
-function HeroTexture({ wall }: { wall: boolean }) {
+/** Диагональная штриховка под радиальной маской — из образца заказчика. */
+function HeroTexture() {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute inset-0"
+      className="pointer-events-none absolute inset-0 opacity-30"
       style={{
-        backgroundImage: `repeating-linear-gradient(45deg, ${
-          wall ? "rgba(255,255,255,0.10)" : "rgba(15,23,42,0.07)"
-        } 0px 1px, transparent 1px 10px)`,
+        backgroundImage:
+          "repeating-linear-gradient(45deg, #808080 0px 1px, transparent 1px 10px)",
         WebkitMaskImage:
-          "radial-gradient(ellipse 80% 60% at 100% 0%, #000 55%, transparent 105%)",
+          "radial-gradient(ellipse 80% 50% at 100% 0%, #000 70%, transparent 110%)",
         maskImage:
-          "radial-gradient(ellipse 80% 60% at 100% 0%, #000 55%, transparent 105%)",
+          "radial-gradient(ellipse 80% 50% at 100% 0%, #000 70%, transparent 110%)",
       }}
     />
   );
