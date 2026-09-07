@@ -120,7 +120,7 @@ export function AnalyticsTile({
       <div
         data-tile-index={index}
         data-flip-key={def.id}
-        style={{ ...spanStyle, borderRadius: "clamp(16px, 3cqmin, 30px)" }}
+        style={{ ...spanStyle, borderRadius: 22 }}
         className={cn(
           "border-2 border-dashed",
           wall ? "border-white/25 bg-white/[0.03]" : "border-ink/20 bg-ink/[0.03]",
@@ -144,13 +144,15 @@ export function AnalyticsTile({
       data-flip-key={def.id}
       style={{
         ...spanStyle,
+        // Контейнер — сама плитка; cq-единицы внутри считаются от неё.
+        // На самой плитке cq-единицы использовать нельзя (считались бы
+        // от окна), поэтому отступы — на внутренней обёртке ниже.
         containerType: compact ? "inline-size" : "size",
-        borderRadius: "clamp(16px, 3cqmin, 30px)",
-        padding: "clamp(12px, 4.5cqmin, 40px)",
+        borderRadius: 22,
         minHeight: compact ? 150 : undefined,
       }}
       className={cn(
-        "group/tile relative flex min-h-0 min-w-0 flex-col overflow-hidden",
+        "group/tile relative min-h-0 min-w-0 overflow-hidden",
         hero
           ? "bg-ink"
           : wall
@@ -161,6 +163,10 @@ export function AnalyticsTile({
     >
       {hero && <HeroTexture />}
 
+      <div
+        style={{ padding: compact ? 16 : "clamp(10px, 4.5cqmin, 40px)" }}
+        className={cn("flex min-h-0 min-w-0 flex-col", !compact && "absolute inset-0")}
+      >
       {/* ---- Заголовок: иконка направления + название ---- */}
       <div className="relative flex shrink-0 items-center justify-between gap-2">
         <div
@@ -311,6 +317,8 @@ export function AnalyticsTile({
           </div>
         </footer>
       )}
+
+      </div>
 
       {editing && onResize && !compact && (
         <ResizeHandle w={tile.w} h={tile.h} cols={cols} onChange={onResize} dark={dark} />

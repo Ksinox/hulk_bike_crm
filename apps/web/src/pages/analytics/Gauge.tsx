@@ -1,19 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { STATUS_UI, type PlanState } from "./status";
 
 /**
- * Шкалы выполнения плана (07.09).
- *
- * Заказчик: «есть норма, норма это к примеру сто процентов, и нам нужно до
- * этой нормы дойти». Полукруг с подписями 0% и 100% — норма это правый
- * край дуги. Вся геометрия и цифра живут внутри svg (viewBox), а сам svg
- * вписывается в выделенный ему бокс целиком (preserveAspectRatio meet) —
- * поэтому гейдж никогда не обрезается, каким бы ни был размер плитки.
+ * Радиальный гейдж «до нормы» (07.09) — повтор элемента, который прислал
+ * заказчик (AnimatedRadialChart): градиентная дорожка с тенью, тонкая
+ * внутренняя дуга, заливка до значения, «палочка» на конце заливки,
+ * подписи 0% и 100%, счётчик в центре. Отличия ровно два:
+ *   • цвет — один критерий: наполняется хорошо → зелёный,
+ *     слабый показатель → оранжево-красный;
+ *   • вся геометрия в viewBox, поэтому гейдж масштабируется с плиткой.
+ * Анимация на requestAnimationFrame (без framer-motion): значение
+ * доезжает за 2 секунды с easeOut, палочка едет вместе с ним.
  */
 
-const VB_W = 300;
-const VB_H = 176;
+const SIZE = 300;
+const H = SIZE * 0.7;
 
 export function HalfRing({
   state,
@@ -21,6 +23,7 @@ export function HalfRing({
   hidden = false,
   showLabels = true,
   fill = false,
+  duration = 2,
   className,
 }: {
   state: PlanState;
@@ -28,85 +31,174 @@ export function HalfRing({
   /** Прибыль под ключом директора — дугу и цифру не показываем. */
   hidden?: boolean;
   showLabels?: boolean;
-  /** Занять весь бокс родителя (высоту и ширину), сохранив пропорции. */
+  /** Занять весь бокс родителя, сохранив пропорции. */
   fill?: boolean;
+  duration?: number;
   className?: string;
 }) {
-  const ui = STATUS_UI[state.status];
-  const shown = useCountUp(hidden ? 0 : state.pct);
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const target = hidden ? 0 : Math.min(100, state.pct);
+  const v = useAnimatedValue(target, duration * 1000);
 
-  const stroke = 30;
-  const radius = (VB_W - stroke) / 2 - 6;
-  const cx = VB_W / 2;
-  const cy = VB_H - 30;
-  const circ = Math.PI * radius;
-  const filled = hidden ? 0 : Math.min(100, state.pct) / 100;
+  const strokeWidth = Math.max(12, SIZE * 0.06);
+  const radius = SIZE * 0.35;
+  const center = SIZE / 2;
+  const circumference = Math.PI * radius;
+  const innerLineRadius = radius - strokeWidth - 4;
+  const innerRadius = radius - strokeWidth / 2;
 
-  const innerR = radius - stroke - 6;
-  const tickA = (Math.min(100, state.expectedPct) / 100) * Math.PI - Math.PI;
-  const showTick = !hidden && state.expectedPct > 3 && state.expectedPct < 98;
+  const offset = circumference - (v / 100) * circumference;
+  const angle = -Math.PI + (v / 100) * Math.PI;
+  const lx1 = center + Math.cos(angle) * innerRadius;
+  const ly1 = center + Math.sin(angle) * innerRadius;
+  const lx2 = lx1 - Math.cos(angle) * 30;
+  const ly2 = ly1 - Math.sin(angle) * 30;
 
+  const good = state.status === "ahead" || state.status === "ontrack";
+  const fontSize = Math.max(16, SIZE * 0.1) * 1.9;
+  const labelFontSize = Math.max(12, SIZE * 0.04) * 1.6;
   const arc = (r: number) =>
-    `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
-
-  const track = wall ? "rgba(255,255,255,0.14)" : "rgba(15,23,42,0.08)";
-  const hair = wall ? "rgba(255,255,255,0.22)" : "rgba(15,23,42,0.14)";
-  const label = wall ? "rgba(255,255,255,0.5)" : "rgba(15,23,42,0.4)";
+    `M ${center - r} ${center} A ${r} ${r} 0 0 1 ${center + r} ${center}`;
 
   return (
     <svg
-      viewBox={`0 0 ${VB_W} ${VB_H}`}
+      viewBox={`0 0 ${SIZE} ${H}`}
       preserveAspectRatio="xMidYMid meet"
-      className={cn(fill ? "h-full w-full" : "h-auto w-full", className)}
+      className={cn("overflow-visible", fill ? "h-full w-full" : "h-auto w-full", className)}
       role="img"
       aria-label={`${state.pct}% от нормы`}
     >
-      <path d={arc(innerR)} fill="none" stroke={hair} strokeWidth={1.5} />
-      <path d={arc(radius)} fill="none" stroke={track} strokeWidth={stroke} />
-      {filled > 0 && (
+      <defs>
+        {/* Дорожка: светлая, с серебром — как в образце */}
+        <linearGradient id={`base-${uid}`} x1="0%" y1="0%" x2="0%" y2="100%">
+          {wall ? (
+            <>
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
+              <stop offset="50%" stopColor="#d1d5db" stopOpacity="0.7" />
+              <stop offset="100%" stopColor="#6b7280" stopOpacity="0.6" />
+            </>
+          ) : (
+            <>
+              <stop offset="0%" stopColor="#e5e7eb" stopOpacity="0.95" />
+              <stop offset="50%" stopColor="#d1d5db" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#9ca3af" stopOpacity="0.8" />
+            </>
+          )}
+        </linearGradient>
+        {/* Заливка: один критерий цвета — хорошо / слабо */}
+        <linearGradient id={`progress-${uid}`} x1="0%" y1="0%" x2="100%" y2="0%">
+          {good ? (
+            <>
+              <stop offset="0%" stopColor="#34d399" />
+              <stop offset="50%" stopColor="#10b981" />
+              <stop offset="100%" stopColor="#059669" />
+            </>
+          ) : (
+            <>
+              <stop offset="0%" stopColor="#f97316" />
+              <stop offset="50%" stopColor="#ea580c" />
+              <stop offset="100%" stopColor="#dc2626" />
+            </>
+          )}
+        </linearGradient>
+        <linearGradient id={`text-${uid}`} x1="0%" y1="0%" x2="100%" y2="0%">
+          {wall ? (
+            <>
+              <stop offset="0%" stopColor="#ffffff" />
+              <stop offset="100%" stopColor="#9ca3af" />
+            </>
+          ) : (
+            <>
+              <stop offset="0%" stopColor="#0f172a" />
+              <stop offset="100%" stopColor="#475569" />
+            </>
+          )}
+        </linearGradient>
+        <linearGradient id={`needle-${uid}`} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={wall ? "#ffffff" : "#0f172a"} stopOpacity="0.7" />
+          <stop offset="100%" stopColor="#6b7280" stopOpacity="0.3" />
+        </linearGradient>
+        <filter id={`shadow-${uid}`} x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000000" floodOpacity="0.3" />
+        </filter>
+      </defs>
+
+      {/* Тонкая внутренняя дуга */}
+      <path
+        d={arc(innerLineRadius)}
+        fill="none"
+        stroke="#6b7280"
+        strokeWidth={1}
+        strokeLinecap="butt"
+        opacity={0.6}
+      />
+      {/* Дорожка */}
+      <path
+        d={arc(radius)}
+        fill="none"
+        stroke={`url(#base-${uid})`}
+        strokeWidth={strokeWidth}
+        strokeLinecap="butt"
+        filter={`url(#shadow-${uid})`}
+      />
+      {/* Заливка до значения */}
+      {!hidden && (
         <path
           d={arc(radius)}
           fill="none"
-          stroke={wall ? ui.hexWall : ui.hex}
-          strokeWidth={stroke}
-          strokeDasharray={circ}
-          strokeDashoffset={circ * (1 - filled)}
-          style={{
-            transition: "stroke-dashoffset 900ms cubic-bezier(0.22,1,0.36,1)",
-          }}
+          stroke={`url(#progress-${uid})`}
+          strokeWidth={strokeWidth}
+          strokeLinecap="butt"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          filter={`url(#shadow-${uid})`}
         />
       )}
-      {showTick && (
+      {/* Палочка на конце заливки — едет вместе с ней */}
+      {!hidden && (
         <line
-          x1={cx + Math.cos(tickA) * (radius - stroke / 2 - 4)}
-          y1={cy + Math.sin(tickA) * (radius - stroke / 2 - 4)}
-          x2={cx + Math.cos(tickA) * (radius + stroke / 2 + 4)}
-          y2={cy + Math.sin(tickA) * (radius + stroke / 2 + 4)}
-          stroke={wall ? "rgba(255,255,255,0.9)" : "rgba(15,23,42,0.6)"}
-          strokeWidth={5}
-          strokeLinecap="round"
+          x1={lx1}
+          y1={ly1}
+          x2={lx2}
+          y2={ly2}
+          stroke={`url(#needle-${uid})`}
+          strokeWidth={1.5}
+          strokeLinecap="butt"
         />
       )}
 
+      {/* Счётчик в центре */}
       <text
-        x={cx}
-        y={cy - 4}
+        x={center}
+        y={center + 40}
         textAnchor="middle"
-        fontSize={hidden ? 46 : shown >= 100 ? 62 : 70}
+        fontSize={fontSize}
         fontWeight={800}
-        letterSpacing={-2.5}
-        fill={hidden ? label : wall ? "#ffffff" : "#0f172a"}
+        letterSpacing={-2}
+        fill={hidden ? "#6b7280" : `url(#text-${uid})`}
         style={{ fontVariantNumeric: "tabular-nums" }}
       >
-        {hidden ? "•••" : `${shown}%`}
+        {hidden ? "•••" : `${Math.round(v)}%`}
       </text>
 
       {showLabels && (
         <>
-          <text x={cx - radius} y={cy + 26} textAnchor="middle" fontSize={22} fontWeight={600} fill={label}>
+          <text
+            x={center - radius - 5}
+            y={center + strokeWidth / 2 + labelFontSize}
+            fontSize={labelFontSize}
+            fontWeight={500}
+            fill="#9ca3af"
+          >
             0%
           </text>
-          <text x={cx + radius} y={cy + 26} textAnchor="middle" fontSize={22} fontWeight={600} fill={label}>
+          <text
+            x={center + radius - 20}
+            y={center + strokeWidth / 2 + labelFontSize}
+            fontSize={labelFontSize}
+            fontWeight={500}
+            fill="#9ca3af"
+          >
             100%
           </text>
         </>
@@ -116,8 +208,7 @@ export function HalfRing({
 }
 
 /**
- * Толстая шкала до нормы: правый край — 100%, засечка — где должны быть
- * сегодня. Высота ≈ десятая часть плитки, чтобы читалась издалека.
+ * Толстая шкала до нормы: правый край — 100%. Цвет — тот же один критерий.
  */
 export function PlanBarThick({
   state,
@@ -131,7 +222,6 @@ export function PlanBarThick({
   className?: string;
 }) {
   const ui = STATUS_UI[state.status];
-  const showTick = !hidden && state.expectedPct > 3 && state.expectedPct < 98;
   return (
     <div
       style={{ height: "max(8px, min(9cqh, 26px))" }}
@@ -148,16 +238,6 @@ export function PlanBarThick({
         )}
         style={{ width: hidden ? 0 : `${Math.min(100, state.pct)}%` }}
       />
-      {showTick && (
-        <span
-          aria-hidden
-          className={cn(
-            "absolute top-0 h-full w-[3px] rounded-full",
-            wall ? "bg-white/90" : "bg-ink/60",
-          )}
-          style={{ left: `calc(${state.expectedPct}% - 1.5px)` }}
-        />
-      )}
     </div>
   );
 }
@@ -190,10 +270,10 @@ export function StatusChip({
   );
 }
 
-/** Счётчик добегает до значения — цифра «доходит до нормы», а не появляется. */
-function useCountUp(target: number, ms = 900): number {
-  const [v, setV] = useState(target);
-  const from = useRef(target);
+/** Значение доезжает до цели с easeOut — как animate() у framer-motion. */
+function useAnimatedValue(target: number, ms: number): number {
+  const [v, setV] = useState(0);
+  const from = useRef(0);
   useEffect(() => {
     const start = performance.now();
     const a = from.current;
@@ -201,12 +281,18 @@ function useCountUp(target: number, ms = 900): number {
     const step = (t: number) => {
       const k = Math.min(1, (t - start) / ms);
       const eased = 1 - Math.pow(1 - k, 3);
-      setV(Math.round(a + (target - a) * eased));
+      const cur = a + (target - a) * eased;
+      setV(cur);
       if (k < 1) raf = requestAnimationFrame(step);
       else from.current = target;
     };
     raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      from.current = v;
+    };
+    // v намеренно не в зависимостях: это стартовая точка следующей анимации
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target, ms]);
   return v;
 }

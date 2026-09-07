@@ -31,6 +31,8 @@ import { buildAdvice, type Advice } from "./advice";
  *
  * Экран помещается в монитор целиком: блоки делят высоту, кегли внутри
  * считаются от блока (единицы контейнера). На телефоне — в столбик.
+ * Единицы контейнера нельзя использовать на самом контейнере, поэтому у
+ * каждого блока отступы живут на внутренней обёртке.
  */
 
 const GROUPS: MetricGroup[] = ["rent", "sales", "service", "buyout"];
@@ -65,11 +67,11 @@ export function Overview({
     <div
       className={cn(
         "min-h-0 flex-1 gap-3",
-        compact
-          ? "flex flex-col"
-          : "grid grid-cols-[1fr_1fr_0.9fr] grid-rows-2",
+        compact ? "flex flex-col" : "grid grid-cols-[1fr_1fr_0.85fr] grid-rows-2",
       )}
     >
+      {/* Советы — правая колонка на всю высоту; направления заполняют 2×2 слева */}
+      <AdvicePanel items={advice} compact={compact} />
       {GROUPS.map((g) => (
         <GroupPanel
           key={g}
@@ -81,12 +83,58 @@ export function Overview({
           compact={compact}
         />
       ))}
-      <AdvicePanel items={advice} compact={compact} />
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
+
+function Panel({
+  compact,
+  className,
+  children,
+  dark,
+}: {
+  compact: boolean;
+  className?: string;
+  children: React.ReactNode;
+  dark?: boolean;
+}) {
+  return (
+    <section
+      style={{
+        containerType: compact ? "inline-size" : "size",
+        borderRadius: 22,
+      }}
+      className={cn(
+        "relative min-h-0 min-w-0 overflow-hidden",
+        dark ? "bg-ink text-white" : "bg-surface ring-1 ring-inset ring-black/[0.05]",
+        className,
+      )}
+    >
+      {dark && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-30"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(45deg, #808080 0px 1px, transparent 1px 10px)",
+            WebkitMaskImage:
+              "radial-gradient(ellipse 80% 50% at 100% 0%, #000 70%, transparent 110%)",
+            maskImage:
+              "radial-gradient(ellipse 80% 50% at 100% 0%, #000 70%, transparent 110%)",
+          }}
+        />
+      )}
+      <div
+        style={{ padding: compact ? 16 : "clamp(12px, 4cqmin, 34px)" }}
+        className={cn("flex min-h-0 min-w-0 flex-col", !compact && "absolute inset-0")}
+      >
+        {children}
+      </div>
+    </section>
+  );
+}
 
 function GroupPanel({
   group,
@@ -133,14 +181,7 @@ function GroupPanel({
   const leadHidden = !!lead?.sensitive && !revealed;
 
   return (
-    <section
-      style={{
-        containerType: compact ? "inline-size" : "size",
-        padding: compact ? 16 : "clamp(12px, 4cqmin, 34px)",
-        borderRadius: "clamp(16px, 3cqmin, 28px)",
-      }}
-      className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface ring-1 ring-inset ring-black/[0.05]"
-    >
+    <Panel compact={compact}>
       {/* Заголовок направления + вердикт */}
       <div className="flex shrink-0 items-center justify-between gap-2">
         <div
@@ -184,7 +225,7 @@ function GroupPanel({
               {lead.title}
             </div>
             <div
-              style={{ fontSize: compact ? "38px" : "max(22px, min(24cqh, 13cqw, 96px))" }}
+              style={{ fontSize: compact ? "38px" : "max(22px, min(22cqh, 13cqw, 90px))" }}
               className={cn(
                 "truncate font-display font-extrabold leading-[0.95] tracking-[-0.03em] tabular-nums",
                 leadValue.tone === "bad" ? "text-red-ink" : "text-ink",
@@ -222,13 +263,22 @@ function GroupPanel({
         </div>
       )}
       {leadState && !leadHidden && (
-        <Bar state={leadState} style={{ marginTop: compact ? 8 : "1.6cqh", height: compact ? 10 : "max(7px, min(4cqh, 18px))" }} />
+        <Bar
+          state={leadState}
+          style={{
+            marginTop: compact ? 8 : "1.6cqh",
+            height: compact ? 10 : "max(7px, min(4cqh, 18px))",
+          }}
+        />
       )}
 
       {/* Остальные показатели направления — строками */}
       <div
         className="flex min-h-0 flex-1 flex-col justify-evenly"
-        style={{ marginTop: compact ? 12 : "1cqh", fontSize: compact ? "14px" : rowSize(rest.length) }}
+        style={{
+          marginTop: compact ? 12 : "1cqh",
+          fontSize: compact ? "14px" : rowSize(rest.length),
+        }}
       >
         {rest.map((d) => {
           const v = values[d.id]!;
@@ -236,22 +286,25 @@ function GroupPanel({
           const st = plan ? planState(v.value, plan, !!d.periodic, periodOf(d.id)) : null;
           const hidden = !!d.sensitive && !revealed;
           return (
-            <div key={d.id} className="flex min-h-0 items-center gap-[0.8em] border-t border-black/[0.05] py-[0.35em]">
-              <span className="min-w-0 flex-[1.3] truncate font-semibold text-ink-2">{d.title}</span>
+            <div
+              key={d.id}
+              className="flex min-h-0 items-center gap-[0.7em] border-t border-black/[0.05] py-[0.3em]"
+            >
+              <span className="min-w-0 flex-1 truncate font-semibold text-ink-2">{d.title}</span>
               <span
                 className={cn(
                   "shrink-0 font-display font-extrabold tabular-nums",
                   v.tone === "bad" ? "text-red-ink" : "text-ink",
                 )}
-                style={{ fontSize: "1.25em" }}
+                style={{ fontSize: "1.2em" }}
               >
                 {hidden ? <Sensitive>{v.display}</Sensitive> : v.display}
               </span>
               {st ? (
                 <>
                   <span
-                    className="relative hidden min-w-0 flex-1 overflow-hidden rounded-full bg-ink/[0.08] sm:block"
-                    style={{ height: "0.55em" }}
+                    className="relative hidden shrink-0 overflow-hidden rounded-full bg-ink/[0.08] sm:block"
+                    style={{ height: "0.55em", width: "26%" }}
                   >
                     <span
                       className={cn("block h-full rounded-full", STATUS_UI[st.status].bar)}
@@ -259,14 +312,20 @@ function GroupPanel({
                     />
                   </span>
                   <span
-                    className={cn("shrink-0 text-right font-extrabold tabular-nums", STATUS_UI[st.status].ink)}
+                    className={cn(
+                      "shrink-0 text-right font-extrabold tabular-nums",
+                      STATUS_UI[st.status].ink,
+                    )}
                     style={{ width: "3.2em" }}
                   >
                     {hidden ? "•••" : `${st.pct}%`}
                   </span>
                 </>
               ) : (
-                <span className="min-w-0 flex-1 truncate text-right text-muted" style={{ fontSize: "0.85em" }}>
+                <span
+                  className="hidden shrink-0 truncate text-right text-muted sm:inline"
+                  style={{ fontSize: "0.82em", maxWidth: "38%" }}
+                >
                   {v.caption}
                 </span>
               )}
@@ -274,32 +333,24 @@ function GroupPanel({
           );
         })}
       </div>
-    </section>
+    </Panel>
   );
 }
 
 function rowSize(n: number): string {
   // Строки делят нижнюю половину блока; чем больше строк, тем мельче.
-  const share = (46 / Math.max(2, n)).toFixed(1);
-  return `max(11px, min(${share}cqh, 4.2cqw, 22px))`;
+  const share = (44 / Math.max(2, n)).toFixed(1);
+  return `max(11px, min(${share}cqh, 4cqw, 22px))`;
 }
 
 function Bar({ state, style }: { state: PlanState; style?: React.CSSProperties }) {
   const ui = STATUS_UI[state.status];
-  const tick = state.expectedPct > 3 && state.expectedPct < 98;
   return (
     <div className="relative w-full shrink-0 overflow-hidden rounded-full bg-ink/[0.08]" style={style}>
       <div
         className={cn("h-full rounded-full transition-[width] duration-700", ui.bar)}
         style={{ width: `${Math.min(100, state.pct)}%` }}
       />
-      {tick && (
-        <span
-          aria-hidden
-          className="absolute top-0 h-full w-[3px] rounded-full bg-ink/60"
-          style={{ left: `calc(${state.expectedPct}% - 1.5px)` }}
-        />
-      )}
     </div>
   );
 }
@@ -307,32 +358,12 @@ function Bar({ state, style }: { state: PlanState; style?: React.CSSProperties }
 /* ------------------------------------------------------------------ */
 
 function AdvicePanel({ items, compact }: { items: Advice[]; compact: boolean }) {
+  // На экране помещается не всё: сначала «горит», потом остальное.
+  const shown = compact ? items : items.slice(0, 5);
   return (
-    <section
-      style={{
-        containerType: compact ? "inline-size" : "size",
-        padding: compact ? 16 : "clamp(12px, 4cqmin, 34px)",
-        borderRadius: "clamp(16px, 3cqmin, 28px)",
-      }}
-      className={cn(
-        "relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-ink text-white",
-        !compact && "row-span-2",
-      )}
-    >
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-30"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(45deg, #808080 0px 1px, transparent 1px 10px)",
-          WebkitMaskImage:
-            "radial-gradient(ellipse 80% 50% at 100% 0%, #000 70%, transparent 110%)",
-          maskImage:
-            "radial-gradient(ellipse 80% 50% at 100% 0%, #000 70%, transparent 110%)",
-        }}
-      />
+    <Panel compact={compact} dark className={cn(!compact && "col-start-3 row-start-1 row-span-2")}>
       <div
-        style={{ fontSize: compact ? "18px" : "max(13px, min(5cqh, 8cqw, 30px))" }}
+        style={{ fontSize: compact ? "18px" : "max(13px, min(4.6cqh, 8cqw, 30px))" }}
         className="relative flex shrink-0 items-center gap-[0.5em] font-bold"
       >
         <span className="flex h-[1.5em] w-[1.5em] shrink-0 items-center justify-center rounded-[0.4em] bg-white/10 text-amber-300">
@@ -342,22 +373,35 @@ function AdvicePanel({ items, compact }: { items: Advice[]; compact: boolean }) 
       </div>
 
       <div
-        className="relative flex min-h-0 flex-1 flex-col justify-start gap-[1.4cqh]"
-        style={{ marginTop: compact ? 12 : "2cqh", fontSize: compact ? "14px" : adviceSize(items.length) }}
+        className="relative flex min-h-0 flex-1 flex-col gap-[1.2cqh] overflow-hidden"
+        style={{
+          marginTop: compact ? 12 : "2cqh",
+          fontSize: compact ? "14px" : adviceSize(shown.length),
+        }}
       >
-        {items.map((a, i) => {
+        {shown.map((a, i) => {
           const Icon = a.tone === "good" ? CheckCircle2 : AlertTriangle;
           return (
-            <div key={i} className="flex min-h-0 gap-[0.7em] rounded-[0.9em] bg-white/[0.06] p-[0.9em]">
+            <div
+              key={i}
+              className="flex min-h-0 shrink gap-[0.7em] overflow-hidden rounded-[0.9em] bg-white/[0.06] p-[0.85em]"
+            >
               <Icon
                 className={cn(
-                  "mt-[0.15em] h-[1.15em] w-[1.15em] shrink-0",
-                  a.tone === "bad" ? "text-red-400" : a.tone === "warn" ? "text-amber-300" : "text-emerald-300",
+                  "mt-[0.1em] h-[1.15em] w-[1.15em] shrink-0",
+                  a.tone === "bad"
+                    ? "text-red-400"
+                    : a.tone === "warn"
+                      ? "text-amber-300"
+                      : "text-emerald-300",
                 )}
               />
               <div className="min-w-0">
-                <div className="font-bold leading-snug">{a.title}</div>
-                <div className="mt-[0.25em] leading-snug text-white/60" style={{ fontSize: "0.86em" }}>
+                <div className="line-clamp-2 font-bold leading-snug">{a.title}</div>
+                <div
+                  className="a-hide-xs mt-[0.2em] line-clamp-2 leading-snug text-white/60"
+                  style={{ fontSize: "0.86em" }}
+                >
                   {a.text}
                 </div>
               </div>
@@ -365,11 +409,12 @@ function AdvicePanel({ items, compact }: { items: Advice[]; compact: boolean }) 
           );
         })}
       </div>
-    </section>
+    </Panel>
   );
 }
 
 function adviceSize(n: number): string {
-  const share = (30 / Math.max(2, n)).toFixed(1);
-  return `max(11px, min(${share}cqh, 5cqw, 21px))`;
+  // На каждый совет — своя доля высоты; заголовок + две строки текста.
+  const share = (16 / Math.max(2, n)).toFixed(1);
+  return `max(11px, min(${share}cqh, 4.6cqw, 20px))`;
 }

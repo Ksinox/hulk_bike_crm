@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Check,
   Eye,
@@ -35,6 +35,7 @@ import { AnalyticsTile } from "./AnalyticsTile";
 import { PlanSummaryTile } from "./PlanSummaryTile";
 import { Overview } from "./Overview";
 import { useFlip } from "./useFlip";
+import { useFitLayout } from "./useFitLayout";
 import { useTileDrag } from "./useTileDrag";
 
 /**
@@ -75,17 +76,6 @@ export function Analytics() {
   const boardRef = useRef(board);
   boardRef.current = board;
 
-  /** Колонки сетки конструктора: телефон — 2, планшет — 3, компьютер — 4. */
-  const [cols, setCols] = useState(() =>
-    typeof window === "undefined" ? 4 : colsFor(window.innerWidth),
-  );
-  useEffect(() => {
-    const onResize = () => setCols(colsFor(window.innerWidth));
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
   const patchTile = (index: number, patch: Partial<BoardTile>) =>
     setDraft((prev) => {
       const base = prev ?? boardRef.current;
@@ -124,6 +114,10 @@ export function Analytics() {
     });
   }, []);
   const { drag, start: startDrag } = useTileDrag(move);
+  const spans = useMemo(() => board.tiles.map((t) => ({ w: t.w, h: t.h })), [board.tiles]);
+  const fit = useFitLayout(gridRef, spans, { gap: 12, minCellH: 120 });
+  // На телефоне сетка не «в экран»: две колонки и высота по содержимому.
+  const cols = isMobile ? 2 : fit.cols;
   const flipKey = board.tiles.map((t) => `${t.metric}:${t.w}x${t.h}`).join("|");
   useFlip(gridRef, flipKey, editing);
 
@@ -238,9 +232,10 @@ export function Analytics() {
               className="grid min-h-0 flex-1 gap-3"
               style={{
                 gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                gridAutoRows: isMobile ? "minmax(150px, auto)" : "minmax(0, 1fr)",
+                ...(isMobile
+                  ? { gridAutoRows: "minmax(150px, auto)" }
+                  : { gridTemplateRows: `repeat(${fit.rows}, minmax(0, 1fr))` }),
                 gridAutoFlow: "row dense",
-                overflowY: isMobile ? "visible" : "auto",
               }}
             >
               {board.tiles.map((tile, i) => {
@@ -373,10 +368,4 @@ function SectionTab({
       {children}
     </button>
   );
-}
-
-function colsFor(width: number): number {
-  if (width < 700) return 2;
-  if (width < 1180) return 3;
-  return 4;
 }

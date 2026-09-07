@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import {
   DEFAULT_BOARD,
@@ -9,6 +9,7 @@ import {
 import { METRIC_BY_ID, periodRange, useMetricValues } from "./metrics";
 import { AnalyticsTile } from "./AnalyticsTile";
 import { PlanSummaryTile } from "./PlanSummaryTile";
+import { useFitLayout } from "./useFitLayout";
 
 /**
  * Экран на второй монитор (07.09, вторая правка заказчика).
@@ -24,21 +25,10 @@ export function AnalyticsWall() {
   const board = boardQ.data?.board ?? DEFAULT_BOARD;
   const [now, setNow] = useState(() => new Date());
   const [full, setFull] = useState(false);
-  const [vp, setVp] = useState(() => ({
-    w: typeof window === "undefined" ? 1920 : window.innerWidth,
-    h: typeof window === "undefined" ? 1080 : window.innerHeight,
-  }));
-
+  // Часы в шапке + мягкое обновление цифр.
   useEffect(() => {
     const t = window.setInterval(() => setNow(new Date()), 30_000);
     return () => window.clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    const onResize = () =>
-      setVp({ w: window.innerWidth, h: window.innerHeight });
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   useEffect(() => {
@@ -64,34 +54,11 @@ export function AnalyticsWall() {
   const range = periodRange(board.period, now);
 
   const tiles = board.tiles.filter((t) => METRIC_BY_ID.has(t.metric));
-
-  /**
-   * Раскладку подбираем под конкретный монитор, а не по брейкпоинтам:
-   * перебираем число колонок и берём то, при котором клетка получается
-   * ближе всего к приятной пропорции (чуть шире квадрата). Из-за этого
-   * на широком экране плитки не растягиваются в ленты, на маленьком не
-   * дробятся в лапшу, а когда показателей много — рядов становится
-   * больше ровно настолько, насколько нужно.
-   */
-  const { cols, rows } = useMemo(() => {
-    const spans = tiles.map((t) => ({ col: t.w, row: t.h }));
-    const gridH = Math.max(120, vp.h - Math.min(vp.h * 0.16, 130));
-    const gap = Math.max(6, Math.min(vp.w, vp.h) * 0.012);
-    let best = { cols: 6, rows: 1, score: Number.POSITIVE_INFINITY };
-    for (let c = vp.w < 760 ? 2 : 3; c <= (vp.w < 760 ? 3 : 10); c++) {
-      const r = packedRows(spans, c);
-      const cellW = (vp.w - gap * (c + 1)) / c;
-      const cellH = (gridH - gap * (r + 1)) / r;
-      if (cellW <= 0 || cellH <= 0) continue;
-      // Целевая пропорция клетки — 1.45; штрафуем и слишком мелкие клетки.
-      const aspect = Math.abs(cellW / cellH - 1.45);
-      const small = cellH < 128 ? (128 - cellH) / 40 : 0;
-      const narrow = cellW < 150 ? (150 - cellW) / 60 : 0;
-      const score = aspect + small + narrow;
-      if (score < best.score) best = { cols: c, rows: r, score };
-    }
-    return best;
-  }, [tiles, vp]);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const spans = useMemo(() => tiles.map((t) => ({ w: t.w, h: t.h })), [tiles]);
+  // Та же раскладка, что в конструкторе: колонки подбираются под экран,
+  // ряды делят высоту поровну — доска любой длины без прокрутки.
+  const { cols, rows } = useFitLayout(gridRef, spans, { gap: 14, minCellH: 130 });
 
   const toggleFull = async () => {
     try {
@@ -157,6 +124,7 @@ export function AnalyticsWall() {
       {/* Сетка занимает ровно остаток экрана: ряды делят высоту поровну,
           поэтому доска любой длины укладывается без прокрутки. */}
       <div
+        ref={gridRef}
         className="grid min-h-0 flex-1 gap-[1.2vmin]"
         style={{
           gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
@@ -195,47 +163,4 @@ export function AnalyticsWall() {
       </div>
     </div>
   );
-}
-
-/**
- * Сколько рядов займёт доска — повторяем раскладку CSS grid (без dense):
- * идём по плиткам, каждую ставим в первую подходящую позицию не раньше
- * курсора. Знать число рядов нужно заранее, иначе нечего делить поровну.
- */
-export function packedRows(
-  spans: { col: number; row: number }[],
-  cols: number,
-): number {
-  const occupied = new Set<string>();
-  const busy = (r: number, c: number) => occupied.has(`${r}:${c}`);
-  let maxRow = 0;
-
-  for (const s of spans) {
-    const w = Math.min(s.col, cols);
-    const h = s.row;
-    let r = 0;
-    let c = 0;
-    // Плотная укладка: ищем первую подходящую дырку с самого начала —
-    // мелкие плитки затыкают пустоты, и рядов выходит меньше.
-    for (;;) {
-      if (c + w > cols) {
-        r += 1;
-        c = 0;
-        continue;
-      }
-      let fits = true;
-      for (let dr = 0; dr < h && fits; dr++)
-        for (let dc = 0; dc < w; dc++)
-          if (busy(r + dr, c + dc)) {
-            fits = false;
-            break;
-          }
-      if (fits) break;
-      c += 1;
-    }
-    for (let dr = 0; dr < h; dr++)
-      for (let dc = 0; dc < w; dc++) occupied.add(`${r + dr}:${c + dc}`);
-    maxRow = Math.max(maxRow, r + h);
-  }
-  return Math.max(1, maxRow);
 }

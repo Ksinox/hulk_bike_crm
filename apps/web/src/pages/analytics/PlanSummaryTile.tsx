@@ -83,7 +83,7 @@ export function PlanSummaryTile({
       <div
         data-tile-index={index}
         data-flip-key="plan.summary"
-        style={{ ...spanStyle, borderRadius: "clamp(16px, 3cqmin, 30px)" }}
+        style={{ ...spanStyle, borderRadius: 22 }}
         className={cn(
           "border-2 border-dashed",
           wall ? "border-white/25 bg-white/[0.03]" : "border-ink/20 bg-ink/[0.03]",
@@ -97,7 +97,7 @@ export function PlanSummaryTile({
   const n = Math.max(1, rows.length);
   const line = compact
     ? "14px"
-    : `max(10px, min(${(78 / n).toFixed(2)}cqh, ${wall ? 30 : 22}px))`;
+    : `max(10px, min(${(40 / n).toFixed(2)}cqh, 5cqw, ${wall ? 26 : 20}px))`;
   const group = METRIC_GROUP_UI.plan;
 
   return (
@@ -107,18 +107,21 @@ export function PlanSummaryTile({
       style={{
         ...spanStyle,
         containerType: compact ? "inline-size" : "size",
-        borderRadius: "clamp(16px, 3cqmin, 30px)",
-        padding: "clamp(12px, 4cqmin, 36px)",
+        borderRadius: 22,
         minHeight: compact ? 150 : undefined,
       }}
       className={cn(
-        "group/tile relative flex min-h-0 min-w-0 flex-col overflow-hidden",
+        "group/tile relative min-h-0 min-w-0 overflow-hidden",
         wall
           ? "bg-white/[0.035] ring-1 ring-inset ring-white/[0.07]"
           : "bg-surface ring-1 ring-inset ring-black/[0.05]",
         editing && "select-none",
       )}
     >
+      <div
+        style={{ padding: compact ? 16 : "clamp(10px, 4cqmin, 36px)" }}
+        className={cn("flex min-h-0 min-w-0 flex-col", !compact && "absolute inset-0")}
+      >
       <div className="flex shrink-0 items-center justify-between gap-2">
         <div
           style={{ fontSize: compact ? "17px" : "max(12px, min(11cqh, 7cqw, 34px))" }}
@@ -185,87 +188,64 @@ export function PlanSummaryTile({
       ) : (
         <div
           style={{ marginTop: compact ? 10 : "1.5cqh" }}
-          className="flex min-h-0 flex-1 flex-col justify-between gap-[0.6cqh]"
+          className="flex min-h-0 flex-1 flex-col justify-evenly"
         >
           {rows.map((r) => {
             const ui = STATUS_UI[r.state.status];
-            const tick =
-              !r.hidden && r.state.expectedPct > 3 && r.state.expectedPct < 98;
             return (
-              <div
-                key={r.id}
-                style={{ fontSize: line }}
-                className="flex min-h-0 items-center gap-[0.9em]"
-              >
-                <span
-                  className={cn(
-                    "min-w-0 flex-[1.15] truncate font-bold",
-                    wall ? "text-white/85" : "text-ink",
-                  )}
-                >
-                  {r.title}
-                </span>
-                <span
-                  className={cn(
-                    "hidden shrink-0 tabular-nums sm:inline",
-                    wall ? "text-white/50" : "text-muted",
-                  )}
-                  style={{ fontSize: "0.82em" }}
-                >
-                  {r.hidden ? (
-                    <>
-                      <Sensitive dark={wall}>{r.fact}</Sensitive> из {r.plan}
-                    </>
-                  ) : (
-                    <>
-                      {r.fact} из {r.plan}
-                    </>
-                  )}
-                </span>
-                {/* Толстая шкала — больше половины высоты строки */}
-                <span
-                  className={cn(
-                    "relative min-w-0 flex-[1.4] overflow-hidden rounded-full",
-                    wall ? "bg-white/[0.12]" : "bg-ink/[0.08]",
-                  )}
-                  style={{ height: "0.62em" }}
-                >
+              <div key={r.id} style={{ fontSize: line }} className="flex min-h-0 flex-col gap-[0.25em]">
+                <div className="flex items-baseline justify-between gap-[0.8em]">
+                  <span className={cn("min-w-0 truncate font-bold", wall ? "text-white/85" : "text-ink")}>
+                    {r.title}
+                  </span>
+                  <span
+                    className={cn("shrink-0 tabular-nums", wall ? "text-white/50" : "text-muted")}
+                    style={{ fontSize: "0.82em" }}
+                  >
+                    {r.hidden ? (
+                      <>
+                        <Sensitive dark={wall}>{r.fact}</Sensitive> из {r.plan}
+                      </>
+                    ) : (
+                      <>
+                        {r.fact} из {r.plan}
+                      </>
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center gap-[0.8em]">
                   <span
                     className={cn(
-                      "block h-full rounded-full transition-[width] duration-700",
-                      wall ? ui.barWall : ui.bar,
+                      "relative min-w-0 flex-1 overflow-hidden rounded-full",
+                      wall ? "bg-white/[0.12]" : "bg-ink/[0.08]",
                     )}
-                    style={{ width: r.hidden ? 0 : `${Math.min(100, r.state.pct)}%` }}
-                  />
-                  {tick && (
+                    style={{ height: "0.6em" }}
+                  >
                     <span
-                      aria-hidden
                       className={cn(
-                        "absolute top-0 h-full w-[3px] rounded-full",
-                        wall ? "bg-white/90" : "bg-ink/60",
+                        "block h-full rounded-full transition-[width] duration-700",
+                        wall ? ui.barWall : ui.bar,
                       )}
-                      style={{ left: `calc(${r.state.expectedPct}% - 1.5px)` }}
+                      style={{ width: r.hidden ? 0 : `${Math.min(100, r.state.pct)}%` }}
                     />
-                  )}
-                </span>
-                <span
-                  className={cn(
-                    "shrink-0 text-right font-display font-extrabold tabular-nums",
-                    wall ? ui.inkWall : ui.ink,
-                  )}
-                  style={{ fontSize: "1.25em", width: "3.6em" }}
-                >
-                  {r.hidden ? (
-                    <Sensitive dark={wall}>{r.state.pct}%</Sensitive>
-                  ) : (
-                    `${r.state.pct}%`
-                  )}
-                </span>
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 text-right font-display font-extrabold leading-none tabular-nums",
+                      wall ? ui.inkWall : ui.ink,
+                    )}
+                    style={{ fontSize: "1.2em", width: "3.4em" }}
+                  >
+                    {r.hidden ? <Sensitive dark={wall}>{r.state.pct}%</Sensitive> : `${r.state.pct}%`}
+                  </span>
+                </div>
               </div>
             );
           })}
         </div>
       )}
+
+      </div>
 
       {editing && onResize && !compact && (
         <ResizeHandle w={tile.w} h={tile.h} cols={cols} onChange={onResize} dark={wall} />
