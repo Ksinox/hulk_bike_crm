@@ -116,6 +116,50 @@ export async function run(page, ctx) {
   await ctx.sleep(1400);
   await S("d-05-size-applied");
 
+  /* ---- растягивание за угол ---- */
+  const sizesBefore = await page.evaluate(() =>
+    [...document.querySelectorAll("[data-tile-index]")].map(
+      (t) => Math.round(t.getBoundingClientRect().width),
+    ),
+  );
+  const corner = await page.evaluate(() => {
+    const tile = document.querySelector('[data-tile-index="4"]');
+    if (!tile) return null;
+    tile.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    const h = tile.querySelector('[title="Потяните, чтобы растянуть плитку"]');
+    if (!h) return null;
+    const r = h.getBoundingClientRect();
+    const t = tile.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: t.width, h: t.height };
+  });
+  console.log("уголок:", JSON.stringify({ есть: !!corner }));
+  if (corner) {
+    await page.mouse.move(corner.x - 40, corner.y - 40);
+    await ctx.sleep(400);
+    await page.mouse.move(corner.x, corner.y);
+    await ctx.sleep(250);
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i++) {
+      await page.mouse.move(corner.x + (corner.w * 0.6 * i) / 6, corner.y + (corner.h * 0.6 * i) / 6);
+      await ctx.sleep(120);
+    }
+    await ctx.sleep(400);
+    await S("d-06-resizing");
+    await page.mouse.up();
+    await ctx.sleep(900);
+    const sizesAfter = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-tile-index]")].map(
+        (t) => Math.round(t.getBoundingClientRect().width),
+      ),
+    );
+    console.log("растянули:", JSON.stringify({
+      было: sizesBefore[4],
+      стало: sizesAfter[4],
+      изменилось: sizesBefore[4] !== sizesAfter[4],
+    }));
+    await S("d-07-resized");
+  }
+
   // выходим без сохранения
   await page.evaluate(() => {
     [...document.querySelectorAll("button")].find((b) => /Отменить/.test(b.textContent || ""))?.click();
