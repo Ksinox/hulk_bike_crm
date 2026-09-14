@@ -55,14 +55,37 @@ const JOURNAL_META_KEYS: Record<PermissionKey, string[]> = {
   "data.repairProfit": ["cost", "profit"],
   "data.partnerShares": ["partnerShare", "share", "accrued"],
 };
-const PROFIT_TEXT = [
-  /\s*·\s*закуп[^·]*₽/gi,
-  /\s*·\s*прибыль[^·]*₽/gi,
-  /\s*·\s*[\d\s ]+₽\s*прибыли/gi,
-  /\s*·\s*процент\s*\d+\s*%/gi,
-  /,?\s*процент\s*\d+\s*%\s*→\s*\d+\s*%/gi,
-];
-const REPAIR_PROFIT_TEXT = [/\s*·\s*прибыль[^·]*₽/gi, /\s*·\s*закуп[^·]*₽/gi];
+/**
+ * Текст записи журнала собран из фрагментов через « · ». Фрагмент про
+ * закрытое выбрасывается целиком — в каком бы виде он ни был записан:
+ * «закуп 84 200 ₽», «цена закупа — → 85000», «процент 10%».
+ */
+const PROFIT_WORDS = /закуп|прибыл|марж|комисси|вознагражден|процент\s*\d|процент с прибыли|\d\s*%\s*с прибыли/i;
+const REPAIR_PROFIT_WORDS = /закуп|прибыл|себестоим/i;
+const SHARE_WORDS = /инвестор\S*\s*\d|доля|процент инвестора|\d\s*%\s*инвестор/i;
+
+function redactSummary(summary: string, words: RegExp[]): string {
+  if (!words.length) return summary;
+  const hit = (t: string) => words.some((w) => w.test(t));
+  const parts = summary.split(" · ");
+  const out: string[] = [];
+  parts.forEach((part, i) => {
+    // Первый фрагмент часто «Название: что изменилось» — название оставляем.
+    const colon = i === 0 ? part.indexOf(": ") : -1;
+    if (colon > 0) {
+      const head = part.slice(0, colon);
+      const tail = part.slice(colon + 2);
+      const kept = tail
+        .split(/,\s*/)
+        .filter((t) => !hit(t))
+        .join(", ");
+      out.push(kept ? `${head}: ${kept}` : head);
+      return;
+    }
+    if (!hit(part)) out.push(part);
+  });
+  return out.join(" · ");
+}
 
 function pathOf(req: FastifyRequest): string {
   return (req.url || "").split("?")[0] ?? "";
@@ -95,14 +118,15 @@ function redactJournal(payload: unknown, perms: Perms): unknown {
       return it.entity !== "investor" && it.action !== "partner_share_changed";
     })
     .map((it) => {
-      let summary = typeof it.summary === "string" ? it.summary : "";
       const entity = String(it.entity ?? "");
-      if (!perms["data.profit"] && (entity === "sale_deal" || entity === "sale_manager" || entity === "scooter" || entity === "settings")) {
-        for (const re of PROFIT_TEXT) summary = summary.replace(re, "");
+      const words: RegExp[] = [];
+      // Записи о правах сотрудников называют права, но чисел не содержат.
+      if (entity !== "user") {
+        if (!perms["data.profit"]) words.push(PROFIT_WORDS);
+        if (!perms["data.repairProfit"] && entity === "service_order") words.push(REPAIR_PROFIT_WORDS);
+        if (!perms["data.partnerShares"]) words.push(SHARE_WORDS);
       }
-      if (!perms["data.repairProfit"] && entity === "service_order") {
-        for (const re of REPAIR_PROFIT_TEXT) summary = summary.replace(re, "");
-      }
+      const summary = redactSummary(typeof it.summary === "string" ? it.summary : "", words);
       const meta = it.meta && typeof it.meta === "object" ? structuredClone(it.meta) : it.meta;
       if (metaKeys.size) stripKeys(meta, metaKeys);
       return { ...it, summary, meta };

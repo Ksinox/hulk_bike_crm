@@ -347,7 +347,14 @@ export function SalesOverview({
             )
           }
         >
-          <div className="flex flex-1 flex-col justify-between gap-3 p-4">
+          {/* Без права на прибыль строк плана две — не разносим их по краям
+              карточки, а собираем по центру. */}
+          <div
+            className={cn(
+              "flex flex-1 flex-col gap-3 p-4",
+              canProfit ? "justify-between" : "justify-center gap-8",
+            )}
+          >
             <PlanBar label="Единиц" fact={planFact.units} plan={plan?.units ?? 0} unit="ед." />
             <PlanBar label="Выручка" fact={planFact.revenue} plan={plan?.revenue ?? 0} unit="₽" />
             <PlanBar sensitive label="Прибыль" fact={planFact.profit} plan={plan?.profit ?? 0} unit="₽" />
