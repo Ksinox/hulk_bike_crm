@@ -178,14 +178,16 @@ export function StaffAccountDialog({
   const pending = createMut.isPending || patchMut.isPending;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto bg-ink/55 backdrop-blur-sm sm:items-start sm:p-6">
+    // Окно фиксированной высоты: шапка и кнопки на месте, прокручивается
+    // только середина. Иначе на телефоне содержимое вылезало за фон окна.
+    <div className="fixed inset-0 z-[100] flex items-stretch justify-center bg-ink/55 backdrop-blur-sm sm:items-center sm:p-6">
       <div
         role="dialog"
         aria-modal="true"
         aria-label={creating ? "Новый сотрудник" : `Аккаунт: ${user.name}`}
-        className="flex min-h-[100dvh] w-full flex-col bg-surface-soft shadow-card-lg sm:mt-8 sm:min-h-0 sm:max-w-[1040px] sm:rounded-2xl"
+        className="flex h-[100dvh] w-full flex-col overflow-hidden bg-surface-soft shadow-card-lg sm:h-auto sm:max-h-[calc(100dvh-48px)] sm:max-w-[1040px] sm:rounded-2xl"
       >
-        <header className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-border bg-surface px-5 py-3.5">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3.5">
           <div className="min-w-0">
             <div className="text-[16px] font-bold text-ink">
               {creating ? "Новый сотрудник" : user.name}
@@ -208,7 +210,7 @@ export function StaffAccountDialog({
           </button>
         </header>
 
-        <div className="grid flex-1 gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <div className="grid min-h-0 flex-1 items-start gap-4 overflow-y-auto overscroll-contain p-4 sm:p-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
           {/* ---------------- форма ---------------- */}
           <div className="flex min-w-0 flex-col gap-4">
             <Card title="Кто это">
@@ -411,7 +413,7 @@ export function StaffAccountDialog({
           </div>
         </div>
 
-        <footer className="sticky bottom-0 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-surface px-5 py-3 sm:rounded-b-2xl">
+        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-surface px-5 py-3 pb-[max(12px,env(safe-area-inset-bottom))]">
           {err && <span className="mr-auto text-[12.5px] font-semibold text-red-ink">{err}</span>}
           <button
             type="button"
