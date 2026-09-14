@@ -11,9 +11,10 @@ import {
   useSaleManagers,
   type SaleManager,
 } from "@/lib/api/sales";
-import { EmptyState, ManagerAvatar, SectionCard, StatTile } from "./SalesUI";
+import { EmptyState, ManagerAvatar, SectionCard, StatRow, StatTile } from "./SalesUI";
 import { fmt, ruDateShort, STATUS_CLASS, STATUS_LABEL, totals } from "./salesUtils";
 import { Sensitive } from "@/components/Sensitive";
+import { useCan } from "@/lib/permissions";
 
 /**
  * «Менеджеры» (31.08): кто продаёт, под каким процентом и с какой историей.
@@ -32,6 +33,9 @@ const COLORS = [
 ];
 
 export function SalesManagers({ onOpenDeal }: { onOpenDeal: (id: number) => void }) {
+  // 14.09: процент менеджера считается с прибыли — без права на прибыль его
+  // не видно ни в списке, ни в карточке, ни в форме.
+  const canProfit = useCan("data.profit");
   const { data, isLoading } = useSaleManagers();
   const { data: dealsData } = useSaleDeals();
   const { data: me } = useMe();
@@ -90,8 +94,9 @@ export function SalesManagers({ onOpenDeal }: { onOpenDeal: (id: number) => void
           <div className="min-w-0">
             <div className="text-[17px] font-bold text-ink">{open.name}</div>
             <div className="text-[12px] text-muted">
-              процент {open.commissionPct}% с прибыли
-              {open.phone && ` · ${open.phone}`}
+              {[canProfit ? `процент ${open.commissionPct}% с прибыли` : null, open.phone]
+                .filter(Boolean)
+                .join(" · ")}
             </div>
           </div>
           <div className="flex-1" />
@@ -107,17 +112,21 @@ export function SalesManagers({ onOpenDeal }: { onOpenDeal: (id: number) => void
           </button>
         </div>
 
-        <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
+        {/* Ряд гибких плиток: без права на прибыль две плитки уходят,
+            «Продано» и «Выручка» растягиваются на всю ширину. */}
+        <StatRow>
           <StatTile label="Продано" value={fmt(t.units)} suffix="ед." hint="за всё время" />
           <StatTile label="Выручка" value={fmt(t.revenue)} suffix="₽" accent />
           <StatTile sensitive label="Прибыль" value={fmt(t.profit)} suffix="₽" hint={`маржа ${t.marginPct}%`} />
-          <StatTile
-            label="Вознаграждение"
-            value={fmt(t.commission)}
-            suffix="₽"
-            hint={`${open.commissionPct}% с прибыли`}
-          />
-        </div>
+          {canProfit && (
+            <StatTile
+              label="Вознаграждение"
+              value={fmt(t.commission)}
+              suffix="₽"
+              hint={`${open.commissionPct}% с прибыли`}
+            />
+          )}
+        </StatRow>
 
         <SectionCard title="История продаж" hint={`${history.length} сделок`}>
           {history.length === 0 ? (
@@ -217,16 +226,18 @@ export function SalesManagers({ onOpenDeal }: { onOpenDeal: (id: number) => void
                         {m.name}
                       </span>
                       <span className="block text-[12px] text-muted">
-                        {m.commissionPct}% с прибыли · продано {t.units} ед.
+                        {canProfit && `${m.commissionPct}% с прибыли · `}продано {t.units} ед.
                       </span>
                     </span>
                     <span className="shrink-0 text-right">
                       <span className="block text-[13px] font-bold tabular-nums text-ink">
                         {fmt(t.revenue)} ₽
                       </span>
-                      <Sensitive className="block text-[11px] tabular-nums text-emerald-700">
-                        +{fmt(t.profit)} ₽
-                      </Sensitive>
+                      {canProfit && (
+                        <Sensitive className="block text-[11px] tabular-nums text-emerald-700">
+                          +{fmt(t.profit)} ₽
+                        </Sensitive>
+                      )}
                     </span>
                   </button>
                 );
@@ -237,11 +248,11 @@ export function SalesManagers({ onOpenDeal }: { onOpenDeal: (id: number) => void
               <thead>
                 <tr className="border-b border-border/60 text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
                   <th className="px-4 py-2 text-left font-bold">Менеджер</th>
-                  <th className="px-2 py-2 text-right font-bold">Процент</th>
+                  {canProfit && <th className="px-2 py-2 text-right font-bold">Процент</th>}
                   <th className="px-2 py-2 text-right font-bold">Продано</th>
                   <th className="px-2 py-2 text-right font-bold">Выручка</th>
-                  <th className="px-2 py-2 text-right font-bold">Прибыль</th>
-                  <th className="px-2 py-2 text-right font-bold">Вознаграждение</th>
+                  {canProfit && <th className="px-2 py-2 text-right font-bold">Прибыль</th>}
+                  {canProfit && <th className="px-2 py-2 text-right font-bold">Вознаграждение</th>}
                   <th className="px-4 py-2 text-right font-bold" />
                 </tr>
               </thead>
@@ -267,19 +278,25 @@ export function SalesManagers({ onOpenDeal }: { onOpenDeal: (id: number) => void
                           </span>
                         </span>
                       </td>
-                      <td className="px-2 py-2.5 text-right font-bold tabular-nums text-ink">
-                        {m.commissionPct}%
-                      </td>
+                      {canProfit && (
+                        <td className="px-2 py-2.5 text-right font-bold tabular-nums text-ink">
+                          {m.commissionPct}%
+                        </td>
+                      )}
                       <td className="px-2 py-2.5 text-right tabular-nums">{t.units}</td>
                       <td className="px-2 py-2.5 text-right tabular-nums">
                         {fmt(t.revenue)} ₽
                       </td>
-                      <td className="px-2 py-2.5 text-right tabular-nums text-emerald-700">
-                        <Sensitive>{fmt(t.profit)} ₽</Sensitive>
-                      </td>
-                      <td className="px-2 py-2.5 text-right tabular-nums text-muted">
-                        {t.commission ? `${fmt(t.commission)} ₽` : "—"}
-                      </td>
+                      {canProfit && (
+                        <td className="px-2 py-2.5 text-right tabular-nums text-emerald-700">
+                          <Sensitive>{fmt(t.profit)} ₽</Sensitive>
+                        </td>
+                      )}
+                      {canProfit && (
+                        <td className="px-2 py-2.5 text-right tabular-nums text-muted">
+                          {t.commission ? `${fmt(t.commission)} ₽` : "—"}
+                        </td>
+                      )}
                       <td className="px-4 py-2.5 text-right">
                         <span className="inline-flex items-center gap-1">
                           <button
@@ -347,6 +364,7 @@ function ManagerForm({
   initial: SaleManager | null;
   onClose: () => void;
 }) {
+  const canProfit = useCan("data.profit");
   const create = useCreateSaleManager();
   const patch = usePatchSaleManager();
   const [name, setName] = useState(initial?.name ?? "");
@@ -363,7 +381,8 @@ function ManagerForm({
     const body = {
       name: name.trim(),
       phone: phone.trim() || null,
-      commissionPct: Math.min(100, Number(pct) || 0),
+      // Без права на прибыль процент не трогаем — поля в форме нет.
+      ...(canProfit ? { commissionPct: Math.min(100, Number(pct) || 0) } : {}),
       avatarColor: color,
       note: note.trim() || null,
     };
@@ -385,9 +404,11 @@ function ManagerForm({
             <div className="text-[16px] font-bold text-ink">
               {initial ? "Менеджер" : "Новый менеджер"}
             </div>
-            <div className="mt-0.5 text-[12px] text-muted">
-              Процент считается с прибыли сделки и фиксируется в момент продажи.
-            </div>
+            {canProfit && (
+              <div className="mt-0.5 text-[12px] text-muted">
+                Процент считается с прибыли сделки и фиксируется в момент продажи.
+              </div>
+            )}
           </div>
           <button type="button" onClick={onClose} className="text-muted-2 hover:text-ink">
             <X size={18} />
@@ -424,7 +445,7 @@ function ManagerForm({
           />
         </label>
 
-        <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="mt-3 grid grid-cols-2 gap-3 [&>*:only-child]:col-span-2">
           <label className="flex flex-col gap-1">
             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
               Телефон
@@ -436,6 +457,7 @@ function ManagerForm({
               className="h-10 rounded-[12px] border border-border bg-surface px-3 text-[14px] outline-none focus:border-emerald-500"
             />
           </label>
+          {canProfit && (
           <label className="flex flex-col gap-1">
             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
               Процент с прибыли
@@ -452,6 +474,7 @@ function ManagerForm({
               </span>
             </span>
           </label>
+          )}
         </div>
 
         <label className="mt-3 flex flex-col gap-1">

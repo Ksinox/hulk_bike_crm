@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { AuthRole } from "./auth";
+import type { PermissionKey } from "@/lib/permissions";
+
+/** Ответ директора при создании аккаунта (14.09). */
+export type StaffKind = "existing" | "new";
 
 export type ApiStaffUser = {
   id: number;
@@ -12,6 +16,11 @@ export type ApiStaffUser = {
   mustChangePassword: boolean;
   lastLoginAt: string | null;
   createdAt: string;
+  /** Должность словами (14.09). */
+  position: string | null;
+  staffKind: StaffKind | null;
+  /** Итоговые права: у директора и создателя — всё. */
+  permissions: Record<PermissionKey, boolean>;
 };
 
 export type CreateUserInput = {
@@ -21,6 +30,9 @@ export type CreateUserInput = {
   avatarColor?: "blue" | "green" | "orange" | "pink" | "purple";
   /** Если не задан — сервер сгенерирует и вернёт в ответе. */
   password?: string;
+  position?: string;
+  staffKind?: StaffKind;
+  permissions?: Partial<Record<PermissionKey, boolean>>;
 };
 
 export type CreateUserResult = ApiStaffUser & {
@@ -34,6 +46,9 @@ export type PatchUserInput = {
   role?: Exclude<AuthRole, "creator">;
   active?: boolean;
   avatarColor?: "blue" | "green" | "orange" | "pink" | "purple";
+  position?: string | null;
+  staffKind?: StaffKind;
+  permissions?: Partial<Record<PermissionKey, boolean>>;
 };
 
 export type ResetPasswordResult = {
@@ -87,6 +102,18 @@ export function useResetUserPassword() {
         `/api/users/${args.id}/reset-password`,
         args.newPassword ? { newPassword: args.newPassword } : {},
       ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: usersKeys.all });
+    },
+  });
+}
+
+/** Выход аккаунта на всех устройствах без смены пароля (14.09). */
+export function useLogoutEverywhere() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      api.post<{ ok: true }>(`/api/users/${id}/logout-everywhere`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: usersKeys.all });
     },

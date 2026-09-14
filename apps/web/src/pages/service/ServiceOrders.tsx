@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useCan } from "@/lib/permissions";
 import {
   Banknote,
   Bike,
@@ -49,6 +50,9 @@ const FILTERS: { id: ServiceOrderStatus | "all"; label: string }[] = [
 
 export function ServiceOrders() {
   const isMobile = useIsMobile();
+  // 14.09: прибыль ремонтов — отдельное право. Без него плашки нет, а три
+  // оставшиеся делят ряд (на телефоне последняя растягивается на две колонки).
+  const canRepairProfit = useCan("data.repairProfit");
   const ordersQ = useServiceOrders();
   const orders = ordersQ.data ?? [];
 
@@ -143,7 +147,12 @@ export function ServiceOrders() {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div
+          className={cn(
+            "grid grid-cols-2 gap-3 max-lg:[&>*:last-child:nth-child(odd)]:col-span-2",
+            canRepairProfit ? "lg:grid-cols-4" : "lg:grid-cols-3",
+          )}
+        >
           <Kpi
             icon={<Wrench size={14} />}
             label="Ремонтов"
@@ -161,13 +170,15 @@ export function ServiceOrders() {
             }
             tone="good"
           />
-          <Kpi
-            icon={<TrendingUp size={14} />}
-            label="Прибыль"
-            value={money(stats.profit)}
-            caption="за вычетом закупа запчастей"
-            tone={stats.profit >= 0 ? "good" : "bad"}
-          />
+          {canRepairProfit && (
+            <Kpi
+              icon={<TrendingUp size={14} />}
+              label="Прибыль"
+              value={money(stats.profit)}
+              caption="за вычетом закупа запчастей"
+              tone={stats.profit >= 0 ? "good" : "bad"}
+            />
+          )}
           <Kpi
             icon={<Banknote size={14} />}
             label="Ждём оплату"
@@ -312,6 +323,7 @@ function OrderRow({
   order: ServiceOrder;
   onOpen: () => void;
 }) {
+  const canRepairProfit = useCan("data.repairProfit");
   return (
     <button
       type="button"
@@ -341,9 +353,11 @@ function OrderRow({
         <span className="block text-[15px] font-extrabold tabular-nums text-ink">
           {money(order.totals.revenue)}
         </span>
-        <span className="block text-[11.5px] tabular-nums text-muted-2">
-          прибыль {money(order.totals.profit)}
-        </span>
+        {canRepairProfit && (
+          <span className="block text-[11.5px] tabular-nums text-muted-2">
+            прибыль {money(order.totals.profit)}
+          </span>
+        )}
       </span>
     </button>
   );

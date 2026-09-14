@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
+import { usePerms, type PermissionKey } from "@/lib/permissions";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiPayments } from "@/lib/api/payments";
 import { useRepairJobs } from "@/lib/api/repair-jobs";
@@ -35,6 +36,11 @@ export type MetricDef = {
   defaultPeriod?: BoardPeriod;
   /** Прибыль и закуп — только по ключу директора. */
   sensitive?: boolean;
+  /**
+   * 14.09: право, без которого показателя у человека нет вовсе — ни плитки
+   * на стене, ни строки в обзоре, ни пункта в каталоге.
+   */
+  perm?: PermissionKey;
   /** Данных пока нет (раздел не запущен). */
   comingSoon?: boolean;
   /**
@@ -180,6 +186,7 @@ export const METRICS: MetricDef[] = [
     periodic: true,
     defaultPeriod: "month",
     sensitive: true,
+    perm: "data.profit",
     format: money,
   },
 
@@ -219,6 +226,7 @@ export const METRICS: MetricDef[] = [
     group: "service",
     title: "Прибыль с ремонтов",
     about: "Выручка за вычетом закупа запчастей.",
+    perm: "data.repairProfit",
     planable: true,
     periodic: true,
     defaultPeriod: "month",
@@ -313,7 +321,28 @@ function inRange(d: Date | null, r: Range): boolean {
  * Считает все показатели сразу. Плитки берут готовые значения по id —
  * так одни и те же данные не тянутся по десять раз.
  */
+/**
+ * Разрешён ли показатель текущему пользователю (14.09). Функция стабильна,
+ * пока не поменялись права, — её можно класть в зависимости useMemo.
+ */
+export function useMetricAllowed(): (metricId: string) => boolean {
+  const perms = usePerms();
+  const sig = Object.entries(perms)
+    .map(([k, v]) => `${k}:${v ? 1 : 0}`)
+    .join("|");
+  return useCallback(
+    (metricId: string) => {
+      const def = METRIC_BY_ID.get(metricId);
+      return !def?.perm || perms[def.perm];
+    },
+    // perms пересоздаётся на каждый рендер, sig — нет.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sig],
+  );
+}
+
 export function useMetricValues(periodOf: (metricId: string) => BoardPeriod) {
+  const allowed = useMetricAllowed();
   const dash = useDashboardMetrics();
   const clientsQ = useApiClients();
   const paymentsQ = useApiPayments();
@@ -580,8 +609,13 @@ export function useMetricValues(periodOf: (metricId: string) => BoardPeriod) {
       };
     }
 
+    // Нет права — нет значения: обзор, советы и сводка плана его не увидят.
+    for (const id of Object.keys(out)) {
+      if (!allowed(id)) delete out[id];
+    }
     return out;
   }, [
+    allowed,
     dash,
     clientsQ.data,
     paymentsQ.data,

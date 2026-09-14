@@ -41,6 +41,7 @@ import { ManagerAvatar } from "./SalesUI";
 import { saleFormUrl } from "./saleForm";
 import { fmt } from "./salesUtils";
 import { Sensitive } from "@/components/Sensitive";
+import { useCan } from "@/lib/permissions";
 
 /**
  * Мастер сделки продажи (31.08) — этапы из задания заказчика:
@@ -612,6 +613,7 @@ function StepScooter({
   scooterId: number | null;
   setScooterId: (id: number) => void;
 }) {
+  const canProfit = useCan("data.profit");
   const needle = q.trim().toLowerCase();
   const list = (stock ?? []).filter((s) => {
     if (!needle) return true;
@@ -667,7 +669,7 @@ function StepScooter({
                 <span className="block text-[13px] font-bold tabular-nums text-ink">
                   {s.salePrice ? `${fmt(s.salePrice)} ₽` : "цена не задана"}
                 </span>
-                {s.purchasePrice != null && (
+                {canProfit && s.purchasePrice != null && (
                   <span className="block text-[11px] text-muted-2">
                     закуп <Sensitive>{fmt(s.purchasePrice)} ₽</Sensitive>
                   </span>
@@ -736,7 +738,8 @@ function StepPrice({
         </button>
       )}
 
-      <div className="grid grid-cols-3 gap-2">
+      {/* 14.09: без права на прибыль этого ряда нет целиком. */}
+      <div className="grid grid-cols-3 gap-2 empty:hidden">
         <MiniStat sensitive label="Закуп" value={purchase != null ? `${fmt(purchase)} ₽` : "—"} />
         <MiniStat
           sensitive
@@ -774,9 +777,16 @@ function StepManager({
   setManagerId: (id: number | null) => void;
   profit: number | null;
 }) {
+  const canProfit = useCan("data.profit");
   return (
     <div className="flex flex-col gap-3">
-      <StepHint text="Кто провёл продажу. Его процент считается с прибыли сделки и фиксируется в момент подписания — последующая смена процента историю не изменит." />
+      <StepHint
+        text={
+          canProfit
+            ? "Кто провёл продажу. Его процент считается с прибыли сделки и фиксируется в момент подписания — последующая смена процента историю не изменит."
+            : "Кто провёл продажу."
+        }
+      />
       {managers.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center text-[13px] text-muted">
           Менеджеров пока нет. Сделку можно оформить без менеджера, а список
@@ -806,15 +816,17 @@ function StepManager({
                   <span className="block truncate text-[14px] font-semibold text-ink">
                     {m.name}
                   </span>
-                  <span className="block text-[12px] text-muted">
-                    {m.commissionPct}% с прибыли
-                    {cut != null && (
-                      <>
-                        {" · ему "}
-                        <Sensitive>{fmt(cut)} ₽</Sensitive>
-                      </>
-                    )}
-                  </span>
+                  {canProfit && (
+                    <span className="block text-[12px] text-muted">
+                      {m.commissionPct}% с прибыли
+                      {cut != null && (
+                        <>
+                          {" · ему "}
+                          <Sensitive>{fmt(cut)} ₽</Sensitive>
+                        </>
+                      )}
+                    </span>
+                  )}
                 </span>
                 {managerId === m.id && (
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white">
@@ -1014,6 +1026,8 @@ function MiniStat({
   /** 06.09 (п.11): закуп/прибыль/маржа — размыты без ключа директора. */
   sensitive?: boolean;
 }) {
+  const canProfit = useCan("data.profit");
+  if (sensitive && !canProfit) return null;
   return (
     <div className="rounded-xl bg-surface-soft px-3 py-2">
       <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">

@@ -67,9 +67,9 @@ export function StaffResetPasswordModal({
 
         <div className="flex flex-col gap-4 px-5 py-5">
           <div className="rounded-xl bg-orange-soft/60 px-3 py-2.5 text-[12px] text-orange-ink">
-            <b>{user.name}</b> (@{user.login}) — текущий пароль больше не
-            будет работать. Сотрудник при ближайшем входе будет обязан
-            сменить временный пароль на свой.
+            <b>{user.name}</b> (@{user.login}) — текущий пароль перестанет
+            работать, а вход на всех его устройствах сбросится. Сам сотрудник
+            пароль не меняет — передайте новый ему лично.
           </div>
 
           <div>

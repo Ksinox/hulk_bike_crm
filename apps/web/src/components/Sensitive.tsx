@@ -7,6 +7,7 @@ import {
   useSensitiveRevealed,
   useSensitiveUnlocked,
 } from "@/lib/sensitive";
+import { useCan, type PermissionKey } from "@/lib/permissions";
 
 /**
  * Закрытая цифра (прибыль, закуп) — заказчик 06.09.
@@ -22,6 +23,7 @@ export function Sensitive({
   className,
   block,
   dark,
+  perm = "data.profit",
 }: {
   children: ReactNode;
   className?: string;
@@ -29,8 +31,16 @@ export function Sensitive({
   block?: boolean;
   /** Тёмный фон (экран-стена) — крап делаем светлым. */
   dark?: boolean;
+  /** Какое право открывает цифру (14.09). По умолчанию — прибыль и закуп. */
+  perm?: PermissionKey;
 }) {
+  const allowed = useCan(perm);
   const revealed = useSensitiveRevealed();
+
+  // 14.09: нет права — цифры нет вовсе. Ни крапа, ни замка: у сотрудника
+  // этого показателя как будто никогда не было. Подпись рядом с цифрой
+  // прячет тот, кто её рисует.
+  if (!allowed) return null;
 
   if (revealed) {
     return (
@@ -117,8 +127,11 @@ export function Sensitive({
 
 /** Кнопка в шапке: показать / скрыть прибыль и закуп. */
 export function SensitiveToggle({ className }: { className?: string }) {
+  const allowed = useCan("data.profit");
   const revealed = useSensitiveRevealed();
   const unlocked = useSensitiveUnlocked();
+  // Без права на прибыль и кнопки «Прибыль скрыта» нет: скрывать нечего.
+  if (!allowed) return null;
   return (
     <button
       type="button"

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import type { ScooterModel } from "@/lib/mock/rentals";
 import type { ScooterBaseStatus } from "@/lib/mock/fleet";
 import { addScooter, useFleetScooters } from "./fleetStore";
+import { useCan } from "@/lib/permissions";
 import { useRole } from "@/lib/role";
 import {
   ModelPicker,
@@ -116,6 +117,7 @@ export function AddScooterModal({
   defaultInvestorId?: number;
 }) {
   const role = useRole();
+  const canProfit = useCan("data.profit");
   const scooters = useFleetScooters();
   const { data: models = [] } = useApiScooterModels();
   const [closing, setClosing] = useState(false);
@@ -258,7 +260,7 @@ export function AddScooterModal({
       color: color.trim() || undefined,
       purchaseDate: purchaseDate ? fromDateInput(purchaseDate) : undefined,
       purchasePrice:
-        role === "director" && purchasePrice
+        role === "director" && canProfit && purchasePrice
           ? Number(purchasePrice) || undefined
           : undefined,
       marketValue: marketValue ? Number(marketValue) || undefined : undefined,
@@ -445,7 +447,7 @@ export function AddScooterModal({
               </Field>
             </div>
 
-            {role === "director" && (
+            {role === "director" && canProfit && (
               <Field
                 label="Цена закупа, ₽"
                 hint={

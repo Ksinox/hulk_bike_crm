@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useCan } from "@/lib/permissions";
 import { Handshake, Plus } from "lucide-react";
 import { ElectricMark } from "@/components/PowerTypeBadge";
 import { ScooterName } from "@/components/ScooterName";
@@ -51,6 +52,8 @@ export function PartnerFleet({
   const { data: archived = [] } = useApiRentalsArchived();
   const { data: investorsData } = useApiInvestors();
   const investors = investorsData?.items ?? [];
+  // 14.09: без права на доли — ни процента, ни «инвестору», ни «нашей доли».
+  const canShares = useCan("data.partnerShares");
   const anchorsQ = useBillingPeriodAnchors();
   const [addOpen, setAddOpen] = useState(false);
 
@@ -155,7 +158,7 @@ export function PartnerFleet({
       ) : (
         <>
           {/* Итоги периода */}
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className={cn("grid gap-3", canShares ? "sm:grid-cols-3" : "grid-cols-1")}>
             <div className="rounded-2xl bg-surface p-4 shadow-card-sm">
               <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
                 Выручка партнёрской техники
@@ -164,22 +167,26 @@ export function PartnerFleet({
                 {fmt(calc.totals.revenue)} ₽
               </div>
             </div>
-            <div className="rounded-2xl bg-violet-600 p-4 text-white shadow-card">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-white/70">
-                Доля инвесторов
-              </div>
-              <div className="mt-1 font-display text-[26px] font-extrabold tabular-nums">
-                {fmt(calc.totals.payout)} ₽
-              </div>
-            </div>
-            <div className="rounded-2xl bg-surface p-4 shadow-card-sm">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                Наша доля (в общей выручке)
-              </div>
-              <div className="mt-1 font-display text-[26px] font-extrabold tabular-nums text-green-ink">
-                {fmt(calc.totals.ours)} ₽
-              </div>
-            </div>
+            {canShares && (
+              <>
+                <div className="rounded-2xl bg-violet-600 p-4 text-white shadow-card">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-white/70">
+                    Доля инвесторов
+                  </div>
+                  <div className="mt-1 font-display text-[26px] font-extrabold tabular-nums">
+                    {fmt(calc.totals.payout)} ₽
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-surface p-4 shadow-card-sm">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                    Наша доля (в общей выручке)
+                  </div>
+                  <div className="mt-1 font-display text-[26px] font-extrabold tabular-nums text-green-ink">
+                    {fmt(calc.totals.ours)} ₽
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Список техники. Правка 28.08: не таблица с min-width и
@@ -188,20 +195,36 @@ export function PartnerFleet({
               инвестора и нашу долю не прячем — на узком они переезжают под
               название техники. */}
           <div className="@container overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-            <div className="hidden gap-3 border-b border-border px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-2 @[720px]:grid @[720px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto] @[980px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto_auto]">
+            <div
+              className={cn(
+                "hidden gap-3 border-b border-border px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-2 @[720px]:grid",
+                canShares
+                  ? "@[720px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto] @[980px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto_auto]"
+                  : "@[720px]:grid-cols-[1.6fr_1.1fr_auto]",
+              )}
+            >
               <span>Техника</span>
               <span>Инвестор</span>
-              <span className="hidden text-right @[980px]:block">Выручка</span>
-              <span className="text-right">%</span>
-              <span className="text-right">Инвестору</span>
-              <span className="text-right">Наша доля</span>
+              <span className={cn("text-right", canShares && "hidden @[980px]:block")}>Выручка</span>
+              {canShares && (
+                <>
+                  <span className="text-right">%</span>
+                  <span className="text-right">Инвестору</span>
+                  <span className="text-right">Наша доля</span>
+                </>
+              )}
             </div>
             {calc.items.map((it) => (
               <button
                 key={it.scooter.id}
                 type="button"
                 onClick={() => onOpenScooter(it.scooter.id)}
-                className="grid w-full grid-cols-1 gap-x-3 gap-y-1.5 border-t border-border/60 px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-surface-soft/60 @[720px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto] @[720px]:items-center @[980px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto_auto]"
+                className={cn(
+                  "grid w-full grid-cols-1 gap-x-3 gap-y-1.5 border-t border-border/60 px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-surface-soft/60 @[720px]:items-center",
+                  canShares
+                    ? "@[720px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto] @[980px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto_auto]"
+                    : "@[720px]:grid-cols-[1.6fr_1.1fr_auto]",
+                )}
               >
                 {/* Техника */}
                 <span className="flex min-w-0 flex-wrap items-center gap-2 font-semibold text-ink">
@@ -229,45 +252,58 @@ export function PartnerFleet({
                 </span>
 
                 {/* Выручка — самая необязательная колонка, уходит первой */}
-                <span className="hidden text-right text-[13px] font-bold tabular-nums @[980px]:block">
+                <span
+                  className={cn(
+                    "hidden text-right text-[13px] font-bold tabular-nums",
+                    canShares ? "@[980px]:block" : "@[720px]:block",
+                  )}
+                >
                   {fmt(it.revenue)} ₽
                 </span>
 
                 {/* Проценты и доли: на узком — одной строкой чипами */}
-                <span
-                  className="hidden text-right text-[13px] font-bold tabular-nums text-muted @[720px]:block"
-                  title="Процент задаётся у инвестора — техника наследует его автоматически"
-                >
-                  {it.sharePct} %
-                </span>
-                <span className="hidden text-right text-[13px] font-bold tabular-nums text-violet-700 @[720px]:block">
-                  {fmt(it.payout)} ₽
-                </span>
-                <span
-                  className={cn(
-                    "hidden text-right text-[13px] font-bold tabular-nums @[720px]:block",
-                    it.ours > 0 ? "text-green-ink" : "text-muted",
-                  )}
-                >
-                  {fmt(it.ours)} ₽
-                </span>
+                {canShares && (
+                  <>
+                    <span
+                      className="hidden text-right text-[13px] font-bold tabular-nums text-muted @[720px]:block"
+                      title="Процент задаётся у инвестора — техника наследует его автоматически"
+                    >
+                      {it.sharePct} %
+                    </span>
+                    <span className="hidden text-right text-[13px] font-bold tabular-nums text-violet-700 @[720px]:block">
+                      {fmt(it.payout)} ₽
+                    </span>
+                    <span
+                      className={cn(
+                        "hidden text-right text-[13px] font-bold tabular-nums @[720px]:block",
+                        it.ours > 0 ? "text-green-ink" : "text-muted",
+                      )}
+                    >
+                      {fmt(it.ours)} ₽
+                    </span>
+                  </>
+                )}
 
                 {/* Узкий контейнер: всё то же самое, но компактной строкой */}
                 <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] tabular-nums @[720px]:hidden">
                   <span className="text-muted-2">
                     выручка <b className="text-ink">{fmt(it.revenue)} ₽</b>
                   </span>
-                  <span className="text-muted-2">
-                    инвестору{" "}
-                    <b className="text-violet-700">{fmt(it.payout)} ₽</b>
-                    <span className="ml-1 text-muted-2">({it.sharePct} %)</span>
-                  </span>
-                  <span className="text-muted-2">
-                    наша{" "}
-                    <b className={it.ours > 0 ? "text-green-ink" : "text-muted"}>
-                      {fmt(it.ours)} ₽
-                    </b>
-                  </span>
+                  {canShares && (
+                    <>
+                      <span className="text-muted-2">
+                        инвестору{" "}
+                        <b className="text-violet-700">{fmt(it.payout)} ₽</b>
+                        <span className="ml-1 text-muted-2">({it.sharePct} %)</span>
+                      </span>
+                      <span className="text-muted-2">
+                        наша{" "}
+                        <b className={it.ours > 0 ? "text-green-ink" : "text-muted"}>
+                          {fmt(it.ours)} ₽
+                        </b>
+                      </span>
+                    </>
+                  )}
                 </span>
               </button>
             ))}
@@ -275,9 +311,9 @@ export function PartnerFleet({
 
           <div className="text-[11.5px] leading-relaxed text-muted-2">
             Выручка считается по правилам общей «Выручки» (без залогов и
-            возвратов). Общая выручка на дашборде уже показана за вычетом доли
-            инвестора. Процент задаётся у инвестора (вкладка «Инвесторы») и
-            наследуется его техникой.
+            возвратов).
+            {canShares &&
+              " Общая выручка на дашборде уже показана за вычетом доли инвестора. Процент задаётся у инвестора (вкладка «Инвесторы») и наследуется его техникой."}
           </div>
         </>
       )}

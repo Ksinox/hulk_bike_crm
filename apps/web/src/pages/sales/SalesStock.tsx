@@ -5,9 +5,10 @@ import { toast } from "@/lib/toast";
 import { useApiScooters, usePatchScooter } from "@/lib/api/scooters";
 import type { ApiScooter } from "@/lib/api/types";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
-import { EmptyState, SectionCard, StatTile } from "./SalesUI";
+import { EmptyState, SectionCard, StatRow, StatTile } from "./SalesUI";
 import { fmt, fmtCompact } from "./salesUtils";
 import { Sensitive } from "@/components/Sensitive";
+import { useCan } from "@/lib/permissions";
 
 /**
  * «В продаже» (31.08) — техника со статусом «Продаётся».
@@ -25,6 +26,8 @@ export function SalesStock({
   onOpenScooter: (id: number) => void;
   onSell: (scooterId: number) => void;
 }) {
+  // 14.09: без права на прибыль нет закупа, прибыли и их колонок.
+  const canProfit = useCan("data.profit");
   const { data: scooters = [], isLoading } = useApiScooters();
   const { data: models = [] } = useApiScooterModels();
   const [q, setQ] = useState("");
@@ -60,7 +63,7 @@ export function SalesStock({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
+      <StatRow>
         <StatTile
           label="Единиц в продаже"
           value={fmt(list.length)}
@@ -94,7 +97,7 @@ export function SalesStock({
               : "цены не заданы"
           }
         />
-      </div>
+      </StatRow>
 
       <SectionCard
         title="Техника в продаже"
@@ -207,9 +210,9 @@ export function SalesStock({
                   <th className="px-4 py-2 text-left font-bold">Техника</th>
                   <th className="px-2 py-2 text-left font-bold">Идентификация</th>
                   <th className="px-2 py-2 text-right font-bold">Пробег</th>
-                  <th className="px-2 py-2 text-right font-bold">Закуп</th>
+                  {canProfit && <th className="px-2 py-2 text-right font-bold">Закуп</th>}
                   <th className="px-2 py-2 text-right font-bold">Цена продажи</th>
-                  <th className="px-2 py-2 text-right font-bold">Прибыль</th>
+                  {canProfit && <th className="px-2 py-2 text-right font-bold">Прибыль</th>}
                   <th className="px-4 py-2 text-right font-bold" />
                 </tr>
               </thead>
@@ -240,9 +243,11 @@ export function SalesStock({
                       <td className="px-2 py-2.5 text-right tabular-nums">
                         {fmt(s.mileage ?? 0)} км
                       </td>
-                      <td className="px-2 py-2.5 text-right tabular-nums text-muted">
-                        <Sensitive>{s.purchasePrice != null ? `${fmt(s.purchasePrice)} ₽` : "—"}</Sensitive>
-                      </td>
+                      {canProfit && (
+                        <td className="px-2 py-2.5 text-right tabular-nums text-muted">
+                          <Sensitive>{s.purchasePrice != null ? `${fmt(s.purchasePrice)} ₽` : "—"}</Sensitive>
+                        </td>
+                      )}
                       <td className="px-2 py-2.5 text-right">
                         {s.salePrice ? (
                           <span className="font-bold tabular-nums text-ink">
@@ -254,18 +259,20 @@ export function SalesStock({
                           </span>
                         )}
                       </td>
-                      <td
-                        className={cn(
-                          "px-2 py-2.5 text-right tabular-nums",
-                          profit >= 0 ? "text-emerald-700" : "text-red-ink",
-                        )}
-                      >
-                        <Sensitive>
-                          {s.salePrice && s.purchasePrice != null
-                            ? `${profit >= 0 ? "+" : ""}${fmt(profit)} ₽`
-                            : "—"}
-                        </Sensitive>
-                      </td>
+                      {canProfit && (
+                        <td
+                          className={cn(
+                            "px-2 py-2.5 text-right tabular-nums",
+                            profit >= 0 ? "text-emerald-700" : "text-red-ink",
+                          )}
+                        >
+                          <Sensitive>
+                            {s.salePrice && s.purchasePrice != null
+                              ? `${profit >= 0 ? "+" : ""}${fmt(profit)} ₽`
+                              : "—"}
+                          </Sensitive>
+                        </td>
+                      )}
                       <td className="px-4 py-2.5 text-right">
                         <span className="inline-flex items-center gap-1.5">
                           <button
@@ -320,6 +327,7 @@ function QuickEditDialog({
   scooter: ApiScooter;
   onClose: () => void;
 }) {
+  const canProfit = useCan("data.profit");
   const patch = usePatchScooter();
   const [mileage, setMileage] = useState(String(scooter.mileage ?? ""));
   const [purchase, setPurchase] = useState(String(scooter.purchasePrice ?? ""));
@@ -335,7 +343,8 @@ function QuickEditDialog({
         id: scooter.id,
         patch: {
           mileage: Number(mileage) || 0,
-          purchasePrice: purchase === "" ? null : Number(purchase),
+          // Без права на прибыль закуп не отправляем — поля в форме нет.
+          ...(canProfit ? { purchasePrice: purchase === "" ? null : Number(purchase) } : {}),
           salePrice: sale === "" ? null : Number(sale),
           purchaseBatch: batch.trim() || null,
           note: note.trim() || null,
@@ -370,32 +379,39 @@ function QuickEditDialog({
         <div className="mt-4 grid grid-cols-2 gap-3">
           <Field label="Пробег" suffix="км" value={mileage} onChange={setMileage} numeric />
           <Field label="Партия закупа" value={batch} onChange={setBatch} placeholder="Партия 3, апрель" />
-          <Sensitive block>
-            <Field
-              label="Цена закупа"
-              suffix="₽"
-              value={purchase}
-              onChange={setPurchase}
-              numeric
-            />
-          </Sensitive>
-          <Field label="Цена продажи" suffix="₽" value={sale} onChange={setSale} numeric />
+          {canProfit && (
+            <Sensitive block>
+              <Field
+                label="Цена закупа"
+                suffix="₽"
+                value={purchase}
+                onChange={setPurchase}
+                numeric
+              />
+            </Sensitive>
+          )}
+          {/* Без закупа «Цена продажи» остаётся одна в ряду — на всю ширину. */}
+          <div className={cn(!canProfit && "col-span-2")}>
+            <Field label="Цена продажи" suffix="₽" value={sale} onChange={setSale} numeric />
+          </div>
         </div>
 
-        <div className="mt-3 flex items-center justify-between rounded-xl bg-surface-soft px-3 py-2 text-[12.5px]">
-          <span className="text-muted">Прибыль со сделки</span>
-          <Sensitive>
-            <b
-              className={cn(
-                "tabular-nums",
-                profit >= 0 ? "text-emerald-700" : "text-red-ink",
-              )}
-            >
-              {profit >= 0 ? "+" : ""}
-              {fmt(profit)} ₽
-            </b>
-          </Sensitive>
-        </div>
+        {canProfit && (
+          <div className="mt-3 flex items-center justify-between rounded-xl bg-surface-soft px-3 py-2 text-[12.5px]">
+            <span className="text-muted">Прибыль со сделки</span>
+            <Sensitive>
+              <b
+                className={cn(
+                  "tabular-nums",
+                  profit >= 0 ? "text-emerald-700" : "text-red-ink",
+                )}
+              >
+                {profit >= 0 ? "+" : ""}
+                {fmt(profit)} ₽
+              </b>
+            </Sensitive>
+          </div>
+        )}
 
         <label className="mt-3 flex flex-col gap-1">
           <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">

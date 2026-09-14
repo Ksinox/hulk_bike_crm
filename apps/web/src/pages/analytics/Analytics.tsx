@@ -28,6 +28,7 @@ import {
   METRIC_BY_ID,
   METRIC_GROUP_LABEL,
   periodRange,
+  useMetricAllowed,
   useMetricValues,
   type MetricGroup,
 } from "./metrics";
@@ -70,7 +71,20 @@ export function Analytics() {
 
   const [section, setSection] = useState<Section>("overview");
   const [draft, setDraft] = useState<Board | null>(null);
-  const board = draft ?? boardQ.data?.board ?? DEFAULT_BOARD;
+  // 14.09: плиток без права нет ни на миниатюре, ни в раскладке — соседние
+  // занимают их место. При сохранении они возвращаются в доску, чтобы не
+  // пропасть у директора.
+  const allowed = useMetricAllowed();
+  const serverBoard = boardQ.data?.board ?? DEFAULT_BOARD;
+  const hiddenTiles = useMemo(
+    () => serverBoard.tiles.filter((t) => !allowed(t.metric)),
+    [serverBoard, allowed],
+  );
+  const visibleBoard = useMemo(
+    () => ({ ...serverBoard, tiles: serverBoard.tiles.filter((t) => allowed(t.metric)) }),
+    [serverBoard, allowed],
+  );
+  const board = draft ?? visibleBoard;
   const editing = section === "setup";
 
   const periodOf = useMemo(() => {
@@ -151,7 +165,7 @@ export function Analytics() {
   const onSave = async () => {
     if (!draft) return;
     try {
-      await save.mutateAsync(draft);
+      await save.mutateAsync({ ...draft, tiles: [...draft.tiles, ...hiddenTiles] });
       setDraft(null);
       toast.success("Доска сохранена", "Экран на втором мониторе обновится сам");
     } catch {
@@ -168,7 +182,9 @@ export function Analytics() {
   };
 
   const range = periodRange(board.period);
-  const hidden = METRICS.filter((m) => !board.tiles.some((t) => t.metric === m.id));
+  const hidden = METRICS.filter(
+    (m) => allowed(m.id) && !board.tiles.some((t) => t.metric === m.id),
+  );
 
   return (
     <main

@@ -32,6 +32,7 @@ import { publicRoutes } from "./routes/public.js";
 import { publicApplicationsRoutes } from "./routes/public-applications.js";
 import { clientApplicationsRoutes } from "./routes/client-applications.js";
 import authPlugin, { requireAuth } from "./auth/plugin.js";
+import { registerRedaction } from "./auth/redact.js";
 import { ensureBucket } from "./storage/index.js";
 import rateLimit from "@fastify/rate-limit";
 import bcrypt from "bcryptjs";
@@ -180,6 +181,8 @@ async function bootstrap() {
   // Файлы (стрим из MinIO) — тоже защищаем.
   await app.register(async (protectedApp) => {
     protectedApp.addHook("preHandler", requireAuth);
+    // 14.09: нет права — нет показателя. Закрытые поля не уходят с сервера.
+    registerRedaction(protectedApp);
     await protectedApp.register(clientsRoutes, { prefix: "/api/clients" });
     await protectedApp.register(scootersRoutes, { prefix: "/api/scooters" });
     await protectedApp.register(rentalsRoutes, { prefix: "/api/rentals" });

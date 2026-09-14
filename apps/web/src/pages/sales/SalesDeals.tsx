@@ -14,6 +14,7 @@ import {
   type Range,
 } from "./salesUtils";
 import { Sensitive } from "@/components/Sensitive";
+import { useCan } from "@/lib/permissions";
 
 /**
  * «Сделки» — детализация продаж за период (31.08).
@@ -39,6 +40,7 @@ export function SalesDeals({
   onOpenDeal: (id: number) => void;
   onNewDeal: () => void;
 }) {
+  const canProfit = useCan("data.profit");
   const { data, isLoading } = useSaleDeals();
   const deals = data?.items ?? [];
 
@@ -158,8 +160,13 @@ export function SalesDeals({
         hint={
           <>
             {range.label} · найдено {filtered.length} · продано {sum.units} ед. на{" "}
-            <b className="text-ink-2">{fmt(sum.revenue)} ₽</b> · прибыль{" "}
-            <Sensitive><b className="text-emerald-700">{fmt(sum.profit)} ₽</b></Sensitive>
+            <b className="text-ink-2">{fmt(sum.revenue)} ₽</b>
+            {canProfit && (
+              <>
+                {" "}· прибыль{" "}
+                <Sensitive><b className="text-emerald-700">{fmt(sum.profit)} ₽</b></Sensitive>
+              </>
+            )}
           </>
         }
       >
@@ -202,9 +209,13 @@ export function SalesDeals({
                   <th className="px-2 py-2 text-left font-bold">Техника</th>
                   <th className="px-2 py-2 text-left font-bold">Клиент</th>
                   <th className="hidden px-2 py-2 text-left font-bold xl:table-cell">Менеджер</th>
-                  <th className="hidden px-2 py-2 text-right font-bold 2xl:table-cell">Закуп</th>
+                  {/* 14.09: без права на прибыль колонок «Закуп» и «Прибыль» нет —
+                      таблица просто уже, остальные колонки расходятся. */}
+                  {canProfit && (
+                    <th className="hidden px-2 py-2 text-right font-bold 2xl:table-cell">Закуп</th>
+                  )}
                   <th className="px-2 py-2 text-right font-bold">Продажа</th>
-                  <th className="px-2 py-2 text-right font-bold">Прибыль</th>
+                  {canProfit && <th className="px-2 py-2 text-right font-bold">Прибыль</th>}
                   <th className="px-4 py-2 text-right font-bold">Статус</th>
                 </tr>
               </thead>
@@ -224,6 +235,7 @@ export function SalesDeals({
 
 /** Карточка сделки для телефона: то же содержимое, но в две строки. */
 function DealCard({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
+  const canProfit = useCan("data.profit");
   const profit = deal.price - (deal.purchasePrice ?? 0);
   return (
     <button
@@ -247,7 +259,7 @@ function DealCard({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
           {deal.clientName ?? "клиент не указан"}
           {deal.vin && ` · VIN ${deal.vin}`}
         </span>
-        {deal.purchasePrice != null && (
+        {canProfit && deal.purchasePrice != null && (
           <Sensitive
             className={cn(
               "shrink-0 tabular-nums",
@@ -290,6 +302,7 @@ function DealCard({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
 }
 
 function DealRow({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
+  const canProfit = useCan("data.profit");
   const profit = deal.price - (deal.purchasePrice ?? 0);
   return (
     <tr
@@ -326,22 +339,26 @@ function DealRow({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
           <span className="text-muted-2">—</span>
         )}
       </td>
-      <td className="hidden whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-muted 2xl:table-cell">
-        <Sensitive>{deal.purchasePrice != null ? `${fmt(deal.purchasePrice)} ₽` : "—"}</Sensitive>
-      </td>
+      {canProfit && (
+        <td className="hidden whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-muted 2xl:table-cell">
+          <Sensitive>{deal.purchasePrice != null ? `${fmt(deal.purchasePrice)} ₽` : "—"}</Sensitive>
+        </td>
+      )}
       <td className="whitespace-nowrap px-2 py-2.5 text-right font-bold tabular-nums text-ink">
         {fmt(deal.price)} ₽
       </td>
-      <td
-        className={cn(
-          "whitespace-nowrap px-2 py-2.5 text-right tabular-nums",
-          profit >= 0 ? "text-emerald-700" : "text-red-ink",
-        )}
-      >
-        <Sensitive>
-          {deal.purchasePrice != null ? `${profit >= 0 ? "+" : ""}${fmt(profit)} ₽` : "—"}
-        </Sensitive>
-      </td>
+      {canProfit && (
+        <td
+          className={cn(
+            "whitespace-nowrap px-2 py-2.5 text-right tabular-nums",
+            profit >= 0 ? "text-emerald-700" : "text-red-ink",
+          )}
+        >
+          <Sensitive>
+            {deal.purchasePrice != null ? `${profit >= 0 ? "+" : ""}${fmt(profit)} ₽` : "—"}
+          </Sensitive>
+        </td>
+      )}
       <td className="px-4 py-2.5 text-right">
         <span className="inline-flex items-center gap-1.5">
           {deal.documents.length > 0 && (

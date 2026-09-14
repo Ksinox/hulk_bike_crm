@@ -51,6 +51,7 @@ import {
   ruDateShort,
 } from "./salesUtils";
 import { Sensitive } from "@/components/Sensitive";
+import { useCan } from "@/lib/permissions";
 
 /**
  * Главный экран блока «Продажи» (31.08).
@@ -67,6 +68,7 @@ export function SalesOverview({
   onOpenStock: () => void;
   onOpenDeal: (id: number) => void;
 }) {
+  const canProfit = useCan("data.profit");
   const { data: dealsData } = useSaleDeals();
   const { data: managersData } = useSaleManagers();
   const { data: plansData } = useSalePlans();
@@ -409,12 +411,14 @@ export function SalesOverview({
                       <span>
                         продано <b className="text-ink-2">{row.units}</b>
                       </span>
-                      <span>
-                        прибыль{" "}
-                        <Sensitive><b className="text-emerald-700">{fmt(row.profit)} ₽</b></Sensitive>
-                      </span>
+                      {canProfit && (
+                        <span>
+                          прибыль{" "}
+                          <Sensitive><b className="text-emerald-700">{fmt(row.profit)} ₽</b></Sensitive>
+                        </span>
+                      )}
                       <span>ср. чек {fmt(row.avgCheck)} ₽</span>
-                      {row.commission > 0 && (
+                      {canProfit && row.commission > 0 && (
                         <span>
                           ему <Sensitive>{fmt(row.commission)} ₽</Sensitive>
                           {row.manager ? ` (${row.manager.commissionPct}%)` : ""}
@@ -453,8 +457,13 @@ export function SalesOverview({
                     />
                   </div>
                   <div className="text-[11px] text-muted-2">
-                    {fmt(m.revenue)} ₽ выручки · прибыль <Sensitive>{fmt(m.profit)} ₽</Sensitive> · средний чек{" "}
-                    {fmt(m.avgCheck)} ₽
+                    {fmt(m.revenue)} ₽ выручки
+                    {canProfit && (
+                      <>
+                        {" "}· прибыль <Sensitive>{fmt(m.profit)} ₽</Sensitive>
+                      </>
+                    )}{" "}
+                    · средний чек {fmt(m.avgCheck)} ₽
                   </div>
                 </div>
               ))}
@@ -515,6 +524,7 @@ function RecentRow({
   latest?: boolean;
   onOpen: () => void;
 }) {
+  const canProfit = useCan("data.profit");
   return (
     <button
       type="button"
@@ -550,9 +560,11 @@ function RecentRow({
         <span className="block text-[13px] font-bold tabular-nums text-ink">
           {fmt(deal.price)} ₽
         </span>
-        <span className="block text-[11px] tabular-nums text-emerald-700">
-          <Sensitive>+{fmt(deal.price - (deal.purchasePrice ?? 0))} ₽</Sensitive>
-        </span>
+        {canProfit && (
+          <span className="block text-[11px] tabular-nums text-emerald-700">
+            <Sensitive>+{fmt(deal.price - (deal.purchasePrice ?? 0))} ₽</Sensitive>
+          </span>
+        )}
       </span>
     </button>
   );

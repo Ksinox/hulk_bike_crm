@@ -7,6 +7,7 @@ import { patchScooter } from "./fleetStore";
 import { setNextApprovalContext } from "@/lib/directorGate";
 import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { useRole } from "@/lib/role";
+import { useCan } from "@/lib/permissions";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import {
   ModelPicker,
@@ -22,6 +23,8 @@ export function ScooterEditForm({
   onClose: () => void;
 }) {
   const role = useRole();
+  // 14.09: закуп — только у тех, кому директор открыл прибыль и закуп.
+  const canProfit = useCan("data.profit");
   const [closing, setClosing] = useState(false);
   const { data: models = [] } = useApiScooterModels();
 
@@ -143,7 +146,7 @@ export function ScooterEditForm({
       modelId: modelId ?? undefined,
       name: newName,
     };
-    if (role === "director") {
+    if (role === "director" && canProfit) {
       const n = Number(purchasePrice);
       patch.purchasePrice = Number.isFinite(n) && n > 0 ? n : undefined;
     }
@@ -326,7 +329,7 @@ export function ScooterEditForm({
               </Field>
             </div>
 
-            {role === "director" && (
+            {role === "director" && canProfit && (
               <Field
                 label="Цена закупа, ₽"
                 hint={

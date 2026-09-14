@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useCan } from "@/lib/permissions";
 import {
   Banknote,
   Check,
@@ -39,6 +40,8 @@ export function ServiceOrderCard({
   order: ServiceOrder;
   onClose: () => void;
 }) {
+  // 14.09: без права на прибыль ремонтов нет ни закупа запчастей, ни прибыли.
+  const canRepairProfit = useCan("data.repairProfit");
   const addItem = useAddServiceOrderItem();
   const patchItem = usePatchServiceOrderItem();
   const delItem = useDeleteServiceOrderItem();
@@ -153,7 +156,7 @@ export function ServiceOrderCard({
                 key={it.id}
                 item={it}
                 locked={locked}
-                withCost
+                withCost={canRepairProfit}
                 onPatch={(b) => patchItem.mutate({ itemId: it.id, ...b })}
                 onDelete={() => delItem.mutate(it.id)}
               />
@@ -162,7 +165,7 @@ export function ServiceOrderCard({
           {!locked && (
             <FreeRow
               placeholder="Запчасть — наименование"
-              withCost
+              withCost={canRepairProfit}
               onAdd={(v) =>
                 addItem.mutate({
                   orderId: order.id,
@@ -183,17 +186,21 @@ export function ServiceOrderCard({
           <Row label="Запчасти" value={money(order.totals.parts)} />
           <div className="my-2 h-px bg-border" />
           <Row label="Выручка" value={money(order.totals.revenue)} strong />
-          <Row
-            label="Себестоимость запчастей"
-            value={`− ${money(order.totals.cost)}`}
-            muted
-          />
-          <Row
-            label="Прибыль"
-            value={money(order.totals.profit)}
-            strong
-            tone={order.totals.profit >= 0 ? "good" : "bad"}
-          />
+          {canRepairProfit && (
+            <>
+              <Row
+                label="Себестоимость запчастей"
+                value={`− ${money(order.totals.cost)}`}
+                muted
+              />
+              <Row
+                label="Прибыль"
+                value={money(order.totals.profit)}
+                strong
+                tone={order.totals.profit >= 0 ? "good" : "bad"}
+              />
+            </>
+          )}
           {order.status === "paid" && (
             <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-[12.5px] font-semibold text-emerald-800">
               Оплачено {money(order.paidAmount ?? order.totals.revenue)} ·{" "}

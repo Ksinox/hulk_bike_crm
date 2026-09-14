@@ -190,6 +190,24 @@ export const users = pgTable("users", {
     .notNull()
     .default(false),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  /** Должность словами (14.09): «Менеджер по продажам» и т.п. */
+  position: text("position"),
+  /**
+   * Права на щепетильные данные (14.09): { "data.profit": false, … }.
+   * Ключи и умолчания — apps/api/src/auth/permissions.ts. Директору и
+   * создателю не нужны: у них полный доступ по роли.
+   */
+  permissions: jsonb("permissions")
+    .$type<Record<string, boolean>>()
+    .notNull()
+    .default({}),
+  /**
+   * Версия сессий (14.09). Токен помнит её при входе; увеличили —
+   * все старые токены недействительны: «выйти на всех устройствах».
+   */
+  sessionVersion: integer("session_version").notNull().default(0),
+  /** Ответ директора при создании: 'existing' — уже работает, 'new' — новый. */
+  staffKind: text("staff_kind"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

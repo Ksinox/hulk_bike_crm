@@ -11,6 +11,7 @@ import {
 } from "./salesUtils";
 import { Sensitive } from "@/components/Sensitive";
 import { useSensitiveRevealed } from "@/lib/sensitive";
+import { useCan } from "@/lib/permissions";
 
 /** Мелкие переиспользуемые элементы блока «Продажи». */
 
@@ -73,6 +74,10 @@ export function StatTile({
   /** 06.09 (п.11): значение размыто, пока директор не откроет ключом. */
   sensitive?: boolean;
 }) {
+  // 14.09: нет права на прибыль — плитки нет, соседние растягиваются
+  // (ряд — flex-wrap с flex-1, пустого места не остаётся).
+  const canProfit = useCan("data.profit");
+  if (sensitive && !canProfit) return null;
   return (
     <div
       className={cn(
@@ -266,8 +271,11 @@ export function PlanBar({
   // Полоса — тот же факт, только нарисованный: у закрытых показателей её
   // не заливаем, иначе цифра считается по проценту заполнения.
   const revealed = useSensitiveRevealed();
+  const canProfit = useCan("data.profit");
   const hidden = !!sensitive && !revealed;
   const done = pct >= 100;
+  // 14.09: без права на прибыль строки плана по прибыли нет вовсе.
+  if (sensitive && !canProfit) return null;
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-baseline gap-2">

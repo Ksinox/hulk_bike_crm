@@ -22,6 +22,7 @@ import {
 } from "@/lib/mock/fleet";
 import { useScooterMaintenance } from "@/lib/api/scooter-maintenance";
 import { useRepairJobs } from "@/lib/api/repair-jobs";
+import { useCan } from "@/lib/permissions";
 import { useRole } from "@/lib/role";
 import { MODEL_LABEL } from "@/lib/mock/rentals";
 import { ScooterName, scooterModelName } from "@/components/ScooterName";
@@ -134,6 +135,8 @@ export function MobileScooterCard({
   const rentals = useRentals();
   const { data: apiClients } = useApiClients();
   const role = useRole();
+  // 14.09: «Экономика» — закуп и окупаемость; без права на прибыль вкладки нет.
+  const canProfit = useCan("data.profit");
   const [tab, setTab] = useState<TabId>("overview");
   const [editOpen, setEditOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
@@ -222,7 +225,7 @@ export function MobileScooterCard({
    */
   const tabs: { id: TabId; label: string; count?: number }[] = [
     { id: "overview", label: "Обзор" },
-    ...(role === "director"
+    ...(role === "director" && canProfit
       ? ([{ id: "econ", label: "Экономика" }] as {
           id: TabId;
           label: string;
@@ -552,7 +555,7 @@ export function MobileScooterCard({
         )}
 
         {/* ===== ROI (директору) — вкладка «Экономика» ===== */}
-        {role === "director" && tab === "econ" && (
+        {role === "director" && canProfit && tab === "econ" && (
           <section className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
             <button
               type="button"

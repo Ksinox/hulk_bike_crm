@@ -6,7 +6,7 @@ import {
   useAnalyticsBoard,
   type BoardPeriod,
 } from "./board";
-import { METRIC_BY_ID, periodRange, useMetricValues } from "./metrics";
+import { METRIC_BY_ID, periodRange, useMetricAllowed, useMetricValues } from "./metrics";
 import { AnalyticsTile } from "./AnalyticsTile";
 import { PlanSummaryTile } from "./PlanSummaryTile";
 import { useFitLayout } from "./useFitLayout";
@@ -53,7 +53,9 @@ export function AnalyticsWall() {
   const values = useMetricValues(periodOf);
   const range = periodRange(board.period, now);
 
-  const tiles = board.tiles.filter((t) => METRIC_BY_ID.has(t.metric));
+  const allowed = useMetricAllowed();
+  // 14.09: стена под аккаунтом без права — без этих плиток, раскладка без дыр.
+  const tiles = board.tiles.filter((t) => METRIC_BY_ID.has(t.metric) && allowed(t.metric));
   const gridRef = useRef<HTMLDivElement>(null);
   const spans = useMemo(() => tiles.map((t) => ({ w: t.w, h: t.h })), [tiles]);
   // Та же раскладка, что в конструкторе: колонки подбираются под экран,

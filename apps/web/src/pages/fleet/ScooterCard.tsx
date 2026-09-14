@@ -30,6 +30,7 @@ import {
 import { useScooterMaintenance } from "@/lib/api/scooter-maintenance";
 import { useRepairJobs } from "@/lib/api/repair-jobs";
 import { useRole } from "@/lib/role";
+import { useCan } from "@/lib/permissions";
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useApiClients } from "@/lib/api/clients";
@@ -189,6 +190,9 @@ export function ScooterCard({
   const { data: apiClients } = useApiClients();
   const { data: cardModels = [] } = useApiScooterModels();
   const role = useRole();
+  // 14.09: экономика скутера — это закуп, окупаемость и прибыль. Без права
+  // на прибыль ни вкладки, ни блока нет.
+  const canProfit = useCan("data.profit");
   const [tab, setTab] = useState<TabId>(drawerChrome ? "overview" : "history");
   const [editOpen, setEditOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
@@ -378,8 +382,8 @@ export function ScooterCard({
   }, [drawerChrome, tab]);
 
   const visibleTabs = useMemo(
-    () => DRAWER_TABS.filter((t) => t.id !== "econ" || role === "director"),
-    [role],
+    () => DRAWER_TABS.filter((t) => t.id !== "econ" || (role === "director" && canProfit)),
+    [role, canProfit],
   );
 
   useEffect(() => {
@@ -1212,7 +1216,7 @@ export function ScooterCard({
       )}
 
       {/* ======== DIRECTOR-ONLY: ROI ======== */}
-      {role === "director" && (!drawerChrome || tab === "econ") && (
+      {role === "director" && canProfit && (!drawerChrome || tab === "econ") && (
         <section
           className={cn(
             "relative overflow-hidden rounded-2xl bg-surface shadow-card-sm",
@@ -1932,6 +1936,7 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
  * чей процент единица наследует). Здесь — только факт.
  */
 function PartnerSpec({ scooter }: { scooter: FleetScooter }) {
+  const canShares = useCan("data.partnerShares");
   const shareQ = usePartnerShare();
   const on = !!scooter.isPartner;
   const share = scooter.partnerShare ?? shareQ.data?.value ?? 50;
@@ -1954,7 +1959,7 @@ function PartnerSpec({ scooter }: { scooter: FleetScooter }) {
       >
         {on ? "Партнёрская" : "Наша"}
       </div>
-      {on && (
+      {on && canShares && (
         <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-2">
           инвестору {share} %
         </div>

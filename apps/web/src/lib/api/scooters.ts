@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCan } from "@/lib/permissions";
 import { api } from "@/lib/api";
 import type { ApiScooter, ListResponse } from "./types";
 
@@ -54,9 +55,12 @@ export type PartnerShareState = {
 };
 
 export function usePartnerShare() {
+  // 14.09: без права на доли сервер отвечает 403 — не спрашиваем вовсе.
+  const canShares = useCan("data.partnerShares");
   return useQuery({
     queryKey: [...scootersKeys.all, "partner-share"] as const,
     queryFn: () => api.get<PartnerShareState>("/api/scooters/partner-share"),
+    enabled: canShares,
   });
 }
 

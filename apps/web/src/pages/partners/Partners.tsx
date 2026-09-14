@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useCan } from "@/lib/permissions";
 import { Bike, Handshake, Users } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { useIsMobile } from "@/lib/useIsMobile";
@@ -37,6 +38,9 @@ const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
 
 export function Partners() {
   const isMobile = useIsMobile();
+  // 14.09: без права на доли партнёров вкладки «Инвесторы» нет вовсе.
+  const canShares = useCan("data.partnerShares");
+  const tabs = TABS.filter((t) => t.id !== "investors" || canShares);
   const [tab, setTab] = useState<Tab>("rentals");
   /**
    * Открытая карточка техники — рендерится ВНУТРИ партнёрки на всю ширину
@@ -78,7 +82,7 @@ export function Partners() {
       <div className="flex min-w-0 items-start gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-full bg-surface p-1 shadow-card-sm">
-            {TABS.map((t) => (
+            {tabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -98,7 +102,7 @@ export function Partners() {
 
           {tab === "rentals" && <PartnerRentals />}
           {tab === "fleet" && <PartnerFleet onOpenScooter={setOpenScooterId} />}
-          {tab === "investors" && (
+          {tab === "investors" && canShares && (
             <InvestorsTab onOpenScooter={setOpenScooterId} />
           )}
         </div>

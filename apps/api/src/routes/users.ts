@@ -4,7 +4,16 @@ import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { users } from "../db/schema.js";
-import { requireRole } from "../auth/plugin.js";
+import { invalidateAuthUser, requireRole } from "../auth/plugin.js";
+import {
+  PERMISSIONS,
+  PERMISSION_KEYS,
+  PermissionsPatchSchema,
+  defaultPermissions,
+  effectivePermissions,
+  type PermissionKey,
+} from "../auth/permissions.js";
+import { logActivity, type DiffPayload } from "../services/activityLog.js";
 
 /**
  * Управление сотрудниками. Видят и могут менять только creator и director.
@@ -22,6 +31,16 @@ const RoleEnum = z.enum([
 const AvatarEnum = z.enum(["blue", "green", "orange", "pink", "purple"]);
 
 const LoginRegex = /^[a-z0-9._-]{2,50}$/;
+
+const StaffKindEnum = z.enum(["existing", "new"]);
+const STAFF_KIND_LABEL = { existing: "уже работает", new: "новый сотрудник" } as const;
+
+/** «Прибыль, закуп и маржа: видит» — строки прав для журнала. */
+function permsText(perms: Record<PermissionKey, boolean>): string {
+  return PERMISSION_KEYS.map(
+    (k) => `${PERMISSIONS[k].label}: ${perms[k] ? "видит" : "не видит"}`,
+  ).join(" · ");
+}
 
 /** Генерирует случайный читаемый пароль из 10 символов (без 0/O/1/l). */
 function generatePassword(len = 10): string {
@@ -46,6 +65,9 @@ function publicUser(u: typeof users.$inferSelect) {
     mustChangePassword: u.mustChangePassword,
     lastLoginAt: u.lastLoginAt,
     createdAt: u.createdAt,
+    position: u.position,
+    staffKind: u.staffKind,
+    permissions: effectivePermissions(u.role, u.permissions),
   };
 }
 
@@ -80,6 +102,9 @@ export async function usersRoutes(app: FastifyInstance) {
         role: RoleEnum,
         avatarColor: AvatarEnum.optional(),
         password: z.string().min(6).max(200).optional(),
+        position: z.string().trim().max(100).optional(),
+        staffKind: StaffKindEnum.optional(),
+        permissions: PermissionsPatchSchema.optional(),
       })
       .strict();
     const parsed = Body.safeParse(req.body);
@@ -101,6 +126,9 @@ export async function usersRoutes(app: FastifyInstance) {
 
     const plainPassword = data.password ?? generatePassword();
     const hash = await bcrypt.hash(plainPassword, 12);
+    // Права сохраняем явно — выбор директора не должен меняться, если
+    // позже поменяются умолчания.
+    const perms = { ...defaultPermissions(), ...(data.permissions ?? {}) };
 
     const [row] = await db
       .insert(users)
@@ -110,11 +138,28 @@ export async function usersRoutes(app: FastifyInstance) {
         passwordHash: hash,
         role: data.role,
         avatarColor: data.avatarColor ?? "blue",
-        mustChangePassword: true,
+        // 14.09: пароль сотрудника задаёт директор — смену при входе не требуем.
+        mustChangePassword: false,
         active: true,
+        position: data.position || null,
+        staffKind: data.staffKind ?? null,
+        permissions: perms,
       })
       .returning();
     if (!row) return reply.code(500).send({ error: "insert failed" });
+
+    await logActivity(req, {
+      entity: "user",
+      entityId: row.id,
+      action: "created",
+      summary:
+        `Заведён аккаунт «${row.name}»` +
+        (row.position ? ` · ${row.position}` : "") +
+        ` · логин ${row.login}` +
+        (row.staffKind ? ` · ${STAFF_KIND_LABEL[row.staffKind as "existing" | "new"]}` : "") +
+        ` · ${permsText(effectivePermissions(row.role, row.permissions))}`,
+      meta: { login: row.login, position: row.position, staffKind: row.staffKind },
+    });
 
     return {
       ...publicUser(row),
@@ -143,6 +188,9 @@ export async function usersRoutes(app: FastifyInstance) {
           role: RoleEnum.optional(),
           active: z.boolean().optional(),
           avatarColor: AvatarEnum.optional(),
+          position: z.string().trim().max(100).nullable().optional(),
+          staffKind: StaffKindEnum.optional(),
+          permissions: PermissionsPatchSchema.optional(),
         })
         .strict();
       const parsed = Body.safeParse(req.body);
@@ -165,12 +213,57 @@ export async function usersRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "cannot deactivate self" });
       }
 
+      const { permissions: permsPatch, ...rest } = parsed.data;
+      const set: Partial<typeof users.$inferInsert> = { ...rest };
+      if (rest.position !== undefined) set.position = rest.position || null;
+      const beforePerms = effectivePermissions(target.role, target.permissions);
+      if (permsPatch) {
+        set.permissions = { ...beforePerms, ...permsPatch };
+      }
+
       const [updated] = await db
         .update(users)
-        .set(parsed.data)
+        .set(set)
         .where(eq(users.id, id))
         .returning();
       if (!updated) return reply.code(500).send({ error: "update failed" });
+      invalidateAuthUser(id);
+
+      // Журнал: что поменялось — было → стало.
+      const diff: DiffPayload = {};
+      if (rest.name !== undefined && rest.name !== target.name) {
+        diff.name = { label: "Имя", from: target.name, to: rest.name, kind: "text" };
+      }
+      if (rest.position !== undefined && (rest.position || null) !== target.position) {
+        diff.position = { label: "Должность", from: target.position ?? "—", to: rest.position || "—", kind: "text" };
+      }
+      if (rest.active !== undefined && rest.active !== target.active) {
+        diff.active = { label: "Доступ", from: target.active ? "включён" : "отключён", to: rest.active ? "включён" : "отключён", kind: "text" };
+      }
+      const afterPerms = effectivePermissions(updated.role, updated.permissions);
+      for (const k of PERMISSION_KEYS) {
+        if (beforePerms[k] !== afterPerms[k]) {
+          diff[k] = {
+            label: PERMISSIONS[k].label,
+            from: beforePerms[k] ? "видит" : "не видит",
+            to: afterPerms[k] ? "видит" : "не видит",
+            kind: "text",
+          };
+        }
+      }
+      if (Object.keys(diff).length) {
+        await logActivity(req, {
+          entity: "user",
+          entityId: id,
+          action: "updated",
+          summary:
+            `Аккаунт «${updated.name}»: ` +
+            Object.values(diff)
+              .map((d) => `${d.label} — ${String(d.from)} → ${String(d.to)}`)
+              .join(" · "),
+          diff,
+        });
+      }
       return publicUser(updated);
     },
   );
@@ -208,16 +301,59 @@ export async function usersRoutes(app: FastifyInstance) {
       const plain = parsed.data.newPassword ?? generatePassword();
       const hash = await bcrypt.hash(plain, 12);
 
+      // 14.09: пароль задаёт директор, поэтому смену при входе не требуем.
+      // Новый пароль = выход на всех устройствах: старый мог узнать чужой.
       await db
         .update(users)
-        .set({ passwordHash: hash, mustChangePassword: true })
+        .set({
+          passwordHash: hash,
+          mustChangePassword: false,
+          sessionVersion: target.sessionVersion + 1,
+        })
         .where(eq(users.id, id));
+      invalidateAuthUser(id);
+      await logActivity(req, {
+        entity: "user",
+        entityId: id,
+        action: "password_reset",
+        summary: `Директор задал новый пароль аккаунту «${target.name}» · вход сброшен на всех устройствах`,
+      });
 
       return {
         ok: true,
         newPassword: plain,
         generated: parsed.data.newPassword === undefined,
       };
+    },
+  );
+
+  /**
+   * POST /api/users/:id/logout-everywhere
+   * Выход на всех устройствах без смены пароля (14.09).
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/logout-everywhere",
+    { preHandler: staffOnly },
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+      const [target] = await db.select().from(users).where(eq(users.id, id));
+      if (!target) return reply.code(404).send({ error: "not found" });
+      if (target.role === "creator" && req.user.role !== "creator") {
+        return reply.code(403).send({ error: "cannot touch creator" });
+      }
+      await db
+        .update(users)
+        .set({ sessionVersion: target.sessionVersion + 1 })
+        .where(eq(users.id, id));
+      invalidateAuthUser(id);
+      await logActivity(req, {
+        entity: "user",
+        entityId: id,
+        action: "logout_everywhere",
+        summary: `Аккаунт «${target.name}» вышел на всех устройствах`,
+      });
+      return { ok: true };
     },
   );
 

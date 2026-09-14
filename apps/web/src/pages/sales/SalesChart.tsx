@@ -3,6 +3,7 @@ import { BarChart3, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BUCKET_AXIS, fmt, fmtCompact, type Bucket, type Point } from "./salesUtils";
 import { Sensitive } from "@/components/Sensitive";
+import { useCan } from "@/lib/permissions";
 
 /**
  * График динамики продаж (31.08, переработан по фидбэку).
@@ -58,6 +59,7 @@ export function SalesChart({
   /** Перетаскивание мышью: сдвиг окна на n интервалов. */
   onPan?: (steps: number) => void;
 }) {
+  const canProfit = useCan("data.profit");
   const [hover, setHover] = useState<string | null>(null);
   const [mode, setModeState] = useState<ChartMode>(readMode);
   const setMode = (m: ChartMode) => {
@@ -316,7 +318,7 @@ export function SalesChart({
                       {!p.forecast && (
                         <div className="text-[10px] text-white/70">
                           {p.units} ед.
-                          {p.profit > 0 && (
+                          {canProfit && p.profit > 0 && (
                             <>
                               {" · прибыль "}
                               <Sensitive>{fmt(p.profit)} ₽</Sensitive>
