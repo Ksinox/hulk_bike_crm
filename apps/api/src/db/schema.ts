@@ -213,6 +213,33 @@ export const users = pgTable("users", {
     .defaultNow(),
 });
 
+/**
+ * Показ обновления сотруднику (15.09, релиз 2.0). Одна строка на человека и
+ * версию: отложил / досмотрел, закрытые подсказки, посещённые новые разделы.
+ */
+export const releaseViews = pgTable(
+  "release_views",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: bigint("user_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    version: text("version").notNull(),
+    /** postponed — отложил или ещё смотрит; completed — долистал до конца. */
+    status: text("status").notNull().default("postponed"),
+    postponedCount: integer("postponed_count").notNull().default(0),
+    cardsSeen: integer("cards_seen").notNull().default(0),
+    hintsDone: jsonb("hints_done").$type<string[]>().notNull().default([]),
+    sectionsVisited: jsonb("sections_visited").$type<string[]>().notNull().default([]),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userVersion: uniqueIndex("release_views_user_version_unique").on(t.userId, t.version),
+  }),
+);
+
 /* ============================================================
  * clients — клиенты (арендаторы)
  *

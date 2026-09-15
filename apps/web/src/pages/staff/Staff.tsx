@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ReleaseViewsPanel } from "@/release/ReleaseViewsPanel";
 import {
   CheckCircle2,
   Copy,
@@ -122,6 +123,9 @@ export function Staff() {
           <Plus size={16} /> Добавить сотрудника
         </button>
       </header>
+
+      {/* 15.09: кто посмотрел обновление — отметки с сервера. */}
+      <ReleaseViewsPanel />
 
       <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
         <table className="w-full border-separate border-spacing-0 text-[13px]">
