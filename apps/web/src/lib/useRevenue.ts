@@ -22,6 +22,7 @@
 import { useMemo } from "react";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
+import { partnerCutOf, usePartnerInfo } from "@/lib/partner";
 import {
   currentBillingPeriod,
   type BillingPeriod,
@@ -30,7 +31,7 @@ import {
 export type RevenueScope = "all" | "rentals";
 
 export type RevenueResult = {
-  /** Сумма ₽ за текущий расчётный период. */
+  /** Сумма ₽ за текущий расчётный период (за вычетом доли инвестора). */
   total: number;
   /** Сколько платежей попало в выборку. */
   count: number;
@@ -38,6 +39,14 @@ export type RevenueResult = {
   period: BillingPeriod;
   /** Платежи по дням периода — для спарклайн-графика. */
   byDay: { date: string; sum: number }[];
+  /** Пункт 11: удержанная доля инвестора (партнёрская техника), ₽. */
+  partnerCut: number;
+  /** Правки 2.0, п.12: выручка партнёрской техники до вычета доли. */
+  partnerGross: number;
+  /** Наша доля партнёрской выручки. */
+  partnerOurs: number;
+  /** Выручка нашей собственной техники. */
+  ownTotal: number;
 };
 
 /**
@@ -49,6 +58,7 @@ export type RevenueResult = {
 function shouldCount(p: ApiPayment, period: BillingPeriod): boolean {
   if (!p.paid) return false;
   if (!p.paidAt) return false;
+  if (p.excludedFromRevenue) return false; // пункт 2: аренда удалена
   if (p.type === "deposit" || p.type === "refund") return false;
   // v0.4.34: исключаем method='deposit' — оплата за счёт залога/депозита
   // клиента, не должна попадать в выручку повторно. ИСКЛЮЧЕНИЕ:
@@ -69,6 +79,9 @@ export function useBillingPeriodRevenue(
   now: Date = new Date(),
 ): RevenueResult {
   const { data: payments } = useApiPayments();
+  // Пункт 11: выручка партнёрской техники учитывается за вычетом доли
+  // инвестора (расчёт выплат — в разделе «Партнёрка»).
+  const { shareByRental, excludedRentals } = usePartnerInfo();
   // Подписываемся на якоря расчётного периода. currentBillingPeriod()
   // читает модульный глобал, который заполняется асинхронно с сервера
   // (setBillingPeriodAnchors на onSuccess). Без этой подписки плашка
@@ -92,18 +105,47 @@ export function useBillingPeriodRevenue(
     // привязаны к арендам. Когда появятся другие модули, добавим
     // отдельный источник для 'all' и оставим 'rentals' как фильтр
     // только связанных с rentalId.
-    const filtered =
+    const scoped =
       scope === "rentals"
         ? inPeriod.filter((p) => p.rentalId != null)
         : inPeriod;
+    /**
+     * Правка 31.08 (заказчик): выручка — это ТОЛЬКО наша техника.
+     * Любые операции по партнёрскому электротранспорту (аренда, продление,
+     * просрочка, штрафы, ущерб) из выручки исключаются целиком, а не
+     * учитываются за вычетом доли инвестора, как было раньше. Деньги
+     * инвестора живут в разделе «Партнёрка», а «Выручка» на дашборде
+     * отвечает на вопрос «сколько заработали МЫ».
+     */
+    const filtered = scoped.filter(
+      (p) => p.rentalId == null || !excludedRentals.has(p.rentalId),
+    );
+    /** Отфильтрованные партнёрские операции — для подписи «сколько скрыто». */
+    const partnerExcluded = scoped.length - filtered.length;
     let total = 0;
+    let partnerCut = 0;
+    // Правки 2.0, п.12: раздельный учёт — где наша техника, где
+    // партнёрская. partnerGross — вся выручка партнёрских единиц,
+    // partnerOurs — что из неё осталось нам, partnerCut — доля инвестора.
+    let partnerGross = 0;
+    let ownTotal = 0;
     const byDayMap = new Map<string, number>();
+    // В filtered партнёрских операций уже нет — считаем прямо по сумме.
     for (const p of filtered) {
       total += p.amount;
+      ownTotal += p.amount;
       if (p.paidAt) {
         const day = p.paidAt.slice(0, 10);
         byDayMap.set(day, (byDayMap.get(day) ?? 0) + p.amount);
       }
+    }
+    // Партнёрская выручка считается ОТДЕЛЬНО (для раздела «Партнёрка» и
+    // подписи), в общий total она больше не входит ни в каком виде.
+    for (const p of scoped) {
+      if (p.rentalId == null || !shareByRental.has(p.rentalId)) continue;
+      const cut = partnerCutOf(p, shareByRental);
+      partnerCut += cut;
+      partnerGross += p.amount;
     }
     const byDay = Array.from(byDayMap.entries())
       .map(([date, sum]) => ({ date, sum }))
@@ -111,8 +153,17 @@ export function useBillingPeriodRevenue(
     return {
       total,
       count: filtered.length,
+      /** Сколько операций по электротранспорту не показано в выручке. */
+      partnerExcluded,
       period,
       byDay,
+      partnerCut,
+      /** Вся выручка партнёрской техники (до вычета доли инвестора). */
+      partnerGross,
+      /** Наша доля партнёрской выручки (partnerGross − partnerCut). */
+      partnerOurs: partnerGross - partnerCut,
+      /** Выручка нашей собственной техники. */
+      ownTotal,
     };
-  }, [payments, period, scope]);
+  }, [payments, period, scope, shareByRental, excludedRentals]);
 }

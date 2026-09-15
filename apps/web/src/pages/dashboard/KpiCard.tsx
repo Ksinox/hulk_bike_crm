@@ -14,6 +14,12 @@ export type KpiCardProps = {
   /** v0.3.1 (idea 4): если задан — карточка кликабельна и
    *  открывает соответствующий drawer-список. */
   onClick?: () => void;
+  /**
+   * Тесная раскладка (01.09): когда справа открыта карточка, плитки
+   * занимали пол-экрана, хотя человек и так видит эти цифры. Ужимаем —
+   * освободившееся место отдаём «Выручке».
+   */
+  compact?: boolean;
 };
 
 export function KpiCard({
@@ -25,6 +31,7 @@ export function KpiCard({
   blue,
   valueTone = "default",
   onClick,
+  compact,
 }: KpiCardProps) {
   const clickable = !!onClick;
   return (
@@ -33,21 +40,25 @@ export function KpiCard({
       onClick={onClick}
       className={cn(
         clickable && "cursor-pointer transition-shadow hover:shadow-card-lg",
+        compact && "p-3",
       )}
     >
       <div
         className={cn(
-          "flex items-center gap-1.5 text-[13px] font-medium",
+          "flex items-center gap-1.5 font-medium",
+          compact ? "pr-7 text-[11.5px]" : "pr-9 text-[13px]",
           blue ? "text-white/75" : "text-muted",
         )}
       >
-        {title}
+        {/* Заголовок в тесноте обрезается многоточием, а не режется краем
+            карточки: у flex-контейнера свой текст не эллипсится (01.09). */}
+        <span className="min-w-0 truncate">{title}</span>
       </div>
-      <GoButton blue={blue} />
+      <GoButton blue={blue} compact={compact} />
       <div
         className={cn(
-          "mt-3 font-display tabular-nums leading-[1.1] tracking-[-0.02em]",
-          "text-[34px] font-extrabold",
+          "font-display tabular-nums leading-[1.1] tracking-[-0.02em] font-extrabold",
+          compact ? "mt-1 text-[21px]" : "mt-3 text-[34px]",
           valueTone === "red" && !blue ? "text-red" : "",
         )}
       >
@@ -55,7 +66,8 @@ export function KpiCard({
         {unit && (
           <span
             className={cn(
-              "ml-1 text-[20px] font-bold",
+              "ml-1 font-bold",
+              compact ? "text-[13px]" : "text-[20px]",
               blue ? "text-white" : "text-muted",
             )}
           >
@@ -65,7 +77,8 @@ export function KpiCard({
       </div>
       <div
         className={cn(
-          "mt-2.5 flex items-center gap-1.5 text-xs",
+          "flex items-center gap-1.5",
+          compact ? "mt-1 text-[10.5px]" : "mt-2.5 text-xs",
           blue ? "text-white/75" : "text-muted",
         )}
       >
@@ -108,16 +121,17 @@ export function Card({
   );
 }
 
-function GoButton({ blue }: { blue?: boolean }) {
+function GoButton({ blue, compact }: { blue?: boolean; compact?: boolean }) {
   return (
     <button
       type="button"
       className={cn(
-        "absolute right-3.5 top-3.5 flex h-8 w-8 items-center justify-center rounded-full transition-transform hover:translate-x-0.5 hover:-translate-y-0.5",
+        "absolute flex items-center justify-center rounded-full transition-transform hover:translate-x-0.5 hover:-translate-y-0.5",
+        compact ? "right-2 top-2 h-6 w-6" : "right-3.5 top-3.5 h-8 w-8",
         blue ? "bg-white text-blue-600" : "bg-ink text-white",
       )}
     >
-      <ArrowUpRight size={14} strokeWidth={2.2} />
+      <ArrowUpRight size={compact ? 12 : 14} strokeWidth={2.2} />
     </button>
   );
 }

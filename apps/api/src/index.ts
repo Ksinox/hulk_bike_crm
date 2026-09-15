@@ -18,6 +18,7 @@ import { clientDocumentsRoutes } from "./routes/client-documents.js";
 import { scooterDocumentsRoutes } from "./routes/scooter-documents.js";
 import { authRoutes } from "./routes/auth.js";
 import { usersRoutes } from "./routes/users.js";
+import { approvalsRoutes } from "./routes/approvals.js";
 import { scooterModelsRoutes } from "./routes/scooter-models.js";
 import { equipmentRoutes } from "./routes/equipment.js";
 import { scooterMaintenanceRoutes } from "./routes/scooter-maintenance.js";
@@ -31,6 +32,7 @@ import { publicRoutes } from "./routes/public.js";
 import { publicApplicationsRoutes } from "./routes/public-applications.js";
 import { clientApplicationsRoutes } from "./routes/client-applications.js";
 import authPlugin, { requireAuth } from "./auth/plugin.js";
+import { registerRedaction } from "./auth/redact.js";
 import { ensureBucket } from "./storage/index.js";
 import rateLimit from "@fastify/rate-limit";
 import bcrypt from "bcryptjs";
@@ -179,6 +181,8 @@ async function bootstrap() {
   // Файлы (стрим из MinIO) — тоже защищаем.
   await app.register(async (protectedApp) => {
     protectedApp.addHook("preHandler", requireAuth);
+    // 14.09: нет права — нет показателя. Закрытые поля не уходят с сервера.
+    registerRedaction(protectedApp);
     await protectedApp.register(clientsRoutes, { prefix: "/api/clients" });
     await protectedApp.register(scootersRoutes, { prefix: "/api/scooters" });
     await protectedApp.register(rentalsRoutes, { prefix: "/api/rentals" });
@@ -200,6 +204,28 @@ async function bootstrap() {
     await protectedApp.register(filesRoutes, { prefix: "/api/files" });
     // Сотрудники (защита на уровне конкретных роутов — только director/creator)
     await protectedApp.register(usersRoutes, { prefix: "/api/users" });
+    // Пункт 1: ключ директора — подтверждение защищённых действий
+    await protectedApp.register(approvalsRoutes, { prefix: "/api/approvals" });
+    // Правки 2.0: инвесторы партнёрской техники (п.6-8)
+    const { investorsRoutes } = await import("./routes/investors.js");
+    await protectedApp.register(investorsRoutes, { prefix: "/api/investors" });
+    // Блок «Продажи» (31.08): сделки, менеджеры, план, договор купли-продажи
+    const { salesRoutes } = await import("./routes/sales.js");
+    await protectedApp.register(salesRoutes, { prefix: "/api/sales" });
+    // Блок «Аренда с выкупом» (01.09): сделки, график платежей, договор
+    const { buyoutRoutes } = await import("./routes/buyout.js");
+    await protectedApp.register(buyoutRoutes, { prefix: "/api/buyout" });
+
+    // Напоминания: платежи по выкупу и дни выплат инвесторам (01.09).
+    const { remindersRoutes } = await import("./routes/reminders.js");
+    await protectedApp.register(remindersRoutes, { prefix: "/api/reminders" });
+    const { analyticsRoutes } = await import("./routes/analytics.js");
+    await protectedApp.register(analyticsRoutes, { prefix: "/api/analytics" });
+
+    const { serviceOrderRoutes } = await import("./routes/service-orders.js");
+    await protectedApp.register(serviceOrderRoutes, {
+      prefix: "/api/service-orders",
+    });
     // Каталоги
     await protectedApp.register(scooterModelsRoutes, { prefix: "/api/scooter-models" });
     await protectedApp.register(equipmentRoutes, { prefix: "/api/equipment" });

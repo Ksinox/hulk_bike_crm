@@ -7,11 +7,13 @@ import {
   ArrowUpNarrowWide,
   Check,
   Droplet,
+  HandCoins,
   HelpCircle,
   Key,
   Layers,
   LayoutGrid,
   ListFilter,
+  LogOut,
   PackageOpen,
   Plus,
   Rows3,
@@ -21,6 +23,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useMe } from "@/lib/api/auth";
+import { useIsCompactScreen } from "@/lib/useIsMobile";
 import {
   makeViewMode,
   runViewModeTransition,
@@ -36,6 +39,8 @@ import {
   type ScooterDisplayStatus,
 } from "@/lib/mock/fleet";
 import { useFleetScooters } from "./fleetStore";
+import { useBuyoutDeals, type BuyoutDeal } from "@/lib/api/buyout";
+import { buyoutDealByScooter } from "@/lib/buyoutStock";
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
 import {
@@ -44,6 +49,7 @@ import {
   normalizeQuery,
 } from "@/lib/search";
 import { useRentals } from "@/pages/rentals/rentalsStore";
+import { ScooterName } from "@/components/ScooterName";
 import { ScooterCard } from "./ScooterCard";
 import { AddScooterModal } from "./AddScooterModal";
 
@@ -52,13 +58,31 @@ const TODAY = new Date();
 
 type StatusTab =
   | "all"
+  /** Категория «Выкуп», техника ещё не у клиента (06.09, п.13). */
+  | "buyout_free"
   | "rental_pool"
   | "rented"
   | "repair"
   | "dtp"
   | "disassembly"
   | "for_sale"
-  | "ready";
+  | "ready"
+  /** Передан клиенту в выкуп — техника наша, пока сумма не закрыта. */
+  | "buyout"
+  /** Продан: права перешли покупателю, в парке не числится. */
+  | "gone";
+
+/**
+ * Техника выбыла из парка окончательно — только продажа.
+ *
+ * Правка заказчика 25.08: выкуп сюда НЕ входит. Скутер в выкупе остаётся
+ * нашим: клиент платит по графику, перестанет — технику заберём. Права
+ * переходят к нему только когда сумма закрыта, тогда статус станет
+ * «Продан» и единица выйдет из парка.
+ */
+function isGone(status: ScooterDisplayStatus): boolean {
+  return status === "sold";
+}
 
 // v0.3.7: пагинация удалена в пользу одного скролла.
 
@@ -88,7 +112,42 @@ type RentalInfo = {
   isLate: boolean;
 };
 
-export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * Правки 2.0, п.10: к какому подразделению относится статус техники.
+ * Изоляция: в режиме аренды не видно продажу и наоборот.
+ */
+export type FleetMode = "rental" | "sale" | "buyout" | "unassigned";
+
+const MODE_OF: Record<ScooterDisplayStatus, FleetMode> = {
+  rented: "rental",
+  rental_pool: "rental",
+  repair: "rental",
+  dtp: "rental",
+  disassembly: "rental",
+  for_sale: "sale",
+  sold: "sale",
+  buyout: "buyout",
+  ready: "unassigned",
+};
+
+const MODE_TITLE: Record<FleetMode, string> = {
+  rental: "Парк аренды",
+  sale: "На продажу",
+  buyout: "Выкуп",
+  unassigned: "Не распределены",
+};
+
+const MODE_HINT: Record<FleetMode, string> = {
+  rental: "техника, которая сдаётся клиентам",
+  sale: "витрина и проданные единицы",
+  buyout: "у клиентов по договору и техника, готовая к выкупу",
+  unassigned: "заведены, но подразделение ещё не выбрано",
+};
+
+export function Fleet({
+  embedded = false,
+  mode = "rental",
+}: { embedded?: boolean; mode?: FleetMode } = {}) {
   const rentals = useRentals();
   const FLEET = useFleetScooters();
   const { data: apiClients } = useApiClients();
@@ -115,6 +174,11 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
 
   // v0.8.22: режим «Список/Плитки» (пер-пользователь, морфинг как в Арендах).
   const { data: me } = useMe();
+  /**
+   * Правка 28.08: обзор парка ужимается не только при открытом дровере, но
+   * и на маленьких ноутбуках — там он занимал слишком много рабочего места.
+   */
+  const compactScreen = useIsCompactScreen();
   const fleetView = useMemo(() => makeViewMode("fleet", "list"), []);
   const [viewMode, setViewMode] = useState<ViewMode>(() => fleetView.load(undefined));
   useEffect(() => {
@@ -158,18 +222,39 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
     return map;
   }, [rentals, apiClients]);
 
-  /** Итоговый displayStatus по каждому скутеру */
+  /**
+   * Итоговый displayStatus по каждому скутеру.
+   *
+   * Правка 31.08 (заказчик): партнёрская техника в НАШЕМ парке не
+   * показывается вообще — у неё свой раздел «Партнёрка». Раньше она
+   * попадала в списки «Скутеров» с бейджем «Партнёрская», и парк
+   * выглядел больше, чем он есть.
+   */
+  // Сделки выкупа: по ним видно, у клиента техника или ещё свободна (06.09).
+  const { data: buyoutData } = useBuyoutDeals();
+  const buyoutByScooter = useMemo(
+    () => buyoutDealByScooter(buyoutData?.items ?? []),
+    [buyoutData],
+  );
+
   const rows = useMemo(() => {
-    return FLEET.map((s) => {
+    return FLEET.filter((s) => !s.isPartner).map((s) => {
       const rental = rentalByScooter.get(s.name);
+      const buyout = buyoutByScooter.get(s.id) ?? null;
       // Если у скутера есть активная/просроченная/возвратная аренда —
       // показываем «В аренде» независимо от базового статуса (только
       // если базовый — rental_pool, т.е. скутер официально в пуле аренды).
       const status: ScooterDisplayStatus =
         rental && s.baseStatus === "rental_pool" ? "rented" : s.baseStatus;
-      return { scooter: s, status, rental };
+      return { scooter: s, status, rental, buyout };
     });
-  }, [FLEET, rentalByScooter]);
+  }, [FLEET, rentalByScooter, buyoutByScooter]);
+
+  // Изоляция режимов (п.10): работаем только с техникой этого подразделения.
+  const modeRows = useMemo(
+    () => rows.filter((r) => MODE_OF[r.status] === mode),
+    [rows, mode],
+  );
 
   const counters = useMemo(() => {
     const c = {
@@ -180,9 +265,22 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       dtp: 0,
       disassembly: 0,
       for_sale: 0,
-      total: rows.length,
+      /** Передан в выкуп: техника наша, но у клиента (в аренду не идёт). */
+      buyout: 0,
+      /** Категория «Выкуп», но сделки ещё нет — можно оформлять (06.09). */
+      buyout_free: 0,
+      /** Продан: права перешли покупателю, техники у нас больше нет. */
+      gone: 0,
+      total: 0,
     };
-    for (const r of rows) {
+    for (const r of modeRows) {
+      if (isGone(r.status)) {
+        c.gone++;
+        // Проданные не входят в счётчик ПАРКА (аренда), но в режиме
+        // продажи это и есть предмет работы — там их считаем (п.10).
+        if (mode !== "sale") continue;
+      }
+      c.total++;
       if (r.status === "ready") c.ready++;
       else if (r.status === "rental_pool") c.rental_pool++;
       else if (r.status === "rented") c.rented++;
@@ -190,9 +288,13 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       else if (r.status === "dtp") c.dtp++;
       else if (r.status === "disassembly") c.disassembly++;
       else if (r.status === "for_sale") c.for_sale++;
+      else if (r.status === "buyout") {
+        if (r.buyout) c.buyout++;
+        else c.buyout_free++;
+      }
     }
     return c;
-  }, [rows]);
+  }, [modeRows, mode]);
 
   // Для каждого выбранного modelId вычисляем legacy enum (jog/gear/honda/tank)
   // — нужно для фильтрации старых скутеров, у которых modelId ещё не проставлен.
@@ -212,9 +314,21 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
 
   const filtered = useMemo(() => {
     const q = normalizeQuery(query);
-    return rows
+    return modeRows
       .filter((r) => {
-        if (tab !== "all" && r.status !== tab) return false;
+        // Проданная техника не показывается в парке аренды — её физически
+        // нет. Но в режиме «Продажа» (п.10) она и есть предмет работы,
+        // поэтому там видна наравне с витриной.
+        if (tab === "gone") {
+          if (!isGone(r.status)) return false;
+        } else {
+          if (isGone(r.status) && mode !== "sale") return false;
+          if (tab === "buyout_free") {
+            if (r.status !== "buyout" || r.buyout) return false;
+          } else if (tab === "buyout") {
+            if (r.status !== "buyout" || !r.buyout) return false;
+          } else if (tab !== "all" && r.status !== tab) return false;
+        }
         // Фильтр по моделям: пропускаем если совпал FK (modelId) ИЛИ
         // legacy-enum (model). У старых скутеров modelId=null — они
         // должны находиться по enum.
@@ -225,9 +339,16 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           if (!byId && !byEnum) return false;
         }
         if (q.text) {
+          // Пункт 18: ищем и по номеру двигателя, раме, ID (4 цифры рамы)
+          // и месту в аренде — «по любым цифрам в данных скутера».
           const ok =
             matchScooterName(r.scooter.name, q) ||
-            matchText(r.scooter.vin ?? undefined, q);
+            matchText(r.scooter.vin ?? undefined, q) ||
+            matchText(r.scooter.engineNo ?? undefined, q) ||
+            matchText(r.scooter.frameNumber ?? undefined, q) ||
+            matchText(r.scooter.uid ?? undefined, q) ||
+            (r.scooter.rentalSlot != null &&
+              String(r.scooter.rentalSlot) === q.text);
           if (!ok) return false;
         }
         return true;
@@ -256,32 +377,24 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
     query,
     sortBy,
     sortDir,
+    modeRows,
+    mode,
   ]);
 
-  // ============ ДЕТАЛЬНАЯ КАРТОЧКА ============
-  if (selectedId != null) {
-    const sel = rows.find((r) => r.scooter.id === selectedId);
-    if (sel) {
-      return (
-        <ScooterCard
-          scooter={sel.scooter}
-          status={sel.status}
-          onBack={() => {
-            if (backTo?.route === "rentals") {
-              navigate({ route: "rentals", rentalId: backTo.rentalId });
-              setBackTo(null);
-            }
-            setSelectedId(null);
-          }}
-          backLabel={
-            backTo?.route === "rentals" && backTo.rentalId
-              ? `к аренде #${String(backTo.rentalId).padStart(4, "0")}`
-              : undefined
-          }
-        />
-      );
+  // ============ ДЕТАЛЬНАЯ КАРТОЧКА (правка 27.08: боковой ДРОВЕР) ============
+  // Раньше карточка заменяла страницу целиком. Теперь — философия карточки
+  // аренды: список сужается, справа выезжает компактная колонка-дровер.
+  const sel =
+    selectedId != null
+      ? rows.find((r) => r.scooter.id === selectedId) ?? null
+      : null;
+  const closeCard = () => {
+    if (backTo?.route === "rentals") {
+      navigate({ route: "rentals", rentalId: backTo.rentalId });
+      setBackTo(null);
     }
-  }
+    setSelectedId(null);
+  };
 
   const Root: React.ElementType = embedded ? "div" : "main";
 
@@ -296,98 +409,20 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
         </header>
       )}
 
-      {/* =========== KPI =========== */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-        <KpiTile
-          label="Всего скутеров"
-          value={counters.total}
-          hint="в парке (кроме архива)"
-          icon={Layers}
-          accent="slate"
-          active={tab === "all"}
-          onClick={() => {
-            setTab("all");
-          }}
-        />
-        <KpiTile
-          label="Готов к аренде"
-          value={counters.rental_pool}
-          hint="свободны, можно выдавать"
-          icon={ShoppingBag}
-          accent="green"
-          active={tab === "rental_pool"}
-          onClick={() => {
-            setTab("rental_pool");
-          }}
-        />
-        <KpiTile
-          label="Активная аренда"
-          value={counters.rented}
-          hint="действующие договоры"
-          icon={Key}
-          accent="blue"
-          active={tab === "rented"}
-          onClick={() => {
-            setTab("rented");
-          }}
-        />
-        <KpiTile
-          label="Не распределены"
-          value={counters.ready}
-          hint="нужно решить куда"
-          icon={HelpCircle}
-          accent="slate"
-          active={tab === "ready"}
-          onClick={() => {
-            setTab("ready");
-          }}
-        />
-        <KpiTile
-          label="На ремонте"
-          value={counters.repair}
-          hint="у мастера"
-          icon={Wrench}
-          accent="red"
-          active={tab === "repair"}
-          onClick={() => {
-            setTab("repair");
-          }}
-        />
-        <KpiTile
-          label="ДТП"
-          value={counters.dtp}
-          hint="после аварии"
-          icon={AlertTriangle}
-          accent="rose"
-          active={tab === "dtp"}
-          onClick={() => {
-            setTab("dtp");
-          }}
-        />
-        <KpiTile
-          label="На разборку"
-          value={counters.disassembly}
-          hint="идут на запчасти"
-          icon={PackageOpen}
-          accent="slate"
-          active={tab === "disassembly"}
-          onClick={() => {
-            setTab("disassembly");
-          }}
-        />
-        <KpiTile
-          label="Продаются"
-          value={counters.for_sale}
-          hint="выставлены на витрину"
-          icon={Tag}
-          accent="violet"
-          active={tab === "for_sale"}
-          onClick={() => {
-            setTab("for_sale");
-          }}
-        />
-      </div>
+      {/* =========== Обзор парка =========== */}
+      {/* Правка 28.08: статистика парка — НАД split-зоной, на всю ширину.
+          Дровер карточки встаёт вровень со списком, а не с обзором: видно,
+          что открылась карточка именно выбранной строки. */}
+      <ParkOverview
+        counters={counters}
+        tab={tab}
+        onTab={setTab}
+        mode={mode}
+        compact={sel != null || compactScreen}
+      />
 
+      <div className="flex min-w-0 items-start gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
       {/* =========== Поиск + фильтр моделей + добавить =========== */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-[240px] flex-1">
@@ -401,7 +436,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
             onChange={(e) => {
               setQuery(e.target.value);
             }}
-            placeholder="Имя (Jog #42) или VIN"
+            placeholder="Имя, VIN, № двигателя, рама, ID…"
             className="h-9 w-full rounded-full bg-surface pl-9 pr-12 text-[13px] text-ink shadow-card-sm outline-none placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
           />
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -477,12 +512,16 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       ) : (
       /* =========== TABLE =========== */
-      <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-        <div className="grid grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto] gap-4 border-b border-border px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+      <div className="@container overflow-hidden rounded-2xl bg-surface shadow-card-sm">
+        {/* Правка 28.08: колонки складываются по ширине КОНТЕЙНЕРА — при
+            открытом дровере список узкий, и «Пробег»/«Дата возврата»/
+            «Клиент» уходили в кашу из переносов. Теперь они скрываются по
+            приоритету, а важное (имя, статус) остаётся читаемым. */}
+        <div className={cn(FLEET_GRID, "gap-4 border-b border-border px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-2")}>
           <span>Имя и модель</span>
           <span>Статус</span>
-          <span>Текущий клиент</span>
-          <span>Дата возврата</span>
+          <span className={FLEET_COL.client}>Текущий клиент</span>
+          <span className={FLEET_COL.date}>Дата возврата</span>
           <button
             type="button"
             onClick={() => {
@@ -495,6 +534,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
             }}
             className={cn(
               "flex items-center justify-end gap-1 text-right transition-colors hover:text-ink",
+              FLEET_COL.mileage,
               sortBy === "mileage" && "text-blue-700",
             )}
             title="Сортировать по пробегу"
@@ -504,7 +544,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
               <span className="text-[10px]">{sortDir === "desc" ? "↓" : "↑"}</span>
             )}
           </button>
-          <span />
+          <span className={FLEET_COL.action} />
         </div>
 
         {filtered.length === 0 && (
@@ -519,7 +559,10 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           <FleetRow
             key={row.scooter.id}
             row={row}
-            onOpen={() => setSelectedId(row.scooter.id)}
+            active={row.scooter.id === selectedId}
+            onOpen={() =>
+              setSelectedId(selectedId === row.scooter.id ? null : row.scooter.id)
+            }
           />
         ))}
 
@@ -529,6 +572,34 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
         )}
       </div>
+      )}
+      </div>
+
+      </div>
+
+      {/* Дровер карточки скутера (десктоп): sticky-колонка со своей
+          прокруткой — как карточка аренды на странице «Аренды». */}
+      {sel && (
+        <div className="drawer-slide-in sticky top-4 hidden h-[calc(100dvh-32px)] w-[480px] xl:w-[560px] 2xl:w-[620px] shrink-0 flex-col overflow-hidden rounded-2xl bg-surface shadow-card lg:flex">
+          <ScooterCard
+            drawerChrome
+            scooter={sel.scooter}
+            status={sel.status}
+            onBack={closeCard}
+          />
+        </div>
+      )}
+
+      {/* Узкие экраны: та же карточка полноэкранно. */}
+      {sel && (
+        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface animate-slide-in-right lg:hidden">
+          <ScooterCard
+            drawerChrome
+            scooter={sel.scooter}
+            status={sel.status}
+            onBack={closeCard}
+          />
+        </div>
       )}
       </div>
 
@@ -558,18 +629,40 @@ function OilBadge({ state }: { state: "overdue" | "warn" }) {
   );
 }
 
+/**
+ * Сетка списка техники и приоритеты колонок при узком контейнере
+ * (открыт дровер карточки). Порядок складывания: пробег → дата возврата →
+ * клиент → кнопка «Открыть» (строка и так кликабельна целиком).
+ */
+const FLEET_GRID =
+  "grid grid-cols-[1fr_auto] @[560px]:grid-cols-[2fr_1fr_1.5fr] @[720px]:grid-cols-[2fr_1fr_1.5fr_1.3fr] @[880px]:grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr] @[980px]:grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto]";
+const FLEET_COL = {
+  client: "hidden @[560px]:block",
+  date: "hidden @[720px]:block",
+  mileage: "hidden @[880px]:flex",
+  action: "hidden @[980px]:block",
+};
+
 function FleetRow({
   row,
   onOpen,
+  active = false,
 }: {
   row: {
     scooter: FleetScooter;
     status: ScooterDisplayStatus;
     rental?: RentalInfo;
+    buyout?: BuyoutDeal | null;
   };
   onOpen: () => void;
+  /**
+   * Правка 28.08: строка открытой в дровере техники подсвечена — иначе
+   * непонятно, чью карточку сейчас смотришь (как в «Арендах»).
+   */
+  active?: boolean;
 }) {
-  const { scooter, status, rental } = row;
+  const { scooter, status, rental, buyout } = row;
+  const wasRented = scooter.rentalSlot == null && scooter.exRentalSlot != null;
   // Бейдж масла показываем только для катающих скутеров (парк/в аренде).
   const oilState =
     status === "rental_pool" || status === "rented" ? oilFlag(scooter) : null;
@@ -581,29 +674,50 @@ function FleetRow({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onOpen();
       }}
-      className="grid cursor-pointer grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto] items-center gap-4 border-b border-border/60 px-5 py-3.5 transition-colors last:border-b-0 hover:bg-surface-soft/40"
+      className={cn(
+        FLEET_GRID,
+        "relative cursor-pointer items-center gap-4 border-b border-border/60 px-5 py-3.5 transition-colors last:border-b-0",
+        active
+          ? "bg-blue-50 before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-blue-600"
+          : "hover:bg-surface-soft/40",
+      )}
     >
       {/* name + model */}
       <div className="flex min-w-0 items-center gap-3">
         <ScooterAvatar model={scooter.model} />
         <div className="min-w-0">
-          <div className="truncate text-[14px] font-bold text-ink">
-            {scooter.name}
-          </div>
+          <ScooterName
+            name={scooter.name}
+            number={scooter.rentalSlot}
+            exNumber={scooter.exRentalSlot}
+            className="text-[14px] font-bold text-ink"
+          />
           <div className="truncate text-[11px] uppercase tracking-wider text-muted-2">
             {MODEL_LABEL[scooter.model]}
           </div>
         </div>
       </div>
 
-      {/* status */}
-      <div>
+      {/* status (+ «был в аренде» — заказчик 06.09, п.5: метка нужна в списке) */}
+      <div className="flex flex-col items-start gap-1 whitespace-nowrap">
         <StatusPill status={status} />
+        {wasRented && <ExRentalPill />}
       </div>
 
       {/* client */}
-      <div className="min-w-0">
-        {rental ? (
+      <div className={cn("min-w-0", FLEET_COL.client)}>
+        {buyout ? (
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple-soft text-[11px] font-bold text-purple-ink">
+              {initials(buyout.clientName ?? "—")}
+            </div>
+            <span className="truncate text-[13px] font-semibold text-ink">
+              {buyout.clientName ?? "клиент"}
+            </span>
+          </div>
+        ) : status === "buyout" ? (
+          <span className="text-[13px] italic text-green-ink">Доступен для выкупа</span>
+        ) : rental ? (
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[11px] font-bold text-blue-700">
               {initials(rental.clientName)}
@@ -620,7 +734,7 @@ function FleetRow({
       </div>
 
       {/* return date */}
-      <div className="tabular-nums">
+      <div className={cn("tabular-nums", FLEET_COL.date)}>
         {rental ? (
           <span
             className={cn(
@@ -641,7 +755,7 @@ function FleetRow({
       </div>
 
       {/* mileage + флаг масла */}
-      <div className="text-right">
+      <div className={cn("text-right", FLEET_COL.mileage, "@[880px]:block")}>
         <div className="text-[13px] font-semibold tabular-nums text-ink">
           {fmt(scooter.mileage)} км
         </div>
@@ -653,7 +767,7 @@ function FleetRow({
       </div>
 
       {/* action */}
-      <div>
+      <div className={FLEET_COL.action}>
         <button
           type="button"
           title="Карточка скутера (скоро)"
@@ -675,12 +789,14 @@ function FleetTile({
     scooter: FleetScooter;
     status: ScooterDisplayStatus;
     rental?: RentalInfo;
+    buyout?: BuyoutDeal | null;
   };
   onOpen: () => void;
 }) {
-  const { scooter, status, rental } = row;
+  const { scooter, status, rental, buyout } = row;
   const oilState =
     status === "rental_pool" || status === "rented" ? oilFlag(scooter) : null;
+  const wasRented = scooter.rentalSlot == null && scooter.exRentalSlot != null;
   return (
     <div
       onClick={onOpen}
@@ -694,9 +810,12 @@ function FleetTile({
       <div className="flex items-center gap-2">
         <ScooterAvatar model={scooter.model} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] font-bold text-ink">
-            {scooter.name}
-          </div>
+          <ScooterName
+            name={scooter.name}
+            number={scooter.rentalSlot}
+            exNumber={scooter.exRentalSlot}
+            className="text-[14px] font-bold text-ink"
+          />
           <div className="truncate text-[10px] uppercase tracking-wider text-muted-2">
             {MODEL_LABEL[scooter.model]}
           </div>
@@ -704,15 +823,20 @@ function FleetTile({
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <StatusPill status={status} />
+        {wasRented && <ExRentalPill />}
         {oilState && <OilBadge state={oilState} />}
       </div>
       <div className="flex items-center justify-between gap-2 text-[11px]">
         <span className="min-w-0 truncate text-muted-2">
-          {rental
-            ? rental.clientName
-            : status === "ready"
-              ? "Свободен"
-              : "—"}
+          {buyout
+            ? (buyout.clientName ?? "у клиента")
+            : status === "buyout"
+              ? "Доступен для выкупа"
+              : rental
+                ? rental.clientName
+                : status === "ready"
+                  ? "Свободен"
+                  : "—"}
         </span>
         <span className="shrink-0 tabular-nums font-semibold text-ink-2">
           {fmt(scooter.mileage)} км
@@ -764,6 +888,15 @@ function ScooterAvatar({ model }: { model: ScooterModel }) {
   );
 }
 
+/** Заказчик 06.09 (п.5): «был в аренде» видно в общем списке, не только в карточке. */
+function ExRentalPill() {
+  return (
+    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+      Был в аренде
+    </span>
+  );
+}
+
 function StatusPill({ status }: { status: ScooterDisplayStatus }) {
   // Цвета должны соответствовать KPI-тайлам сверху страницы:
   //   Готов к аренде (rental_pool) — green
@@ -801,76 +934,530 @@ function StatusPill({ status }: { status: ScooterDisplayStatus }) {
   );
 }
 
-function KpiTile({
+/**
+ * Обзор парка. Заказчик 24.08: «очень-очень сжатые карточки, взгляд
+ * теряется» — поэтому вместо девяти равных плиток здесь иерархия:
+ * слева главная карта (сколько техники и как она загружена), справа —
+ * компактные строки по группам смысла. Всё кликабельно — это фильтры.
+ */
+function ParkOverview({
+  counters,
+  tab,
+  onTab,
+  mode,
+  compact = false,
+}: {
+  /**
+   * Правка 28.08: при открытом дровере обзор ужимается — он справочный,
+   * а работа идёт в списке и карточке. Крупные цифры меньше, отступы
+   * плотнее, полоса загрузки тоньше.
+   */
+  compact?: boolean;
+  /** Правки 2.0, п.10: режим подразделения — от него зависит содержимое. */
+  mode: FleetMode;
+  counters: {
+    ready: number;
+    rental_pool: number;
+    rented: number;
+    repair: number;
+    dtp: number;
+    disassembly: number;
+    for_sale: number;
+    buyout: number;
+    buyout_free: number;
+    gone: number;
+    total: number;
+  };
+  tab: StatusTab;
+  onTab: (t: StatusTab) => void;
+}) {
+  // Загрузка = занято / (занято + свободно). Ремонт, ДТП и «не распределены»
+  // к выдаче недоступны, поэтому в знаменатель не идут — иначе процент
+  // занижается и не отражает реальную доступность парка.
+  const rentable = counters.rented + counters.rental_pool;
+  const loadPct = rentable > 0 ? Math.round((counters.rented / rentable) * 100) : 0;
+  const isRental = mode === "rental";
+
+  /** Метрики левой карты — свои для каждого режима (п.10). */
+  const metrics: {
+    key: StatusTab;
+    label: string;
+    hint: string;
+    extra?: string;
+    value: number;
+    icon: typeof Key;
+    tone: "blue" | "green";
+  }[] = isRental
+    ? [
+        {
+          key: "rented",
+          label: "В аренде",
+          hint: "у клиентов сейчас",
+          extra:
+            counters.total > 0
+              ? `${Math.round((counters.rented / counters.total) * 100)} % парка`
+              : undefined,
+          value: counters.rented,
+          icon: Key,
+          tone: "blue",
+        },
+        {
+          key: "rental_pool",
+          label: "Свободны",
+          hint: "можно выдавать",
+          extra:
+            counters.rental_pool > 0
+              ? "готовы к выдаче прямо сейчас"
+              : "выдавать нечего",
+          value: counters.rental_pool,
+          icon: ShoppingBag,
+          tone: "green",
+        },
+      ]
+    : mode === "sale"
+      ? [
+          {
+            key: "for_sale",
+            label: "На витрине",
+            hint: "ждут покупателя",
+            extra: counters.for_sale > 0 ? "выставлены на продажу" : "витрина пуста",
+            value: counters.for_sale,
+            icon: Tag,
+            tone: "blue",
+          },
+          {
+            key: "gone",
+            label: "Проданы",
+            hint: "права перешли покупателю",
+            extra: "остаются в CRM ради истории",
+            value: counters.gone,
+            icon: LogOut,
+            tone: "green",
+          },
+        ]
+      : mode === "buyout"
+        ? [
+            {
+              key: "buyout",
+              label: "У клиентов",
+              hint: "по договору выкупа",
+              extra: "пока платят — техника наша",
+              value: counters.buyout,
+              icon: HandCoins,
+              tone: "blue",
+            },
+            {
+              key: "buyout_free",
+              label: "Доступны для выкупа",
+              hint: "сделки ещё нет",
+              extra: "их предлагает мастер выкупа",
+              value: counters.buyout_free,
+              icon: Tag,
+              tone: "green",
+            },
+          ]
+        : [
+            {
+              key: "ready",
+              label: "Ждут решения",
+              hint: "подразделение не выбрано",
+              extra: "определите: аренда, продажа или выкуп",
+              value: counters.ready,
+              icon: HelpCircle,
+              tone: "blue",
+            },
+          ];
+
+  /** Правая панель — только статусы этого режима. */
+  const groups: {
+    title: string;
+    badge?: number;
+    rows: {
+      key: StatusTab;
+      label: string;
+      hint: string;
+      value: number;
+      icon: typeof Key;
+      tone: "amber" | "red" | "violet" | "slate";
+    }[];
+  }[] = isRental
+    ? [
+        {
+          title: "Требуют решения",
+          badge: counters.repair + counters.dtp,
+          rows: [
+            {
+              key: "repair",
+              label: "На ремонте",
+              hint: "у мастера",
+              value: counters.repair,
+              icon: Wrench,
+              tone: "red",
+            },
+            {
+              key: "dtp",
+              label: "ДТП",
+              hint: "после аварии",
+              value: counters.dtp,
+              icon: AlertTriangle,
+              tone: "red",
+            },
+          ],
+        },
+        {
+          title: "Не катают",
+          rows: [
+            {
+              key: "disassembly",
+              label: "На разборку",
+              hint: "идут на запчасти",
+              value: counters.disassembly,
+              icon: PackageOpen,
+              tone: "slate",
+            },
+          ],
+        },
+      ]
+    : [];
+
+  return (
+    <section
+      className={cn(
+        "@container overflow-hidden rounded-[22px] border border-border bg-surface shadow-card-sm",
+        compact ? "px-4 py-3" : "px-5 py-4 sm:px-6 sm:py-5",
+      )}
+    >
+      <div
+        className={cn(
+          "grid gap-3",
+          groups.length > 0
+            ? "@[880px]:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"
+            : "grid-cols-1",
+        )}
+      >
+        {/* Левая часть: объём режима + его метрики */}
+        <div className="flex flex-col">
+          <div className="flex items-start justify-between gap-4">
+            <button
+              type="button"
+              onClick={() => onTab("all")}
+              className="text-left"
+              title="Показать всю технику режима"
+            >
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                {MODE_TITLE[mode]}
+              </div>
+              <div className="mt-1.5 flex items-baseline gap-2">
+                <span
+                  className={cn(
+                    "font-display font-extrabold leading-none tabular-nums",
+                    compact ? "text-[30px]" : "text-[46px]",
+                    tab === "all" ? "text-blue-700" : "text-ink",
+                  )}
+                >
+                  {counters.total}
+                </span>
+                <span className="max-w-[280px] text-[13px] text-muted">
+                  {counters.total === 1 ? "единица" : "единиц"} ·{" "}
+                  {MODE_HINT[mode]}
+                </span>
+              </div>
+            </button>
+            <div
+              className={cn(
+                "flex shrink-0 items-center justify-center rounded-full bg-ink text-white",
+                compact ? "h-8 w-8" : "h-11 w-11",
+              )}
+            >
+              <Layers size={compact ? 15 : 20} />
+            </div>
+          </div>
+
+          {/* Полоса загрузки — только для аренды */}
+          {isRental && (
+            <div className={compact ? "mt-3" : "mt-5"}>
+              <div className="flex items-baseline justify-between text-[12px]">
+                <span className="font-bold text-ink">Загрузка {loadPct}%</span>
+                <span className="text-muted-2">
+                  {rentable > 0
+                    ? `${counters.rented} из ${rentable} доступных заняты`
+                    : "нет техники, доступной к выдаче"}
+                </span>
+              </div>
+              <div
+                className={cn(
+                  "mt-2 flex overflow-hidden rounded-full bg-surface-soft",
+                  compact ? "h-1.5" : "h-2.5",
+                )}
+              >
+                <span
+                  className="bg-blue-600 transition-all"
+                  style={{
+                    width: `${rentable > 0 ? (counters.rented / rentable) * 100 : 0}%`,
+                  }}
+                />
+                <span
+                  className="bg-green-ink/45 transition-all"
+                  style={{
+                    width: `${rentable > 0 ? (counters.rental_pool / rentable) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Контейнер-запрос: при открытом дровере колонка узкая, и две
+              колонки метрик резали подписи («В аре…»). Ширина меряется по
+              КОНТЕЙНЕРУ, не по вьюпорту. */}
+          <div
+            className={cn(
+              "grid flex-1 gap-2.5",
+              compact ? "mt-2.5" : "mt-4",
+              metrics.length > 1 ? "@[400px]:grid-cols-2" : "grid-cols-1",
+            )}
+          >
+            {metrics.map((m) => (
+              <ParkMetric
+                key={m.key}
+                label={m.label}
+                hint={m.hint}
+                extra={m.extra}
+                value={m.value}
+                icon={m.icon}
+                tone={m.tone}
+                active={tab === m.key}
+                onClick={() => onTab(m.key)}
+                compact={compact}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Правая часть: статусы режима (в аренде — проблемы и «не катают») */}
+        {groups.length > 0 && (
+          <div
+            className={cn(
+              "flex flex-col rounded-[20px] border border-border bg-surface shadow-card-sm",
+              compact ? "gap-2 p-3" : "gap-3 p-4",
+            )}
+          >
+            {groups.map((g, i) => (
+              <div key={g.title} className="contents">
+                {i > 0 && <div className="h-px bg-border" />}
+                <ParkGroup
+                  title={g.title}
+                  badge={g.badge}
+                  rows={g.rows}
+                  tab={tab}
+                  onTab={onTab}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** Крупная метрика внутри главной карты парка. */
+function ParkMetric({
   label,
-  value,
   hint,
+  extra,
+  value,
   icon: Icon,
-  accent,
+  tone,
   active,
   onClick,
+  compact = false,
 }: {
   label: string;
-  value: number;
   hint: string;
+  /** Третья строка — чтобы растянутая плитка не пустовала внутри. */
+  extra?: string;
+  value: number;
   icon: typeof Key;
-  accent: "green" | "blue" | "red" | "rose" | "violet" | "slate";
+  tone: "blue" | "green";
   active: boolean;
   onClick: () => void;
+  /** Компактный режим (открыт дровер): плитка ниже, третья строка скрыта. */
+  compact?: boolean;
 }) {
-  const iconCls =
-    accent === "green"
-      ? "bg-green-soft text-green-ink"
-      : accent === "blue"
-        ? "bg-blue-50 text-blue-700"
-        : accent === "red"
-          ? "bg-red-soft text-red-ink"
-          : accent === "rose"
-            ? "bg-red text-white"
-            : accent === "slate"
-              ? "bg-ink text-white"
-              : "bg-purple-soft text-purple-ink";
-  const valueCls =
-    accent === "green"
-      ? "text-green-ink"
-      : accent === "blue"
-        ? "text-blue-700"
-        : accent === "red"
-          ? "text-red-ink"
-          : accent === "rose"
-            ? "text-red-ink"
-            : accent === "slate"
-              ? "text-ink"
-              : "text-purple-ink";
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "relative overflow-hidden rounded-[18px] border bg-surface px-5 py-4 text-left shadow-card-sm transition-all hover:-translate-y-0.5 hover:shadow-card",
+        "flex h-full items-center gap-3 rounded-[14px] border text-left transition-colors",
+        compact ? "px-3 py-2" : "px-3.5 py-3",
         active
-          ? "border-blue-600/40 ring-2 ring-blue-600/15"
-          : "border-border",
+          ? tone === "blue"
+            ? "border-blue-600/50 bg-blue-50"
+            : "border-green-ink/40 bg-green-soft"
+          : "border-border bg-surface-soft/50 hover:border-blue-600/30",
       )}
     >
-      <div className="flex items-start justify-between">
-        <div className={cn("flex h-10 w-10 items-center justify-center rounded-full", iconCls)}>
-          <Icon size={18} />
-        </div>
-      </div>
-      <div
+      <span
         className={cn(
-          "mt-4 font-display text-[36px] font-extrabold leading-none tabular-nums",
-          valueCls,
+          "flex shrink-0 items-center justify-center rounded-full",
+          compact ? "h-7 w-7" : "h-9 w-9",
+          tone === "blue" ? "bg-blue-50 text-blue-700" : "bg-green-soft text-green-ink",
+        )}
+      >
+        <Icon size={compact ? 14 : 17} />
+      </span>
+      <span className="min-w-0">
+        <span className="flex items-baseline gap-1.5">
+          <span
+            className={cn(
+              "font-display font-extrabold leading-none tabular-nums",
+              compact ? "text-[19px]" : "text-[24px]",
+              tone === "blue" ? "text-blue-700" : "text-green-ink",
+            )}
+          >
+            {value}
+          </span>
+          <span className="truncate text-[13px] font-bold text-ink">{label}</span>
+        </span>
+        {!compact && (
+          <span className="mt-0.5 block truncate text-[11px] text-muted-2">
+            {hint}
+          </span>
+        )}
+        {extra && !compact && (
+          <span className="mt-1.5 block truncate text-[11px] font-semibold text-muted">
+            {extra}
+          </span>
+        )}
+      </span>
+    </button>
+  );
+}
+
+/** Группа статусов справа: заголовок + компактные строки. */
+function ParkGroup({
+  title,
+  badge,
+  rows,
+  tab,
+  onTab,
+}: {
+  title: string;
+  /** Сумма по группе — показываем, только если есть что показывать. */
+  badge?: number;
+  rows: {
+    key: StatusTab;
+    label: string;
+    hint: string;
+    value: number;
+    icon: typeof Key;
+    tone: "amber" | "red" | "violet" | "slate";
+  }[];
+  tab: StatusTab;
+  onTab: (t: StatusTab) => void;
+}) {
+  // Правка заказчика 24.08: показываем ВСЕ статусы, включая нулевые —
+  // так панель всегда заполнена, и видно «ДТП 0», а не пустоту.
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+          {title}
+        </span>
+        {badge != null &&
+          (badge > 0 ? (
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 tabular-nums">
+              {badge}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-soft px-1.5 py-0.5 text-[10px] font-bold text-green-ink">
+              <Check size={10} strokeWidth={3} /> чисто
+            </span>
+          ))}
+      </div>
+      <div className="grid gap-1 @[860px]:grid-cols-2">
+        {rows.map((r) => (
+          <ParkRow
+            key={r.key}
+            label={r.label}
+            hint={r.hint}
+            value={r.value}
+            icon={r.icon}
+            tone={r.tone}
+            active={tab === r.key}
+            onClick={() => onTab(r.key)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Компактная строка статуса — иконка, число, подпись. */
+function ParkRow({
+  label,
+  hint,
+  value,
+  icon: Icon,
+  tone,
+  active,
+  onClick,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  icon: typeof Key;
+  tone: "amber" | "red" | "violet" | "slate";
+  active: boolean;
+  onClick: () => void;
+}) {
+  const zero = value === 0;
+  const iconCls = zero
+    ? "bg-surface-soft text-muted-2"
+    : tone === "amber"
+      ? "bg-amber-100 text-amber-900"
+      : tone === "red"
+        ? "bg-red-soft text-red-ink"
+        : tone === "violet"
+          ? "bg-purple-soft text-purple-ink"
+          : "bg-surface-soft text-ink-2";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-2.5 rounded-[12px] px-2.5 py-2 text-left transition-colors",
+        active ? "bg-blue-50 ring-1 ring-inset ring-blue-600/30" : "hover:bg-surface-soft/70",
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+          iconCls,
+        )}
+      >
+        <Icon size={14} />
+      </span>
+      <span
+        className={cn(
+          "w-7 shrink-0 text-right font-display text-[17px] font-extrabold leading-none tabular-nums",
+          zero ? "text-muted-2" : "text-ink",
         )}
       >
         {value}
-      </div>
-      <div className="mt-2 text-[13px] font-semibold text-ink">{label}</div>
-      <div className="text-[11px] text-muted-2">{hint}</div>
-      {active && (
-        <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-t-full bg-blue-600" />
-      )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span
+          className={cn(
+            "block truncate text-[12.5px] font-semibold",
+            zero ? "text-muted" : "text-ink",
+          )}
+        >
+          {label}
+        </span>
+        <span className="block truncate text-[11px] text-muted-2">{hint}</span>
+      </span>
     </button>
   );
 }

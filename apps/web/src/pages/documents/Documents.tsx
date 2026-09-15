@@ -1,22 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   Download,
   FileSignature,
   FileText,
-  Loader2,
   Pencil,
-  Printer,
   ScrollText,
   Tags,
   Wallet,
-  X,
   AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/toast";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { PriceListView } from "@/pages/rentals/PriceListView";
 import { DocumentPreviewModal } from "@/pages/rentals/DocumentPreviewModal";
+import { StaticDocPreview } from "@/components/StaticDocPreview";
+import { BuyoutContractPreview } from "@/pages/buyout/BuyoutContractPreview";
+import { useBuyoutDeals } from "@/lib/api/buyout";
 import { useApiRentals } from "@/lib/api/rentals";
 import { TemplateEditorPage } from "./editor/TemplateEditorPage";
 import { useApiDocumentTemplates } from "@/lib/api/document-templates";
@@ -101,7 +100,7 @@ type TemplateMeta = {
   badgeTone: "blue" | "amber" | "green" | "red" | "purple";
   icon: typeof FileText;
   /** Для открытия превью: rental-based, damage, statement, static. */
-  kind: "rental" | "damage" | "statement" | "static";
+  kind: "rental" | "damage" | "statement" | "static" | "buyout";
   /** Тип документа в API (только для rental-based). */
   rentalType?:
     | "contract"
@@ -192,6 +191,16 @@ const TEMPLATES: TemplateMeta[] = [
     rentalType: "purchase_deposit",
   },
   {
+    id: "contract_buyout",
+    title: "Договор аренды с правом выкупа",
+    subtitle:
+      "Договор по образцу заказчика (06.09): стороны, срок, выкупная стоимость, платёж в период, гарантийный взнос, график, права и обязанности, реквизиты и Приложение №1 — акт приёма-передачи. Печатается из карточки выкупа.",
+    badge: "Выкуп",
+    badgeTone: "purple",
+    icon: FileSignature,
+    kind: "buyout",
+  },
+  {
     id: "damage",
     title: "Акт о повреждениях",
     subtitle:
@@ -236,11 +245,14 @@ const EDITABLE_KEYS = new Set([
   "act_swap",
   "purchase_deposit",
   "damage",
+  "contract_buyout",
 ]);
 
 function TemplatesGallery() {
   const { data: rentals = [], isLoading } = useApiRentals();
   const { data: overrides = [] } = useApiDocumentTemplates();
+  const { data: buyoutData } = useBuyoutDeals();
+  const sampleBuyout = (buyoutData?.items ?? []).find((d) => d.scooterId && d.clientId) ?? null;
   const [previewing, setPreviewing] = useState<TemplateMeta | null>(null);
   /** Что открыто в редакторе. Раньше поддерживался ещё «custom» / «new»
    *  (произвольные шаблоны юзера), но мы их выпилили — заказчик ими не
@@ -292,8 +304,9 @@ function TemplatesGallery() {
         {TEMPLATES.map((t) => {
           const Icon = t.icon;
           const disabled =
-            (t.kind === "rental" || t.kind === "damage" || t.kind === "statement") &&
-            !sampleRental;
+            ((t.kind === "rental" || t.kind === "damage" || t.kind === "statement") &&
+              !sampleRental) ||
+            (t.kind === "buyout" && !sampleBuyout);
           const overridden = hasOverride(t.id);
           return (
             <div
@@ -319,7 +332,9 @@ function TemplatesGallery() {
                         ? "из ущерба"
                         : t.kind === "statement"
                           ? "из клиента"
-                          : "готовый текст"}
+                          : t.kind === "buyout"
+                            ? "из выкупа"
+                            : "готовый текст"}
                   </div>
                 </div>
                 {overridden && (
@@ -384,7 +399,14 @@ function TemplatesGallery() {
         />
       )}
 
-      {previewing && previewing.kind !== "static" && sampleRental && (
+      {previewing?.kind === "buyout" && sampleBuyout && (
+        <BuyoutContractPreview
+          dealId={sampleBuyout.id}
+          onClose={() => setPreviewing(null)}
+        />
+      )}
+
+      {previewing && previewing.kind !== "static" && previewing.kind !== "buyout" && sampleRental && (
         <TemplatePreview
           template={previewing}
           rentalId={sampleRental.id}
@@ -396,123 +418,6 @@ function TemplatesGallery() {
   );
 }
 
-/**
- * Превью статического документа (без серверных данных) — например инструктаж
- * при передаче скутера. Рендерим готовый HTML в iframe srcDoc (чистая печать),
- * даём «Печать» и «Скачать Word». Текст документа фиксированный.
- */
-function StaticDocPreview({
-  title,
-  html,
-  docFilename,
-  onClose,
-}: {
-  title: string;
-  html: string;
-  docFilename: string;
-  onClose: () => void;
-}) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const handlePrint = () => {
-    const ifr = iframeRef.current;
-    if (!ifr?.contentWindow) return;
-    ifr.contentWindow.focus();
-    ifr.contentWindow.print();
-    toast.info(
-      "Подсказка для чистой печати",
-      "В диалоге печати откройте «Ещё параметры» и снимите «Верхние и нижние колонтитулы».",
-    );
-  };
-
-  const handleDownloadWord = () => {
-    // Word открывает HTML с расширением .doc как обычный документ.
-    const blob = new Blob([html], { type: "application/msword" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = docFilename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    toast.success("Документ скачан", "Откройте в Word для печати / подписи.");
-  };
-
-  return (
-    <div className="fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/60 p-4 backdrop-blur-sm">
-      <div
-        className="relative flex w-full max-w-[960px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
-            <ScrollText size={16} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-              Предпросмотр документа
-            </div>
-            <div className="truncate text-[15px] font-bold text-ink">
-              {title}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handlePrint}
-              disabled={!ready}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold text-white transition-colors",
-                ready ? "bg-ink hover:bg-blue-600" : "cursor-not-allowed bg-surface text-muted-2",
-              )}
-            >
-              <Printer size={14} /> Печать
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadWord}
-              className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-4 py-2 text-[13px] font-bold text-blue-700 transition-colors hover:bg-blue-100"
-            >
-              <Download size={14} /> Скачать Word
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              title="Закрыть (Esc)"
-              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-2 hover:bg-white hover:text-ink"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-        <div className="relative flex-1 overflow-hidden bg-surface-soft">
-          {!ready && (
-            <div className="absolute inset-0 flex items-center justify-center text-muted">
-              <Loader2 size={24} className="animate-spin" />
-            </div>
-          )}
-          <iframe
-            ref={iframeRef}
-            srcDoc={html}
-            title={title}
-            onLoad={() => setReady(true)}
-            className="h-full min-h-[70vh] w-full bg-white"
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function TemplatePreview({
   template,

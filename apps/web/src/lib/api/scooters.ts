@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCan } from "@/lib/permissions";
 import { api } from "@/lib/api";
 import type { ApiScooter, ListResponse } from "./types";
 
@@ -24,6 +25,57 @@ export function useApiScooter(id: number | null) {
   });
 }
 
+/** Пункт 15: состояние арендных мест. */
+export type SlotsState = {
+  total: number;
+  used: { slot: number; id: number; name: string }[];
+  free: number[];
+};
+
+export function useRentalSlots() {
+  return useQuery({
+    queryKey: [...scootersKeys.all, "slots"] as const,
+    queryFn: () => api.get<SlotsState>("/api/scooters/slots"),
+  });
+}
+
+export function useSetSlotsTotal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (total: number) =>
+      api.post<{ total: number }>("/api/scooters/slots-total", { total }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: scootersKeys.all }),
+  });
+}
+
+/** Пункт 11: общий процент инвестора + техника с персональным. */
+export type PartnerShareState = {
+  value: number;
+  custom: { id: number; name: string; share: number | null }[];
+};
+
+export function usePartnerShare() {
+  // 14.09: без права на доли сервер отвечает 403 — не спрашиваем вовсе.
+  const canShares = useCan("data.partnerShares");
+  return useQuery({
+    queryKey: [...scootersKeys.all, "partner-share"] as const,
+    queryFn: () => api.get<PartnerShareState>("/api/scooters/partner-share"),
+    enabled: canShares,
+  });
+}
+
+export function useSetPartnerShare() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { value: number; mode: "default" | "apply_all" }) =>
+      api.post<{ value: number; reset: number }>(
+        "/api/scooters/partner-share",
+        args,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: scootersKeys.all }),
+  });
+}
+
 export type CreateScooterInput = {
   name: string;
   model: ApiScooter["model"];
@@ -32,6 +84,14 @@ export type CreateScooterInput = {
   vin?: string | null;
   engineNo?: string | null;
   frameNumber?: string | null;
+  /** Пункт 15: желаемое место в арендном парке (из свободных). */
+  rentalSlot?: number | null;
+  /** Пункт 11: партнёрская техника (свойство единицы, не модели). */
+  isPartner?: boolean;
+  /** Процент инвестора по единице; null → общий из настроек. */
+  partnerShare?: number | null;
+  /** Правки 2.0, п.7: инвестор — техника заводится через него. */
+  investorId?: number | null;
   year?: number | null;
   color?: string | null;
   mileage?: number;
@@ -39,6 +99,10 @@ export type CreateScooterInput = {
   purchaseDate?: string | null;
   purchasePrice?: number | null;
   marketValue?: number | null;
+  /** Блок «Продажи»: цена, по которой единица выставлена в продажу. */
+  salePrice?: number | null;
+  /** Партия закупа — «Партия 3, апрель 2026». */
+  purchaseBatch?: string | null;
   lastOilChangeMileage?: number | null;
   note?: string | null;
 };

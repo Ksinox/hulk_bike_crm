@@ -57,6 +57,10 @@ export type FleetScooter = {
   purchasePrice?: number;
   /** рыночная стоимость, ₽ — в договор (стоимость при утрате) */
   marketValue?: number;
+  /** Блок «Продажи» (31.08): цена, по которой единица стоит в продаже. */
+  salePrice?: number;
+  /** Партия закупа — «Партия 3, апрель 2026». */
+  purchaseBatch?: string;
   /** Пробег скутера на момент последней замены масла, км */
   lastOilChangeMileage?: number;
   /**
@@ -65,6 +69,18 @@ export type FleetScooter = {
    */
   maintenanceCostTotal?: number;
   note?: string;
+  /** Пункт 15: порядковый номер места в арендном парке (1..N). */
+  rentalSlot?: number;
+  /** Пункт 16: последний арендный номер — ярлык «был в аренде». */
+  exRentalSlot?: number;
+  /** Пункт 15: уникальный ID — 6 последних цифр VIN. */
+  uid?: string;
+  /** Партнёрская техника (свойство единицы, не модели). */
+  isPartner?: boolean;
+  /** Правка 27.08: инвестор единицы — его процент техника наследует. */
+  investorId?: number | null;
+  /** Персональный процент инвестора; нет — берётся общий. */
+  partnerShare?: number;
 };
 
 /**

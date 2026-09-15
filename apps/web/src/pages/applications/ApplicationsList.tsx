@@ -102,8 +102,16 @@ export function ApplicationsList({
                 onClick={() => onOpen(a.id)}
                 className="flex flex-col items-start text-left"
               >
-                <div className="text-[14px] font-bold text-ink group-hover:text-blue-700">
-                  {a.name || "Без имени"}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[14px] font-bold text-ink group-hover:text-blue-700">
+                    {a.name || "Без имени"}
+                  </span>
+                  {/* Анкета покупателя (31.08) — сразу видно, за чем пришли. */}
+                  {a.purpose === "sale" && (
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                      Покупка
+                    </span>
+                  )}
                 </div>
                 <div className="text-[12px] text-muted-2">
                   {a.phone || "телефон не указан"}

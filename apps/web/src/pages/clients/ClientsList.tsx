@@ -1,4 +1,4 @@
-import { AlertTriangle, Ban } from "lucide-react";
+import { AlertTriangle, Ban, SearchX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   initialsOf,
@@ -22,7 +22,7 @@ export function ClientsList({
   if (items.length === 0 && viewMode === "list") {
     return (
       <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-2 rounded-2xl bg-surface p-8 text-center shadow-card-sm">
-        <div className="text-2xl">🔍</div>
+        <SearchX size={26} className="text-muted-2" />
         <div className="text-[14px] font-semibold text-ink">
           Клиент не найден
         </div>
@@ -36,7 +36,7 @@ export function ClientsList({
       <div className="scrollbar-thin max-h-[calc(100vh-220px)] overflow-y-auto overflow-x-hidden rounded-2xl bg-surface p-3 shadow-card-sm">
         {items.length === 0 ? (
           <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 text-center">
-            <div className="text-2xl">🔍</div>
+            <SearchX size={26} className="text-muted-2" />
             <div className="text-[14px] font-semibold text-ink">
               Клиент не найден
             </div>

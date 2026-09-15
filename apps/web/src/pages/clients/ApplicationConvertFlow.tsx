@@ -3,6 +3,7 @@ import { toast } from "@/lib/toast";
 import { AddClientModal } from "./AddClientModal";
 import { applicationToFormInit } from "./applicationConvert";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
+import { navigate } from "@/app/navigationStore";
 import type { ApiApplication } from "@/lib/api/clientApplications";
 import type { Client } from "@/lib/mock/clients";
 
@@ -64,6 +65,16 @@ export function ApplicationConvertFlow({
         onCreated={(c) => {
           convertedRef.current = true;
           onClientCreated?.(c);
+          // Заказчик 06.09 (п.3): анкета покупателя вела в оформление
+          // АРЕНДЫ — так продажная заявка превращалась в аренду (и, если
+          // выбрать электро, всплывала в Партнёрке). Покупка идёт в свой
+          // мастер продажи с этим клиентом.
+          if ((application.purpose ?? "rent") === "sale") {
+            toast.success("Клиент создан", "Открываю оформление продажи");
+            navigate({ route: "sales", newSale: true, clientId: c.id });
+            onClose();
+            return;
+          }
           setClient(c);
         }}
       />

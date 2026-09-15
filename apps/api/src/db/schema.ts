@@ -23,6 +23,7 @@ import {
   date,
   timestamp,
   uniqueIndex,
+  unique,
   index,
   primaryKey,
   jsonb,
@@ -189,6 +190,24 @@ export const users = pgTable("users", {
     .notNull()
     .default(false),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  /** Должность словами (14.09): «Менеджер по продажам» и т.п. */
+  position: text("position"),
+  /**
+   * Права на щепетильные данные (14.09): { "data.profit": false, … }.
+   * Ключи и умолчания — apps/api/src/auth/permissions.ts. Директору и
+   * создателю не нужны: у них полный доступ по роли.
+   */
+  permissions: jsonb("permissions")
+    .$type<Record<string, boolean>>()
+    .notNull()
+    .default({}),
+  /**
+   * Версия сессий (14.09). Токен помнит её при входе; увеличили —
+   * все старые токены недействительны: «выйти на всех устройствах».
+   */
+  sessionVersion: integer("session_version").notNull().default(0),
+  /** Ответ директора при создании: 'existing' — уже работает, 'new' — новый. */
+  staffKind: text("staff_kind"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -333,6 +352,33 @@ export const scooters = pgTable(
     engineNo: text("engine_no"),
     /** Номер рамы/шасси — в договоре идёт отдельной строкой от VIN */
     frameNumber: text("frame_number"),
+    /**
+     * Пункт 15: порядковый номер места в арендном парке (1..N, N — настройка
+     * app_settings['rental_slots_total']). Занят, пока скутер в аренде
+     * (rental_pool / repair / dtp); при уходе в продажу и т.п. освобождается.
+     * Уникален среди живых скутеров (частичный индекс в миграции 0071).
+     */
+    rentalSlot: integer("rental_slot"),
+    /** Пункт 16: последний арендный номер — ярлык «был в аренде». */
+    exRentalSlot: integer("ex_rental_slot"),
+    /** Пункт 15: уникальный ID техники — 4 последние цифры номера рамы. */
+    uid: text("uid"),
+    /**
+     * Пункт 11 (правка 24.08): партнёрская техника — свойство КОНКРЕТНОГО
+     * скутера, а не модели: у одной модели могут быть и наши экземпляры,
+     * и партнёрские.
+     */
+    isPartner: boolean("is_partner").notNull().default(false),
+    /**
+     * Правки 2.0, п.7: инвестор партнёрской техники. Техника добавляется
+     * ЧЕРЕЗ инвестора; задан investor_id → единица партнёрская.
+     */
+    investorId: bigint("investor_id", { mode: "number" }),
+    /**
+     * Процент инвестора по этой единице. null → берётся общий процент
+     * из настроек (app_settings['partner_share_default'], по умолчанию 50).
+     */
+    partnerShare: integer("partner_share"),
     /** Год выпуска — для договора проката */
     year: integer("year"),
     /** Цвет — для договора */
@@ -347,6 +393,12 @@ export const scooters = pgTable(
     /** Рыночная стоимость, ₽. Подставляется в договор (п. 4.1 «стоимость
      *  Скутера при утрате»). NULL → договор берёт purchasePrice (back-compat). */
     marketValue: integer("market_value"),
+    /** Блок «Продажи» (31.08): цена, по которой единица выставлена в продажу.
+     *  Живёт в карточке техники — «Продажи» и «Скутеры» смотрят в одно поле. */
+    salePrice: integer("sale_price"),
+    /** Партия закупа — в какой поставке приехала единица (для детализации
+     *  сделки: «партия»). Свободный текст: «Партия 3, апрель 2026». */
+    purchaseBatch: text("purchase_batch"),
     /** Пробег на момент последней замены масла, км */
     lastOilChangeMileage: integer("last_oil_change_mileage"),
     note: text("note"),
@@ -476,6 +528,9 @@ export const rentals = pgTable(
       withTimezone: true,
     }).notNull(),
     endActualAt: timestamp("end_actual_at", { withTimezone: true }),
+    /** Пункт 4: причина возврата при закрытии аренды (обязательна в UI) —
+     *  для отслеживания аргументированного негатива от клиентов. */
+    returnReason: text("return_reason"),
 
     // Денормализованные для скорости (пересчитываются на write)
     days: integer("days").notNull(),
@@ -580,6 +635,15 @@ export const payments = pgTable(
      * = снять флаг «оплачено».
      */
     rollbackSnapshot: jsonb("rollback_snapshot"),
+    /**
+     * Пункт 2: платёж исключён из выручки. Ставится при ручном удалении
+     * аренды (её оплаты не должны оставаться в выручке), снимается при
+     * восстановлении из архива. Сам платёж НЕ удаляем — финансовая
+     * история неприкосновенна, карточка аренды его по-прежнему покажет.
+     */
+    excludedFromRevenue: boolean("excluded_from_revenue")
+      .notNull()
+      .default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -695,6 +759,21 @@ export const clientsRelations = relations(clients, ({ many }) => ({
  * Тарифы подтягиваются в аренду в зависимости от выбранного скутера.
  * ============================================================ */
 
+/**
+ * Параметры кадрирования аватарки (06.09): чтобы «Перекадрировать»
+ * открывало рамку там же, где её оставили.
+ */
+export type AvatarCrop = {
+  /** Позиция кадра в координатах react-easy-crop. */
+  crop: { x: number; y: number };
+  zoom: number;
+  rotation: number;
+  /** Картинку отзеркалили по горизонтали. */
+  flipped: boolean;
+  /** Соотношение сторон рамки, с которым кадрировали. */
+  aspect?: number;
+};
+
 export const scooterModels = pgTable(
   "scooter_models",
   {
@@ -708,6 +787,14 @@ export const scooterModels = pgTable(
     avatarThumbKey: text("avatar_thumb_key"),
     avatarThumbFileName: text("avatar_thumb_file_name"),
     /**
+     * Исходник до кадрирования (06.09) — по нему работает «Перекадрировать»:
+     * рамку можно подвинуть, не имея файла под рукой.
+     */
+    avatarOriginalKey: text("avatar_original_key"),
+    avatarOriginalFileName: text("avatar_original_file_name"),
+    /** Параметры последнего кадра: зум, сдвиг, поворот, отзеркаливание. */
+    avatarCrop: jsonb("avatar_crop").$type<AvatarCrop | null>(),
+    /**
      * true → показывается в быстром пикере при создании аренды.
      * Обычно 4 самых частых моделей отмечены true, остальное ищется
      * через строку поиска.
@@ -720,6 +807,10 @@ export const scooterModels = pgTable(
      * из обращения», но удалять её нельзя — за ней есть история.
      */
     active: boolean("active").notNull().default(true),
+    /** Пункт 14: электротранспорт (задел под направление «электро», п. 11). */
+    isElectric: boolean("is_electric").notNull().default(false),
+    /** Пункт 14: партнёрская техника (выручка делится с партнёром, п. 11). */
+    isPartner: boolean("is_partner").notNull().default(false),
     /** Ставки ₽/сут по периодам аренды */
     dayRate: integer("day_rate").notNull().default(1300), // 1–2 дня
     shortRate: integer("short_rate").notNull().default(700), // 3–6 дней
@@ -764,6 +855,10 @@ export const equipmentItems = pgTable(
     avatarFileName: text("avatar_file_name"),
     avatarThumbKey: text("avatar_thumb_key"),
     avatarThumbFileName: text("avatar_thumb_file_name"),
+    /** Исходник и параметры кадра — для «Перекадрировать» (06.09). */
+    avatarOriginalKey: text("avatar_original_key"),
+    avatarOriginalFileName: text("avatar_original_file_name"),
+    avatarCrop: jsonb("avatar_crop").$type<AvatarCrop | null>(),
     quickPick: boolean("quick_pick").notNull().default(true),
     /** Цена за всю аренду (не за сутки) */
     price: integer("price").notNull().default(0),
@@ -1053,6 +1148,11 @@ export const priceGroups = pgTable(
      * В новых группах не используем — переходим на одна группа = одна модель.
      */
     hasTwoPrices: boolean("has_two_prices").notNull().default(false),
+    /**
+     * 'damage' — прайс ущерба (по моделям нашей техники),
+     * 'service' — прайс работ для сторонних ремонтов (модели не нужны).
+     */
+    kind: text("kind").notNull().default("damage"),
     priceALabel: text("price_a_label").notNull().default("Цена"),
     priceBLabel: text("price_b_label"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -1449,6 +1549,12 @@ export const clientApplications = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     status: clientApplicationStatusEnum("status").notNull().default("draft"),
+    /**
+     * Зачем клиент пришёл: 'rent' — аренда (анкета по умолчанию),
+     * 'sale' — покупка. У покупателя своя анкета: без выбора модели,
+     * экипировки, срока и водительских прав — только паспорт и его фото.
+     */
+    purpose: text("purpose").notNull().default("rent"),
 
     // Поля как в clients (всё nullable — черновик может быть неполным)
     name: text("name"),
@@ -2019,3 +2125,459 @@ export const debtorNotes = pgTable("debtor_notes", {
     .notNull()
     .defaultNow(),
 });
+
+/* ============================================================
+   Ключ директора — подтверждение защищённых действий (пункт 1)
+   ============================================================ */
+
+/**
+ * Очередь подтверждений «ключом директора». Менеджер, не знающий ключа,
+ * отправляет запрос — директор видит его (в т.ч. с телефона), знакомится
+ * с кратким отчётом операции и подтверждает вводом ключа. Сам ключ
+ * хранится bcrypt-хэшем в app_settings ('director_key_hash').
+ *
+ *  - action  — машинное имя защищённого действия ('rental_delete',
+ *              'scooter_status_change', 'scooter_remove', …)
+ *  - summary — человекочитаемо «что произойдёт»
+ *  - detailsJson — строки-детали для окна (что/на что повлияет)
+ *  - payloadJson — параметры для выполнения (id сущности и т.п.)
+ *  - status  — pending → approved / rejected / cancelled;
+ *              approved потребляется ровно один раз (consumedAt).
+ */
+export const approvalRequests = pgTable(
+  "approval_requests",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    action: text("action").notNull(),
+    summary: text("summary").notNull(),
+    detailsJson: jsonb("details_json"),
+    payloadJson: jsonb("payload_json"),
+    status: text("status").notNull().default("pending"),
+    requestedByUserId: bigint("requested_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    requestedByName: text("requested_by_name"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedByUserId: bigint("resolved_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    resolvedByName: text("resolved_by_name"),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (t) => ({
+    statusIdx: index("approval_requests_status_idx").on(t.status, t.createdAt),
+  }),
+);
+
+/* ─────────────── Правки 2.0: партнёрка ─────────────── */
+
+/**
+ * Инвесторы партнёрской техники (п.7-8). Вся партнёрская техника (пока
+ * это электротранспорт) принадлежит какому-то инвестору; у каждого свои
+ * настройки выплат (п.6): периодичность и день.
+ */
+export const investors = pgTable("investors", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  note: text("note"),
+  /** 'week' | 'month' */
+  payoutPeriod: text("payout_period").notNull().default("week"),
+  /** week: 1 (пн) … 7 (вс); month: 1…31 (число). */
+  payoutDay: integer("payout_day").notNull().default(5),
+  /**
+   * Правка 27.08: процент инвестора — свойство ИНВЕСТОРА, задаётся при
+   * добавлении/изменении. Его техника наследует процент автоматически.
+   */
+  share: integer("share").notNull().default(50),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
+/**
+ * Факт выплаты инвестору.
+ *
+ * Правка 27.08: механика «накопилось → выплатили». Доля инвестора копится с
+ * каждой оплаченной аренды его техники; кнопка «Выплатить» фиксирует запись
+ * с датой и суммой и обнуляет счётчик. Период (period_start/period_end) —
+ * legacy от старого «графика периодов», для новых записей null.
+ */
+export const investorPayouts = pgTable("investor_payouts", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  investorId: bigint("investor_id", { mode: "number" }).notNull(),
+  periodStart: date("period_start"),
+  periodEnd: date("period_end"),
+  /** Сумма выплаты, ₽ — доля инвестора от выручки его техники. */
+  amount: integer("amount").notNull(),
+  paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
+  paidBy: bigint("paid_by", { mode: "number" }),
+  /** Как выплатили: cash | transfer | mixed (01.09). */
+  method: text("method").notNull().default("cash"),
+  cashAmount: integer("cash_amount").notNull().default(0),
+  transferAmount: integer("transfer_amount").notNull().default(0),
+  note: text("note"),
+});
+
+
+/* ============================================================
+ * ПРОДАЖИ (задание 31.08)
+ *
+ * sale_managers — кто продаёт. Это не учётки CRM: продавец может не иметь
+ *   доступа в систему. commissionPct — его процент (считаем с прибыли).
+ * sale_deals — сделка. Ведётся по шагам: клиент → скутер → цена →
+ *   менеджер → договор → подпись со сканом. Числовые поля снимаются на
+ *   момент продажи, чтобы правка карточки техники не переписала отчёт.
+ * sale_deal_documents — скан/фото подписанного договора.
+ * sale_plans — план продаж на месяц (единицы, выручка, прибыль, маржа).
+ * ============================================================ */
+
+export const saleDealStatusEnum = pgEnum("sale_deal_status", [
+  "draft", // сделка собирается: выбираем клиента, технику, цену, менеджера
+  "contract", // договор сформирован, ждём подписания
+  "signed", // подписан — продажа состоялась, техника переведена в «Продан»
+  "cancelled", // отменена
+]);
+
+export const saleManagers = pgTable("sale_managers", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  /** Цвет аватара-плитки: blue / purple / green / orange / pink — как на
+   *  экране входа, чтобы менеджер узнавался в списках по цвету и инициалам. */
+  avatarColor: text("avatar_color").notNull().default("blue"),
+  /** Процент менеджера с прибыли сделки. */
+  commissionPct: integer("commission_pct").notNull().default(0),
+  /** Опциональная связь с учёткой CRM (если у продавца есть логин). */
+  userId: bigint("user_id", { mode: "number" }),
+  active: boolean("active").notNull().default(true),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+});
+
+export const saleDeals = pgTable(
+  "sale_deals",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    status: saleDealStatusEnum("status").notNull().default("draft"),
+    clientId: bigint("client_id", { mode: "number" }),
+    scooterId: bigint("scooter_id", { mode: "number" }),
+    managerId: bigint("manager_id", { mode: "number" }),
+    /** Продажная стоимость сделки, ₽ (может отличаться от цены в карточке). */
+    price: integer("price").notNull().default(0),
+    /** Снимок цены закупа — база для прибыли. */
+    purchasePrice: integer("purchase_price"),
+    managerCommissionPct: integer("manager_commission_pct"),
+    managerCommission: integer("manager_commission"),
+    /** Как рассчитались за технику: cash | transfer | mixed (01.09). */
+    payMethod: text("pay_method").notNull().default("cash"),
+    payCash: integer("pay_cash").notNull().default(0),
+    payTransfer: integer("pay_transfer").notNull().default(0),
+    // Снимки техники — чтобы сделку можно было прочитать даже если
+    // технику потом отредактировали или удалили.
+    scooterName: text("scooter_name"),
+    modelName: text("model_name"),
+    vin: text("vin"),
+    engineNo: text("engine_no"),
+    frameNumber: text("frame_number"),
+    purchaseBatch: text("purchase_batch"),
+    mileage: integer("mileage"),
+    comment: text("comment"),
+    cancelReason: text("cancel_reason"),
+    contractAt: timestamp("contract_at", { withTimezone: true }),
+    signedAt: timestamp("signed_at", { withTimezone: true }),
+    /** Дата продажи — по ней сделка попадает в показатели периода. */
+    soldAt: timestamp("sold_at", { withTimezone: true }),
+    createdByUserId: bigint("created_by_user_id", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    statusIdx: index("sale_deals_status_idx").on(t.status),
+    soldIdx: index("sale_deals_sold_at_idx").on(t.soldAt),
+    managerIdx: index("sale_deals_manager_idx").on(t.managerId),
+  }),
+);
+
+export const saleDealDocuments = pgTable(
+  "sale_deal_documents",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    dealId: bigint("deal_id", { mode: "number" }).notNull(),
+    fileKey: text("file_key").notNull(),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    title: text("title"),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    dealIdx: index("sale_deal_documents_deal_idx").on(t.dealId),
+  }),
+);
+
+export const salePlans = pgTable("sale_plans", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  /** Начало периода плана (любой день — заказчик 06.09: «с 15 по 15»). */
+  period: date("period").notNull(),
+  /** Конец периода включительно; null у старых строк = конец месяца. */
+  periodTo: date("period_to"),
+  units: integer("units").notNull().default(0),
+  revenue: integer("revenue").notNull().default(0),
+  profit: integer("profit").notNull().default(0),
+  marginPct: integer("margin_pct").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+
+/* ============================================================
+ * АРЕНДА С ВЫКУПОМ (задание 01.09)
+ *
+ * Клиент забирает технику сразу, вносит первоначальный взнос и гасит
+ * остаток равными платежами. Стоимость увеличивается на наценку за срок
+ * (справочник в app_settings, правится с ключом директора).
+ *
+ * График (buyoutSchedule) и факт (buyoutPayments) разделены намеренно:
+ * только так видно просрочку, частичную оплату и досрочное погашение —
+ * без переписывания истории.
+ * ============================================================ */
+
+export const buyoutStatusEnum = pgEnum("buyout_status", [
+  "draft",
+  "contract",
+  "active",
+  "closed",
+  "defaulted",
+  "cancelled",
+]);
+
+export const buyoutDeals = pgTable(
+  "buyout_deals",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    status: buyoutStatusEnum("status").notNull().default("draft"),
+    clientId: bigint("client_id", { mode: "number" }),
+    scooterId: bigint("scooter_id", { mode: "number" }),
+    managerId: bigint("manager_id", { mode: "number" }),
+    /** Базовая стоимость техники на момент сделки. */
+    scooterPrice: integer("scooter_price").notNull().default(0),
+    termMonths: integer("term_months").notNull().default(1),
+    /** Наценка за срок — из справочника, но в сделке это снимок. */
+    markup: integer("markup").notNull().default(0),
+    total: integer("total").notNull().default(0),
+    downPayment: integer("down_payment").notNull().default(0),
+    /** Сколько остаётся выплатить после взноса. */
+    financed: integer("financed").notNull().default(0),
+    /** Периодичность платежей: month | week. */
+    period: text("period").notNull().default("month"),
+    paymentAmount: integer("payment_amount").notNull().default(0),
+    paymentsCount: integer("payments_count").notNull().default(0),
+    startDate: date("start_date"),
+    /** Менеджер отметил, что проверил клиента по чёрным спискам. */
+    blacklistChecked: boolean("blacklist_checked").notNull().default(false),
+    /** Подтверждено, что на технику установлен AirTag. */
+    airtagConfirmed: boolean("airtag_confirmed").notNull().default(false),
+    scooterName: text("scooter_name"),
+    modelName: text("model_name"),
+    vin: text("vin"),
+    engineNo: text("engine_no"),
+    frameNumber: text("frame_number"),
+    mileage: integer("mileage"),
+    comment: text("comment"),
+    /**
+     * Свой график платежей (06.09, п.15): [{dueDate, amount, paidAt?}].
+     * null — график строится автоматически при подписании.
+     */
+    customSchedule: jsonb("custom_schedule").$type<
+      { dueDate: string; amount: number; paidAt?: string | null }[] | null
+    >(),
+    cancelReason: text("cancel_reason"),
+    contractAt: timestamp("contract_at", { withTimezone: true }),
+    signedAt: timestamp("signed_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    createdByUserId: bigint("created_by_user_id", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    statusIdx: index("buyout_deals_status_idx").on(t.status),
+    clientIdx: index("buyout_deals_client_idx").on(t.clientId),
+  }),
+);
+
+export const buyoutSchedule = pgTable(
+  "buyout_schedule",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    dealId: bigint("deal_id", { mode: "number" }).notNull(),
+    /** Порядковый номер платежа, с 1. */
+    seq: integer("seq").notNull(),
+    dueDate: date("due_date").notNull(),
+    amount: integer("amount").notNull(),
+    paidAmount: integer("paid_amount").notNull().default(0),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    note: text("note"),
+  },
+  (t) => ({
+    dealIdx: index("buyout_schedule_deal_idx").on(t.dealId),
+    dueIdx: index("buyout_schedule_due_idx").on(t.dueDate),
+  }),
+);
+
+export const buyoutPayments = pgTable(
+  "buyout_payments",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    dealId: bigint("deal_id", { mode: "number" }).notNull(),
+    amount: integer("amount").notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
+    /** cash | transfer | mixed — как пришли деньги (правка 01.09). */
+    method: text("method").notNull().default("cash"),
+    /** Разбивка смешанной оплаты: без неё «смешанный» не свести с кассой. */
+    cashAmount: integer("cash_amount").notNull().default(0),
+    transferAmount: integer("transfer_amount").notNull().default(0),
+    /** down_payment | regular | early_partial | early_full */
+    kind: text("kind").notNull().default("regular"),
+    userId: bigint("user_id", { mode: "number" }),
+    note: text("note"),
+  },
+  (t) => ({
+    dealIdx: index("buyout_payments_deal_idx").on(t.dealId),
+  }),
+);
+
+/* ============================================================
+ * service_orders / service_order_items — СТОРОННИЕ РЕМОНТЫ (06.09)
+ *
+ * Заказчик: «Ремонты включают в себя только сторонние ремонты и имеют
+ * возможность создания прайса на работу. Создаём ремонт → добавляем
+ * услуги из прайса → добавляем наименование и стоимость запчастей →
+ * система считает прибыль с ремонта и выручку».
+ *
+ * Это чужая техника, поэтому scooter_id тут нет вовсе: марка и номер —
+ * свободный текст. Ремонты своей техники живут отдельно, в repair_jobs.
+ * Выручка отсюда НЕ подтягивается в дашборд (как и партнёрка) — считается
+ * внутри своего блока.
+ * ============================================================ */
+
+export const serviceOrders = pgTable(
+  "service_orders",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    /** Сквозной номер заказ-наряда, растёт сам. */
+    number: integer("number").notNull(),
+    /** 'in_work' | 'done' | 'paid' | 'cancelled' */
+    status: text("status").notNull().default("in_work"),
+
+    /** Клиент из базы, если он у нас есть; иначе — только имя и телефон. */
+    clientId: bigint("client_id", { mode: "number" }).references(
+      () => clients.id,
+      { onDelete: "set null" },
+    ),
+    customerName: text("customer_name").notNull(),
+    customerPhone: text("customer_phone"),
+
+    /** Чужая техника — свободным текстом. */
+    vehicle: text("vehicle").notNull(),
+    vehicleNumber: text("vehicle_number"),
+    /** С чем приехали. */
+    complaint: text("complaint"),
+    note: text("note"),
+
+    acceptedAt: timestamp("accepted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    /** 'cash' | 'transfer' | 'mixed' */
+    paymentMethod: text("payment_method"),
+    paidAmount: integer("paid_amount"),
+    /** Доли смешанной оплаты (07.09) — как у выкупов и продаж. */
+    cashAmount: integer("cash_amount").notNull().default(0),
+    transferAmount: integer("transfer_amount").notNull().default(0),
+
+    masterUserId: bigint("master_user_id", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    createdByUserId: bigint("created_by_user_id", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    numberIdx: uniqueIndex("service_orders_number_idx").on(t.number),
+    statusIdx: index("service_orders_status_idx").on(t.status),
+    acceptedIdx: index("service_orders_accepted_idx").on(t.acceptedAt),
+  }),
+);
+
+export const serviceOrderItems = pgTable(
+  "service_order_items",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    orderId: bigint("order_id", { mode: "number" })
+      .notNull()
+      .references(() => serviceOrders.id, { onDelete: "cascade" }),
+    /** 'work' — работа из прайса, 'part' — запчасть. */
+    kind: text("kind").notNull(),
+    /** Позиция прайса, из которой взяли работу (для истории цен). */
+    priceItemId: bigint("price_item_id", { mode: "number" }).references(
+      () => priceItems.id,
+      { onDelete: "set null" },
+    ),
+    name: text("name").notNull(),
+    qty: integer("qty").notNull().default(1),
+    /** Цена клиенту за единицу. */
+    price: integer("price").notNull().default(0),
+    /** Закупочная цена запчасти за единицу (у работ 0). */
+    cost: integer("cost").notNull().default(0),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    orderIdx: index("service_order_items_order_idx").on(t.orderId),
+  }),
+);
+
+export const serviceOrdersRelations = relations(serviceOrders, ({ many, one }) => ({
+  items: many(serviceOrderItems),
+  client: one(clients, {
+    fields: [serviceOrders.clientId],
+    references: [clients.id],
+  }),
+}));
+
+export const serviceOrderItemsRelations = relations(serviceOrderItems, ({ one }) => ({
+  order: one(serviceOrders, {
+    fields: [serviceOrderItems.orderId],
+    references: [serviceOrders.id],
+  }),
+}));

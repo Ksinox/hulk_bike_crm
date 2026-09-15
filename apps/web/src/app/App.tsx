@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ApiError } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
+import { authKeys } from "@/lib/api/auth";
 import { Sidebar } from "./Sidebar";
 import { Dashboard } from "@/pages/dashboard/Dashboard";
 import { Clients } from "@/pages/clients/Clients";
@@ -10,7 +13,13 @@ import { Service } from "@/pages/service/Service";
 import { Settings } from "@/pages/settings/Settings";
 import { Staff } from "@/pages/staff/Staff";
 import { StoragePage } from "@/pages/storage/StoragePage";
+import { Analytics } from "@/pages/analytics/Analytics";
+import { AnalyticsWall } from "@/pages/analytics/AnalyticsWall";
 import { WhatsNew } from "@/pages/whats-new/WhatsNew";
+import { Progress } from "@/pages/progress/Progress";
+import { Partners } from "@/pages/partners/Partners";
+import { Sales } from "@/pages/sales/Sales";
+import { Buyout } from "@/pages/buyout/Buyout";
 import { Applications } from "@/pages/applications/Applications";
 import { UpdateToast } from "./UpdateToast";
 import { TitleBar } from "./TitleBar";
@@ -33,6 +42,9 @@ import {
 import {
   DashboardDrawerProvider,
   DashboardDrawerStack,
+  drawerLayout,
+  sideColumnWidth,
+  DRAWER_MAX_W,
   useDashboardDrawer,
 } from "@/pages/dashboard/DashboardDrawer";
 import { NewApplicationDetector } from "@/pages/clients/NewApplicationDetector";
@@ -40,10 +52,25 @@ import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileApp } from "@/mobile/MobileApp";
 import { RentalCalculator } from "@/pages/calculator/RentalCalculator";
+import { DirectorKeyGateProvider } from "@/components/DirectorKeyGate";
 
 export function App() {
   const isMobile = useIsMobile();
-  const { data: me, isLoading, isError } = useMe();
+  const { data: me, isLoading, isError, error: meError } = useMe();
+  // 15.09: почему показываем вход — чтобы человек не гадал, куда делась сессия.
+  const loginNotice = (() => {
+    const b = meError instanceof ApiError ? (meError.body as { error?: string; reason?: string } | null) : null;
+    if (b?.error === "session_revoked") return b.reason === "update" ? "update" : "revoked";
+    if (b?.error === "user_deactivated") return "deactivated";
+    return null;
+  })();
+  useEffect(() => {
+    const onEnded = () => {
+      void queryClient.invalidateQueries({ queryKey: authKeys.me });
+    };
+    window.addEventListener("hulk:session-ended", onEnded);
+    return () => window.removeEventListener("hulk:session-ended", onEnded);
+  }, []);
   // v0.4.1: подгружаем глобальные настройки на старте — внутри хука
   // billing_period_start_day прокидывается в lib/billingPeriod (легаси
   // быстрый путь).
@@ -96,7 +123,16 @@ export function App() {
   }
   // Нет сессии → экран входа
   if (isError || !me) {
-    return <Login />;
+    return <Login notice={loginNotice} />;
+  }
+
+  // Экран на второй монитор (06.09): отдельное окно без сайдбара и шапки —
+  // открывается кнопкой «На второй монитор» в «Аналитике».
+  if (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("screen") === "analytics-wall"
+  ) {
+    return <AnalyticsWall />;
   }
 
   // Юзер обязан сменить пароль (создан/сброшен creator'ом или director'ом).
@@ -132,6 +168,7 @@ export function App() {
         {updateToastNode}
         <NewApplicationDetector />
         <RentalCalculator />
+        <DirectorKeyGateProvider />
         <ToastContainer />
         <ConfirmContainer />
         <PickContainer />
@@ -146,6 +183,7 @@ export function App() {
       {updateToastNode}
       <NewApplicationDetector />
       <RentalCalculator />
+      <DirectorKeyGateProvider />
       <ToastContainer />
       <ConfirmContainer />
       <PickContainer />
@@ -170,7 +208,7 @@ function AppShell({
   route: RouteId;
   onSelect: (id: RouteId) => void;
 }) {
-  const { stack, close } = useDashboardDrawer();
+  const { stack, close, side } = useDashboardDrawer();
   const hasDrawers = stack.length > 0;
   // v0.9.2: уход на ДРУГУЮ страницу закрывает quick-view drawer — иначе
   // карточка drawer'а накладывается на собственную панель страницы
@@ -190,10 +228,40 @@ function AppShell({
   }, [route]);
   // v0.7.0: «Аренды» — на всю ширину (своя push-раскладка карточки).
   // Остальные страницы — центрированный контейнер max-w-[1440px].
-  const fullWidth = route === "rentals";
+  // Аналитика (07.09) сама держит отступы и высоту — ей нужен весь экран.
+  const fullWidth = route === "rentals" || route === "analytics";
   const scrollRef = useRef<HTMLDivElement>(null);
   // Высота скролл-области = вьюпорт минус electron-titlebar (36px).
   const shellHeight = isElectron ? "calc(100vh - 36px)" : "100vh";
+
+  /**
+   * Ширина ряда «контент + колонки». Нужна, чтобы карточка помещалась
+   * целиком: контент сжимается под неё, а не выталкивает её за экран
+   * (фидбэк 01.09). Меряем сам контейнер, а не окно — так учитываются
+   * и сайдбар, и полосы прокрутки.
+   */
+  const [shellWidth, setShellWidth] = useState(() =>
+    typeof window === "undefined" ? 1440 : window.innerWidth,
+  );
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) setShellWidth(Math.round(entry.contentRect.width));
+    });
+    ro.observe(el);
+    setShellWidth(Math.round(el.getBoundingClientRect().width));
+    return () => ro.disconnect();
+  }, [hasDrawers]);
+
+  /** Сколько места оставить контенту под открытыми колонками. */
+  const drawerFit = useMemo(() => {
+    const widths = [
+      ...stack.map(() => DRAWER_MAX_W),
+      ...(side ? [sideColumnWidth(side.kind)] : []),
+    ];
+    return drawerLayout(shellWidth, widths);
+  }, [stack.length, side, shellWidth]);
 
   // Авто-скролл вправо при добавлении новой панели — свежий drawer в фокусе.
   useEffect(() => {
@@ -251,10 +319,20 @@ function AppShell({
       <Documents />
     ) : route === "whats-new" ? (
       <WhatsNew />
+    ) : route === "progress" ? (
+      <Progress />
+    ) : route === "partners" ? (
+      <Partners />
+    ) : route === "sales" ? (
+      <Sales />
+    ) : route === "rassrochki" ? (
+      <Buyout />
     ) : route === "settings" ? (
       <Settings />
     ) : route === "storage" ? (
       <StoragePage />
+    ) : route === "analytics" ? (
+      <Analytics />
     ) : (
       <Dashboard />
     );
@@ -290,7 +368,9 @@ function AppShell({
                 горизонтальный скролл всего ряда. */}
             <div
               className="flex min-h-0 flex-1 overflow-y-auto"
-              style={{ minWidth: fullWidth ? undefined : 760 }}
+              style={{
+                minWidth: fullWidth ? undefined : drawerFit.contentMin,
+              }}
             >
               <div
                 className={cn(
@@ -301,7 +381,7 @@ function AppShell({
                 {pageNode}
               </div>
             </div>
-            <DashboardDrawerStack />
+            <DashboardDrawerStack available={shellWidth} />
           </div>
         ) : (
           <div

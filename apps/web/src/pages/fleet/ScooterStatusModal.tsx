@@ -8,12 +8,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePatchScooter } from "@/lib/api/scooters";
+import { setNextApprovalContext } from "@/lib/directorGate";
 import { useApiRentals } from "@/lib/api/rentals";
 import type { ApiScooter, ScooterBaseStatus } from "@/lib/api/types";
 import { navigate } from "@/app/navigationStore";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
 import { SCOOTER_BASE_STATUS_OPTIONS } from "./scooterStatusOptions";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 
 const OPTIONS = SCOOTER_BASE_STATUS_OPTIONS.map((o) => ({
   id: o.value,
@@ -42,11 +44,35 @@ export function ScooterStatusModal({
   );
   const locked = !!activeRental;
 
+  /**
+   * Правка 27.08: партнёрская техника — НЕ наша, передать её в выкуп мы
+   * не можем (выкуп — переход права собственности от нас к клиенту).
+   * Для партнёрских единиц статус «Передан в выкуп» скрываем.
+   */
+  /**
+   * Партнёрская техника не наша: её нельзя ни передать в выкуп, ни продать
+   * (правка 28.08). Партнёрка — только аренда.
+   */
+  const options = scooter.isPartner
+    ? OPTIONS.filter(
+        (o) => o.id !== "buyout" && o.id !== "for_sale" && o.id !== "sold",
+      )
+    : OPTIONS;
+
   const submit = async () => {
     if (selected === scooter.baseStatus) return onClose();
     try {
+      // Пункт 1: перенос техники между категориями — защищённое действие;
+      // краткий отчёт для окна «Ключ директора».
+      setNextApprovalContext({
+        summary: `Перенос ${scooterModelName(scooter.name)}: «${optionLabel(scooter.baseStatus)}» → «${optionLabel(selected)}»`,
+        details: [
+          `Скутер: ${scooterModelName(scooter.name)}${scooter.frameNumber ? ` · рама ${scooter.frameNumber}` : ""}`,
+          "Категория в парке изменится сразу после подтверждения.",
+        ],
+      });
       await patch.mutateAsync({ id: scooter.id, patch: { baseStatus: selected } });
-      toast.success("Статус изменён", `${scooter.name}: «${optionLabel(selected)}»`);
+      toast.success("Статус изменён", `${scooterModelName(scooter.name)}: «${optionLabel(selected)}»`);
       onClose();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
@@ -79,7 +105,13 @@ export function ScooterStatusModal({
             <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
               Статус скутера
             </div>
-            <div className="text-[15px] font-bold text-ink">{scooter.name}</div>
+            <div className="text-[15px] font-bold text-ink">
+              <ScooterName
+                name={scooter.name}
+                number={scooter.rentalSlot}
+                exNumber={scooter.exRentalSlot}
+              />
+            </div>
           </div>
           <button
             type="button"
@@ -119,7 +151,7 @@ export function ScooterStatusModal({
         )}
 
         <div className="flex flex-col gap-1 px-3 py-3">
-          {OPTIONS.map((o) => {
+          {options.map((o) => {
             const active = o.id === selected;
             const isCurrent = o.id === scooter.baseStatus;
             const disabled = locked && !isCurrent;

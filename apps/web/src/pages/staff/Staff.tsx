@@ -20,8 +20,8 @@ import {
   useApiUsers,
   type ApiStaffUser,
 } from "@/lib/api/users";
-import { StaffAddModal } from "./StaffAddModal";
-import { StaffEditModal } from "./StaffEditModal";
+import { StaffAccountDialog } from "./StaffAccountDialog";
+import { PERMISSION_DEFS, isFullAccess } from "@/lib/permissions";
 import { StaffResetPasswordModal } from "./StaffResetPasswordModal";
 import { StaffPasswordRevealModal } from "./StaffPasswordRevealModal";
 
@@ -127,9 +127,9 @@ export function Staff() {
         <table className="w-full border-separate border-spacing-0 text-[13px]">
           <thead>
             <tr>
-              <Th style={{ width: "32%" }}>Имя</Th>
+              <Th style={{ width: "30%" }}>Сотрудник</Th>
               <Th>Логин</Th>
-              <Th>Роль</Th>
+              <Th>Что не видит</Th>
               <Th>Статус</Th>
               <Th>Последний вход</Th>
               <Th style={{ textAlign: "right" }} />
@@ -157,7 +157,8 @@ export function Staff() {
       </div>
 
       {addOpen && (
-        <StaffAddModal
+        <StaffAccountDialog
+          user={null}
           onClose={() => setAddOpen(false)}
           onCreated={(r) =>
             setRevealed({
@@ -170,10 +171,14 @@ export function Staff() {
         />
       )}
       {editUser && (
-        <StaffEditModal
+        <StaffAccountDialog
           user={editUser}
           isSelf={editUser.id === me?.id}
           onClose={() => setEditUser(null)}
+          onResetPassword={(u) => {
+            setEditUser(null);
+            setResetUser(u);
+          }}
         />
       )}
       {resetUser && (
@@ -228,7 +233,7 @@ function Row({
           >
             {initials || "?"}
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="font-semibold">
               {u.name}
               {isSelf && (
@@ -245,6 +250,9 @@ function Row({
                 </span>
               )}
             </div>
+            <div className="truncate text-[12px] text-muted">
+              {u.position || ROLE_LABEL[u.role]}
+            </div>
           </div>
         </div>
       </Td>
@@ -252,10 +260,25 @@ function Row({
         <span className="font-mono text-[12px] text-muted">@{u.login}</span>
       </Td>
       <Td>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-ink-2">
-          <RoleIcon size={11} />
-          {ROLE_LABEL[u.role]}
-        </span>
+        {isFullAccess(u.role) ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-ink-2">
+            <RoleIcon size={11} />
+            полный доступ
+          </span>
+        ) : hiddenOf(u).length === 0 ? (
+          <span className="text-[12px] text-muted">всё видит</span>
+        ) : (
+          <span className="flex flex-wrap gap-1">
+            {hiddenOf(u).map((label) => (
+              <span
+                key={label}
+                className="rounded-full bg-surface-soft px-2 py-0.5 text-[11px] font-semibold text-ink-2"
+              >
+                {label}
+              </span>
+            ))}
+          </span>
+        )}
       </Td>
       <Td>
         {u.active ? (
@@ -391,3 +414,8 @@ function plural(n: number, forms: [string, string, string]): string {
 
 // suppress unused warnings
 void Copy;
+
+/** Какие права у сотрудника выключены — подписи для списка. */
+function hiddenOf(u: ApiStaffUser): string[] {
+  return PERMISSION_DEFS.filter((d) => u.permissions && !u.permissions[d.key]).map((d) => d.label);
+}

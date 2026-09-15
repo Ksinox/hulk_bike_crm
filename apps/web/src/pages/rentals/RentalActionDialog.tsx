@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Bike, Check, FileText, Image as ImageIcon, UserRound, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Rental } from "@/lib/mock/rentals";
@@ -25,6 +25,8 @@ import { useDebtAggregate } from "@/lib/api/debt";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { DamageReportDialog, type DamageSeedItem } from "./DamageReportDialog";
+import { scooterModelName } from "@/components/ScooterName";
+import { useScooterNaming } from "@/lib/scooterNaming";
 
 /** v0.4.57: helper для записи компенсаций с залога. Использует
  *  существующий endpoint /debt/manual (kind=manual_charge). */
@@ -99,6 +101,8 @@ export function RentalActionDialog({
   onOpenDamage?: () => void;
 }) {
   const [closing, setClosing] = useState(false);
+  // Имя техники показываем как «модель + бейдж арендного номера».
+  const naming = useScooterNaming();
 
   // Форма для возврата с ущербом / инцидента
   const [damageAmount, setDamageAmount] = useState<string>("3000");
@@ -479,8 +483,8 @@ export function RentalActionDialog({
               </div>
               {/* Скутер — основная позиция, во всю ширину */}
               <ReturnItemCard
-                title={rental.scooter}
-                subtitle={scooterModel?.name ?? rental.scooter}
+                title={naming.render(rental.scooter)}
+                subtitle={scooterModel?.name ?? scooterModelName(rental.scooter)}
                 imageUrl={scooterAvatar}
                 fallbackIcon="scooter"
                 state={scooterState}
@@ -1018,7 +1022,7 @@ export function RentalActionDialog({
             />
           ) : (
             <div className="mb-3 flex items-center justify-between rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
-              <span>{rental.scooter}</span>
+              <span>{naming.render(rental.scooter)}</span>
               <span className="text-muted-2">
                 · {rental.start} — {rental.endPlanned}
               </span>
@@ -1592,7 +1596,7 @@ function ReturnItemCard({
   onSetProblem,
   onEditProblem,
 }: {
-  title: string;
+  title: ReactNode;
   subtitle?: string;
   imageUrl?: string | null;
   fallbackIcon: "scooter" | "equipment";

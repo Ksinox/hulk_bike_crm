@@ -149,79 +149,90 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
             </div>
           </Section>
 
-          {/* Пароль */}
-          <Section title="Сменить пароль">
-            <div className="flex flex-col gap-2">
-              <PwdInput
-                value={curPwd}
-                onChange={(v) => {
-                  setCurPwd(v);
-                  setPwdMsg(null);
-                }}
-                placeholder="Текущий пароль"
-                show={showPwd}
-                onToggleShow={() => setShowPwd((v) => !v)}
-                autoComplete="current-password"
-              />
-              <PwdInput
-                value={newPwd}
-                onChange={(v) => {
-                  setNewPwd(v);
-                  setPwdMsg(null);
-                }}
-                placeholder="Новый пароль (мин. 6 символов)"
-                show={showPwd}
-                onToggleShow={() => setShowPwd((v) => !v)}
-                autoComplete="new-password"
-              />
-              <PwdInput
-                value={newPwd2}
-                onChange={(v) => {
-                  setNewPwd2(v);
-                  setPwdMsg(null);
-                }}
-                placeholder="Повторите новый пароль"
-                show={showPwd}
-                onToggleShow={() => setShowPwd((v) => !v)}
-                autoComplete="new-password"
-              />
-            </div>
-            {pwdError && (
-              <div className="mt-1.5 text-[12px] font-semibold text-red-ink">
-                {pwdError}
+          {/* Пароль. 14.09: сотруднику пароль задаёт директор — сам он его
+              не меняет, поэтому вместо формы короткое пояснение. */}
+          {me?.canChangePassword === false ? (
+            <Section title="Пароль">
+              <div className="rounded-[12px] bg-surface-soft px-3 py-2.5 text-[13px] leading-snug text-ink-2">
+                Пароль задаёт директор. Нужен новый или кто-то мог узнать
+                текущий — обратитесь к директору: он задаст новый, и вход на
+                всех устройствах сбросится.
               </div>
-            )}
-            <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={savePwd}
-                disabled={!canSavePwd || pwdMut.isPending}
-                className={cn(
-                  "inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-[12px] font-bold transition-colors",
-                  !canSavePwd || pwdMut.isPending
-                    ? "cursor-not-allowed bg-surface-soft text-muted-2"
-                    : "bg-ink text-white hover:bg-blue-600",
-                )}
-              >
-                {pwdMut.isPending ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <Check size={13} />
-                )}
-                Сменить пароль
-              </button>
-              {pwdMsg && (
-                <span
+            </Section>
+          ) : (
+            <Section title="Сменить пароль">
+              <div className="flex flex-col gap-2">
+                <PwdInput
+                  value={curPwd}
+                  onChange={(v) => {
+                    setCurPwd(v);
+                    setPwdMsg(null);
+                  }}
+                  placeholder="Текущий пароль"
+                  show={showPwd}
+                  onToggleShow={() => setShowPwd((v) => !v)}
+                  autoComplete="current-password"
+                />
+                <PwdInput
+                  value={newPwd}
+                  onChange={(v) => {
+                    setNewPwd(v);
+                    setPwdMsg(null);
+                  }}
+                  placeholder="Новый пароль (мин. 6 символов)"
+                  show={showPwd}
+                  onToggleShow={() => setShowPwd((v) => !v)}
+                  autoComplete="new-password"
+                />
+                <PwdInput
+                  value={newPwd2}
+                  onChange={(v) => {
+                    setNewPwd2(v);
+                    setPwdMsg(null);
+                  }}
+                  placeholder="Повторите новый пароль"
+                  show={showPwd}
+                  onToggleShow={() => setShowPwd((v) => !v)}
+                  autoComplete="new-password"
+                />
+              </div>
+              {pwdError && (
+                <div className="mt-1.5 text-[12px] font-semibold text-red-ink">
+                  {pwdError}
+                </div>
+              )}
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={savePwd}
+                  disabled={!canSavePwd || pwdMut.isPending}
                   className={cn(
-                    "text-[12px] font-semibold",
-                    pwdMsg.kind === "ok" ? "text-green-ink" : "text-red-ink",
+                    "inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-[12px] font-bold transition-colors",
+                    !canSavePwd || pwdMut.isPending
+                      ? "cursor-not-allowed bg-surface-soft text-muted-2"
+                      : "bg-ink text-white hover:bg-blue-600",
                   )}
                 >
-                  {pwdMsg.text}
-                </span>
-              )}
-            </div>
-          </Section>
+                  {pwdMut.isPending ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Check size={13} />
+                  )}
+                  Сменить пароль
+                </button>
+                {pwdMsg && (
+                  <span
+                    className={cn(
+                      "text-[12px] font-semibold",
+                      pwdMsg.kind === "ok" ? "text-green-ink" : "text-red-ink",
+                    )}
+                  >
+                    {pwdMsg.text}
+                  </span>
+                )}
+              </div>
+            </Section>
+          )}
         </div>
       </div>
     </div>

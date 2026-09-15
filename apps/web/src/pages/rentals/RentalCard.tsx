@@ -56,6 +56,8 @@ import {
 } from "@/lib/api/clients";
 import { queryClient } from "@/lib/queryClient";
 import { useApiScooters } from "@/lib/api/scooters";
+import { scooterModelName } from "@/components/ScooterName";
+import { useScooterNaming } from "@/lib/scooterNaming";
 import { navigate } from "@/app/navigationStore";
 // v0.6.44: tabs убраны из карточки — новый 2-col layout (MasterBlock +
 // CalendarPanel/DocsInline). Сами компоненты табов остаются доступны
@@ -113,6 +115,7 @@ import { confirmDialog, pickAction, promptDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
 import { toastRentalDone } from "./rentalUndo";
 import { ApiError, api } from "@/lib/api";
+import { setNextApprovalContext } from "@/lib/directorGate";
 
 // v0.6.44: tabs убраны, оставлен type-alias для совместимости с props
 // (initialTab — может прийти при navigate с дашборда через openTab).
@@ -419,6 +422,8 @@ export function RentalCard({
 }) {
   void onPaymentOpenChange;
   void initialTab; // v0.6.44: tabs убраны, prop оставлен для совместимости.
+  // Имя техники показываем как «модель + бейдж арендного номера».
+  const naming = useScooterNaming();
   const [action, setAction] = useState<ActionKind | null>(null);
   // v0.9.4: «Завершить аренду» открывает компактную карточку-модалку по
   // центру (PaymentAcceptDialog completing сам рисует центрированный
@@ -1078,7 +1083,7 @@ export function RentalCard({
           title: "Нужен скутер для возобновления",
           message: noScooter
             ? "Сейчас к аренде не привязан скутер. Чтобы перевести в активный статус, выберите скутер из парка."
-            : `Текущий скутер «${currentScooter?.name ?? rental.scooter}» в ремонте. Чтобы возобновить, замените его на свободный из парка${debtSum > 0 ? ` (долг ${debtSum.toLocaleString("ru-RU")} ₽ останется на клиенте)` : ""}.`,
+            : `Текущий скутер «${scooterModelName(currentScooter?.name ?? rental.scooter)}» в ремонте. Чтобы возобновить, замените его на свободный из парка${debtSum > 0 ? ` (долг ${debtSum.toLocaleString("ru-RU")} ₽ останется на клиенте)` : ""}.`,
           confirmText: "Выбрать скутер",
           cancelText: "Отмена",
         });
@@ -1460,6 +1465,17 @@ export function RentalCard({
       const reason = await askRentalDeleteReason(rentalNo);
       if (!reason) return;
       try {
+        // Пункт 1: краткий отчёт для окна «Ключ директора» (бэк вернёт 428,
+        // api-клиент откроет гейт с этими деталями).
+        setNextApprovalContext({
+          summary: `Удаление аренды ${rentalNo} — ${client?.name ?? "клиент"}`,
+          details: [
+            `Причина: ${reason}`,
+            `Скутер: ${currentScooter?.name ?? "—"}`,
+            `Сумма аренды: ${fmt(rental.sum ?? 0)} ₽`,
+            "Аренда уйдёт в архив, история сохранится в журнале.",
+          ],
+        });
         await deleteRental.mutateAsync({ id: rental.id, reason });
         toast.success("Аренда удалена", `${rentalNo} · ${reason}`);
       } catch (e) {
@@ -1999,7 +2015,8 @@ export function RentalCard({
                       className="flex items-center justify-between gap-2"
                     >
                       <span className="min-w-0 flex-1 truncate text-muted">
-                        {s.scooterName} · #{String(s.rentalId).padStart(4, "0")}
+                        {naming.render(s.scooterName, { size: "sm" })} · #
+                        {String(s.rentalId).padStart(4, "0")}
                       </span>
                       <b className="shrink-0 tabular-nums">{fmt(s.amount)} ₽</b>
                     </div>
@@ -2465,6 +2482,15 @@ export function RentalCard({
             </span>
           </div>
         )}
+      {/* Пункт 4: причина возврата — видна в завершённой аренде. */}
+      {rental.status === "completed" && rental.returnReason && (
+        <div className="flex items-center gap-2 rounded-[12px] bg-surface-soft px-3 py-2 text-[12px] text-ink-2">
+          <Flag size={14} className="shrink-0 text-muted-2" />
+          <span>
+            Причина возврата: <b>{rental.returnReason}</b>
+          </span>
+        </div>
+      )}
       {rental.status === "returning" && (
         <div className="flex items-center gap-2 rounded-[12px] bg-orange-soft/70 px-3 py-2 text-[12px] text-orange-ink">
           <Calendar size={14} className="shrink-0" />
@@ -2683,7 +2709,7 @@ export function RentalCard({
                       >
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[12px] font-semibold text-ink">
-                            {s.scooterName}{" "}
+                            {naming.render(s.scooterName, { size: "sm" })}{" "}
                             <span className="font-mono text-[10px] text-muted-2">
                               #{String(s.rentalId).padStart(4, "0")}
                             </span>

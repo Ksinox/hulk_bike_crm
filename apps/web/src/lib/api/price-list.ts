@@ -21,6 +21,8 @@ export type ApiPriceGroup = {
   priceALabel: string;
   priceBLabel: string | null;
   scooterModelId: number | null;
+  /** 'damage' — прайс ущерба, 'service' — прайс работ сторонних ремонтов. */
+  kind: "damage" | "service";
   createdAt: string;
   updatedAt: string;
   items: ApiPriceItem[];
@@ -33,6 +35,7 @@ export type CreateGroupInput = {
   priceALabel?: string;
   priceBLabel?: string | null;
   scooterModelId?: number | null;
+  kind?: "damage" | "service";
   /** При создании — скопировать позиции из другой группы. */
   copyItemsFromGroupId?: number | null;
   /** Копировать с ценами или только названия. */
@@ -52,6 +55,21 @@ export const priceListKeys = {
   all: ["price-list"] as const,
   list: () => [...priceListKeys.all, "list"] as const,
 };
+
+/**
+ * Прайс одного вида: 'damage' — ущерб (по моделям нашей техники),
+ * 'service' — работы для сторонних ремонтов. Без аргумента — весь прайс,
+ * как было раньше.
+ */
+export function usePriceList(kind?: "damage" | "service") {
+  return useQuery({
+    queryKey: [...priceListKeys.list(), kind ?? "all"],
+    queryFn: () =>
+      api.get<{ groups: ApiPriceGroup[] }>(
+        `/api/price-list${kind ? `?kind=${kind}` : ""}`,
+      ),
+  });
+}
 
 export function useApiPriceList() {
   return useQuery({

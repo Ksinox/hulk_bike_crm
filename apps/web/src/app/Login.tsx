@@ -17,7 +17,22 @@ import { useLogin, useLoginTiles, type LoginTile } from "@/lib/api/auth";
  * Creator'ы скрыты: появляются только если пользователь набрал на клавиатуре
  * секретное слово (по умолчанию "ksinox").
  */
-export function Login() {
+const NOTICE_TEXT = {
+  update: {
+    title: "CRM обновилась",
+    text: "Со всех устройств выполнен выход. Войдите под своим логином — пароль знает директор.",
+  },
+  revoked: {
+    title: "Вход на этом устройстве сброшен",
+    text: "Директор задал новый пароль или завершил сеансы. Войдите заново.",
+  },
+  deactivated: {
+    title: "Аккаунт отключён",
+    text: "Обратитесь к директору.",
+  },
+} as const;
+
+export function Login({ notice = null }: { notice?: keyof typeof NOTICE_TEXT | null }) {
   const [unlock, setUnlock] = useState<string>("");
   const [typed, setTyped] = useState<string>("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -120,6 +135,15 @@ export function Login() {
           >
             ХАЛК&nbsp;БАЙК
           </h1>
+          {notice && (
+            <div
+              role="status"
+              className="mx-auto mt-6 max-w-[440px] rounded-2xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-3 text-left backdrop-blur"
+            >
+              <div className="text-[14px] font-bold text-emerald-100">{NOTICE_TEXT[notice].title}</div>
+              <div className="mt-0.5 text-[12.5px] leading-snug text-white/70">{NOTICE_TEXT[notice].text}</div>
+            </div>
+          )}
         </div>
 
         {/* Тайлы — glassmorphism */}
@@ -337,9 +361,9 @@ function Tile({
       </div>
       <div className="relative z-10 text-center">
         <div className="text-[13px] font-bold text-white">{tile.name}</div>
-        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-black/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white/80">
-          <Icon size={9} />
-          {roleLabel(tile.role)}
+        <div className="mt-1 inline-flex max-w-[136px] items-center gap-1 rounded-full bg-black/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white/80">
+          <Icon size={9} className="shrink-0" />
+          <span className="truncate">{tile.position || roleLabel(tile.role)}</span>
         </div>
       </div>
     </button>

@@ -6,8 +6,8 @@ import { useEffect, useState } from "react";
  * Используется на уровне App для ветвления десктоп/мобайл-слоя:
  * на узких экранах рендерится отдельная мобильная оболочка (MobileApp),
  * десктоп-путь при этом не меняется. Брейкпоинт по умолчанию — 768px
- * (Tailwind `md`): телефоны и узкие окна получают мобильную раскладку,
- * планшеты в альбомной/десктоп — обычную.
+ * (Tailwind `md`): телефоны и узкие окна получают мобильную раскладку.
+ * Планшеты (основной указатель — палец) — тоже, при любой ширине.
  */
 /**
  * Тест-оверрайд: позволяет принудительно включить мобильную раскладку на
@@ -52,16 +52,23 @@ function computeIsMobile(breakpoint: number): boolean {
   const forced = forcedMobile();
   if (forced !== null) return forced;
   if (typeof window === "undefined") return false;
-  const w = window.innerWidth;
-  if (w < breakpoint) return true;
+  if (window.innerWidth < breakpoint) return true;
+  // 15.09: планшет получает телефонный слой при любой ширине — заказчик:
+  // «планшетная версия ближе к мобильной». На ширину и браузер не смотрим:
+  // Safari на iPad выдаёт себя за Mac, а iPad Pro в повороте шире 1300px.
+  // Признак — основной указатель палец (coarse). Компьютер с сенсорным
+  // экраном, где основной указатель мышь, остаётся на компьютерной версии.
+  return isTouchPrimary();
+}
+
+/** Основной указатель — палец: телефон или планшет (iPad, Android). */
+export function isTouchPrimary(): boolean {
+  if (typeof window === "undefined") return false;
   try {
-    const coarse =
-      window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
-    if (coarse && Math.min(w, window.innerHeight) < breakpoint) return true;
+    return window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
   } catch {
-    /* ignore */
+    return false;
   }
-  return false;
 }
 
 export function useIsMobile(breakpoint = 768): boolean {
@@ -82,4 +89,59 @@ export function useIsMobile(breakpoint = 768): boolean {
   }, [breakpoint]);
 
   return isMobile;
+}
+
+/**
+ * Узкое окно компьютера (07.09).
+ *
+ * Это НЕ мобильный слой: оболочка остаётся десктопной (сайдбар, топбар).
+ * Но плотные десктопные сетки в узком окне разъезжаются — колонки
+ * ужимаются, заголовки обрезаются. Такие экраны получают «поточную»
+ * раскладку: меньше колонок и прокрутка. Сам планшет с 15.09 открывает
+ * телефонный слой (см. computeIsMobile), здесь остаются узкие окна.
+ *
+ * Порог 1200px по ширине: ниже него «обзор» аналитики ужимал колонку до
+ * ~250px, и половина строк заканчивалась многоточием.
+ */
+export function useIsTabletScreen(breakpoint = 1200): boolean {
+  const compute = () => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth < breakpoint;
+  };
+  const [tablet, setTablet] = useState<boolean>(compute);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const update = () => setTablet(compute());
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, [breakpoint]);
+  return tablet;
+}
+
+/**
+ * Правка 28.08: «тесный» экран — небольшой ноутбук (13–14"), где крупные
+ * справочные блоки съедают рабочее место. Отличается от useIsMobile: это
+ * НЕ мобильный слой, а обычный десктоп, которому нужна плотная вёрстка.
+ *
+ * Порог: высота ≤ 860 (1280×720, 1366×768) или ширина ≤ 1440.
+ */
+export function useIsCompactScreen(): boolean {
+  const compute = () => {
+    if (typeof window === "undefined") return false;
+    return window.innerHeight <= 860 || window.innerWidth <= 1440;
+  };
+  const [compact, setCompact] = useState<boolean>(compute);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const update = () => setCompact(compute());
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return compact;
 }

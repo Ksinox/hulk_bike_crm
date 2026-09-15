@@ -4,9 +4,14 @@
  * никаких моков. Пустые состояния (0 скутеров, 0 аренд) — норма.
  */
 import { useMemo } from "react";
+import {
+  equipmentDailyOf,
+  expectedExtensionSum,
+} from "@/lib/expectedExtension";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiRentals } from "@/lib/api/rentals";
 import { useApiScooters } from "@/lib/api/scooters";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useAllDamageReports } from "@/lib/api/damage-reports";
 import { useDebtAggregate } from "@/lib/api/debt";
@@ -38,10 +43,17 @@ export type DashboardMetrics = {
   overdueDeltaFromYesterday: number; // +1 / 0
 
   activeRentalsCount: number;
+  /** Пункт 11: сколько из активных аренд — на электротранспорте. */
+  activeElectroCount: number;
   fleetTotal: number;
   /** #21: парк, ДОСТУПНЫЙ к аренде (rental_pool) — знаменатель «загрузки». */
   rentableFleet: number;
-  loadPercent: number; // 0..100 (active / rentableFleet)
+  loadPercent: number; // 0..100 (active / rentableFleet), только бензин
+  /** Правки 2.0, п.4: отдельный чипс загрузки электротранспорта. */
+  rentableElectro: number;
+  loadPercentElectro: number;
+  /** Активные аренды НАШЕЙ (бензиновой) техники — для первого чипса. */
+  activePetrolCount: number;
 
   tasksToday: number; // пока 0 — задач ещё нет в API
 
@@ -163,6 +175,7 @@ export function useDashboardMetrics(): DashboardMetrics {
   const clientsQ = useApiClients();
   const rentalsQ = useApiRentals();
   const scootersQ = useApiScooters();
+  const scooterModelsQ = useApiScooterModels();
   const paymentsQ = useApiPayments();
   const damageReportsQ = useAllDamageReports();
   // v0.4.51: реальный долг по всем live-арендам (учитывает forgive/payment).
@@ -182,6 +195,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     const clients = clientsQ.data ?? [];
     const rentals: ApiRental[] = rentalsQ.data ?? [];
     const scooters: ApiScooter[] = scootersQ.data ?? [];
+    const scooterModels = scooterModelsQ.data ?? [];
     const payments: ApiPayment[] = paymentsQ.data ?? [];
     const damageAll = damageReportsQ.data ?? [];
     const debtAgg = debtAggQ.data ?? [];
@@ -225,8 +239,18 @@ export function useDashboardMetrics(): DashboardMetrics {
         r.endPlannedAt.slice(0, 10) === todayKey &&
         !r.endActualAt,
     );
+    // Правка 2.1 (26.08): не история оплат (r.sum копит все продления),
+    // а ВЕРОЯТНОЕ ПРОДЛЕНИЕ: тариф клиента × его текущий период.
+    const expectedFor = (r: ApiRental): number =>
+      expectedExtensionSum({
+        rate: r.rate,
+        rateUnit: r.rateUnit,
+        tariffPeriod: r.tariffPeriod,
+        days: r.days,
+        equipmentDaily: equipmentDailyOf(r.equipmentJson),
+      });
     const todayIncoming = returnsTodayRentals.reduce(
-      (s, r) => s + (r.sum ?? 0),
+      (s, r) => s + expectedFor(r),
       0,
     );
     const todayIncomingCount = returnsTodayRentals.length;
@@ -238,7 +262,7 @@ export function useDashboardMetrics(): DashboardMetrics {
       (r) => r.endPlannedAt.slice(0, 10) === yesterdayKey,
     );
     const yesterdayIncoming = yesterdayRentals.reduce(
-      (s, r) => s + (r.sum ?? 0),
+      (s, r) => s + expectedFor(r),
       0,
     );
     const todayIncomingDelta =
@@ -322,8 +346,49 @@ export function useDashboardMetrics(): DashboardMetrics {
     // руках, парк занят. Считать их в «активных» для нагрузки парка
     // правильно (раньше returning исключался — расходилось с фильтром
     // «Активные» в /rentals).
+    /*
+     * Числитель «в аренде» (правка 04.09): считаем только аренды техники,
+     * которая сейчас в арендном парке. Техника на выкупе, в продаже или
+     * проданная — уже не аренда, у неё свои разделы. Раньше сюда попадала
+     * любая живая аренда, и после ухода Gear №06 на выкуп с незакрытой
+     * арендой дашборд показывал «4 в аренде из 3 в парке».
+     */
+    const RENTAL_MODE_STATUSES = new Set([
+      "rental_pool",
+      "repair",
+      "dtp",
+      "disassembly",
+    ]);
+    const parkScooterIds = new Set(
+      scooters
+        .filter(
+          (s) =>
+            RENTAL_MODE_STATUSES.has(s.baseStatus) &&
+            !(s as { archivedAt?: string | null }).archivedAt,
+        )
+        .map((s) => s.id),
+    );
     const activeRentalsCount = rentals.filter(
-      (r) => r.status === "active" && r.scooterId != null,
+      (r) =>
+        r.status === "active" &&
+        r.scooterId != null &&
+        parkScooterIds.has(r.scooterId),
+    ).length;
+    // Пункт 11: активные аренды на электротранспорте (модель is_electric).
+    const electroModelIds = new Set(
+      scooterModels.filter((m) => m.isElectric).map((m) => m.id),
+    );
+    const electroScooterIds = new Set(
+      scooters
+        .filter((s) => s.modelId != null && electroModelIds.has(s.modelId))
+        .map((s) => s.id),
+    );
+    const activeElectroCount = rentals.filter(
+      (r) =>
+        r.status === "active" &&
+        r.scooterId != null &&
+        parkScooterIds.has(r.scooterId) &&
+        electroScooterIds.has(r.scooterId),
     ).length;
 
     // fleetTotal — весь парк в обороте (для панели «Парк · N скутеров»).
@@ -342,14 +407,52 @@ export function useDashboardMetrics(): DashboardMetrics {
     // знаменатель не идут. rentableFleet включает и сейчас арендованные (они
     // остаются rental_pool, просто заняты). max(...) — страховка от >100% при
     // редком проскальзывании статусов.
-    const rentableFleet = scooters.filter(
+    // Правки 2.0, п.4: загрузка парка считается ТОЛЬКО по нашей
+    // бензиновой технике. Электротранспорт всегда партнёрский, у него
+    // свой чипс — он не влияет ни на процент, ни на общее количество.
+    const isElectroScooter = (s: ApiScooter): boolean =>
+      s.modelId != null && electroModelIds.has(s.modelId);
+    /**
+     * Правка 31.08 (заказчик): в знаменатель круга идёт ВСЯ техника
+     * арендного режима, включая ремонт, ДТП и разборку, а не только
+     * свободная к выдаче.
+     *
+     * Почему: раньше показатель назывался «доступно к аренде», и стоило
+     * одному скутеру уехать в ремонт — общее число падало (62 → 61).
+     * Заказчик каждый раз шёл в журнал выяснять, куда делась единица.
+     * Ремонт и ДТП у нас короткие, внутри арендного парка техника просто
+     * мигрирует между статусами — поэтому считаем «всего техники в парке».
+     */
+    const inRentalMode = scooters.filter(
       (s) =>
-        s.baseStatus === "rental_pool" &&
+        RENTAL_MODE_STATUSES.has(s.baseStatus) &&
         !(s as { archivedAt?: string | null }).archivedAt,
+    );
+    // Наш парк — без партнёрской техники: у неё свой раздел и свой чипс.
+    const rentableFleet = inRentalMode.filter(
+      (s) => !s.isPartner && !isElectroScooter(s),
     ).length;
-    const denom = Math.max(rentableFleet, activeRentalsCount);
+    /*
+     * Знаменатель электро-чипса (баг найден 04.09).
+     *
+     * Раньше он считался из того же списка, откуда партнёрская техника уже
+     * ВЫЧЕРКНУТА, — а электротранспорт как раз весь партнёрский. Поэтому
+     * «в парке» всегда выходил ноль, и чипс показывался, только пока шла
+     * активная аренда: закончилась — плашка исчезала с дашборда целиком,
+     * хотя техника никуда не делась. Отсюда же и странное «2 в аренде из
+     * 0 в парке» на прежних снимках.
+     */
+    const rentableElectro = inRentalMode.filter(isElectroScooter).length;
+    const activePetrolCount = activeRentalsCount - activeElectroCount;
+    const denom = Math.max(rentableFleet, activePetrolCount);
     const loadPercent =
-      denom > 0 ? Math.round((activeRentalsCount / denom) * 100) : 0;
+      denom > 0 ? Math.round((activePetrolCount / denom) * 100) : 0;
+    // Тот же расчёт для электро — второй чипс (п.4).
+    const denomElectro = Math.max(rentableElectro, activeElectroCount);
+    const loadPercentElectro =
+      denomElectro > 0
+        ? Math.round((activeElectroCount / denomElectro) * 100)
+        : 0;
 
     // ===== Парк по статусам
     const park = {
@@ -390,7 +493,8 @@ export function useDashboardMetrics(): DashboardMetrics {
           clientPhone: cl?.phone ?? "",
           clientPhone2: cl?.extraPhone ?? "",
           endPlannedAt: r.endPlannedAt,
-          sum: r.sum,
+          // Правка 2.1: в списке возвратов — тоже ожидаемое продление.
+          sum: expectedFor(r),
         };
       })
       .sort((a, b) => a.endPlannedAt.localeCompare(b.endPlannedAt));
@@ -579,9 +683,13 @@ export function useDashboardMetrics(): DashboardMetrics {
       overdueSum,
       overdueDeltaFromYesterday: overdueRentals.length - overdueYesterday,
       activeRentalsCount,
+      activeElectroCount,
       fleetTotal,
       rentableFleet,
       loadPercent,
+      rentableElectro,
+      loadPercentElectro,
+      activePetrolCount,
       tasksToday: 0, // задач ещё нет в API
       park,
       returnsToday,
@@ -609,6 +717,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     clientsQ.data,
     rentalsQ.data,
     scootersQ.data,
+    scooterModelsQ.data,
     paymentsQ.data,
     damageReportsQ.data,
     debtAggQ.data,

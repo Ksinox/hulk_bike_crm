@@ -7,6 +7,7 @@ import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiRentals } from "@/lib/api/rentals";
 import { MODEL_LABEL } from "@/lib/mock/rentals";
+import { ScooterName } from "@/components/ScooterName";
 
 type Anchor = { x: number; y: number; w: number; h: number };
 
@@ -172,9 +173,12 @@ export function ParkTileHoverCard({
           {/* === Справа: инфо-колонка === */}
           <div className="min-w-0 flex-1 px-3 py-3">
             <div className="flex items-center gap-2">
-              <div className="font-display text-[16px] font-extrabold leading-tight text-ink">
-                {scooter.name}
-              </div>
+              <ScooterName
+                name={scooter.name}
+                number={scooter.rentalSlot}
+                exNumber={scooter.exRentalSlot}
+                className="font-display text-[16px] font-extrabold leading-tight text-ink"
+              />
               {/* v0.4.12: если по скутеру есть active/overdue/returning
                   аренда — показываем «В аренде» синим, а не baseStatus
                   «Готов». Раньше plашка читала только scooter.baseStatus

@@ -158,7 +158,7 @@ export function MobileSheet({
       <div
         onClick={(e) => e.stopPropagation()}
         style={sheetStyle}
-        className="max-h-[85vh] overflow-y-auto rounded-t-3xl bg-bg px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up"
+        className="mx-auto max-h-[85vh] w-full max-w-[640px] overflow-y-auto rounded-t-3xl bg-bg px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up"
       >
         <SheetHandle handleProps={handleProps} />
         {title && (

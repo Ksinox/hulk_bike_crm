@@ -18,6 +18,7 @@ import {
   useSwitchBillingPeriod,
 } from "@/lib/api/billing-period";
 import { planTransition, formatBillingDate } from "@/lib/billingPeriod";
+import { DirectorKeySection } from "./DirectorKeySection";
 import { toast } from "@/lib/toast";
 import { useMe } from "@/lib/api/auth";
 
@@ -164,6 +165,7 @@ export function Settings() {
           </div>
         </div>
       ) : (
+        <>
         <section className="rounded-2xl bg-surface p-5 shadow-card-sm">
           <div className="mb-3 flex items-center gap-2">
             <SettingsIcon size={16} className="text-blue-600" />
@@ -347,6 +349,10 @@ export function Settings() {
             </div>
           </div>
         </section>
+
+        {/* Пункт 1: ключ директора — защита действий. */}
+        <DirectorKeySection />
+        </>
       )}
     </main>
   );

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Calculator, Plus } from "lucide-react";
+import { BrandLogo } from "@/components/BrandLogo";
+import { Calculator, Plus, ReceiptText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RouteId } from "@/app/route";
 import { useMe, useLogout } from "@/lib/api/auth";
 import { openCalculator } from "@/lib/calc/calcStore";
-import { FabProvider, type PageFab } from "./fab";
+import { FabProvider, usePageFab, type PageFab } from "./fab";
+import { openDeal } from "@/pages/clients/CreateDealMenu";
 import { useSheetDrag, SheetHandle } from "./ui";
 import {
   buildMoreItems,
@@ -23,10 +25,18 @@ import { MobileDebtors } from "./pages/MobileDebtors";
 import { MobileService } from "./pages/MobileService";
 import { MobileStaff } from "./pages/MobileStaff";
 import { MobileWhatsNew } from "./pages/MobileWhatsNew";
+import { MobileProgress } from "./pages/MobileProgress";
 import { MobileSettings } from "./pages/MobileSettings";
 import { MobileDocuments } from "./pages/MobileDocuments";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { StoragePage } from "@/pages/storage/StoragePage";
+import { Partners } from "@/pages/partners/Partners";
+import { Sales } from "@/pages/sales/Sales";
+import { Analytics } from "@/pages/analytics/Analytics";
+import { Buyout } from "@/pages/buyout/Buyout";
+import { ApprovalsBell } from "@/components/ApprovalsInbox";
+import { DayReportDialog } from "@/components/DayReport";
+import { TABLET_COLUMN } from "./tablet";
 
 /**
  * Корень мобильного слоя. Полностью отдельная оболочка: верхняя панель,
@@ -91,8 +101,10 @@ export function MobileApp({
 
         <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 overscroll-contain">
           {/* key={route} + fade — плавный переход между вкладками вместо резкой
-              подмены контента. */}
-          <div key={route} className="animate-fade-in">
+              подмены контента. На планшете контент — колонкой по центру:
+              строка списка во всю ширину 1180–1366px не читается (имя у
+              левого края, сумма у правого). */}
+          <div key={route} className={cn("mx-auto w-full animate-fade-in", TABLET_COLUMN)}>
             <MobilePage route={route} onSelect={go} />
           </div>
         </main>
@@ -108,7 +120,9 @@ export function MobileApp({
           <button
             type="button"
             onClick={fab.onClick}
-            className="absolute bottom-[calc(72px+env(safe-area-inset-bottom))] right-4 z-30 flex h-14 items-center gap-2 rounded-full bg-blue-600 px-5 text-[15px] font-bold text-white shadow-card-lg active:scale-95"
+            // Правый край кнопки — по краю колонки контента (960px, см.
+            // mobile/tablet.ts), а не экрана.
+            className="absolute bottom-[calc(72px+env(safe-area-inset-bottom))] right-[max(1rem,calc((100%_-_960px)/2_+_1rem))] z-30 flex h-14 items-center gap-2 rounded-full bg-blue-600 px-5 text-[15px] font-bold text-white shadow-card-lg active:scale-95"
           >
             <Plus size={20} strokeWidth={2.5} />
             {fab.label}
@@ -152,10 +166,47 @@ function MobilePage({
       return <MobileDebtors />;
     case "service":
       return <MobileService />;
+    case "analytics":
+      // Доска показателей: на телефоне те же плитки в одну-две колонки.
+      return (
+        <div className="px-1 pb-4">
+          <Analytics />
+        </div>
+      );
     case "staff":
       return <MobileStaff />;
     case "whats-new":
       return <MobileWhatsNew />;
+    case "progress":
+      return <MobileProgress />;
+    case "sales":
+      // Раздел свёрстан адаптивно: на телефоне таблицы заменяются
+      // карточными списками, мастер продажи — полноэкранный.
+      //
+      // 07.09: на компьютере новую сделку заводят из шапки, которая видна на
+      // любой странице. На телефоне шапки нет, поэтому кнопка живёт прямо в
+      // разделе — иначе за продажей пришлось бы возвращаться на «Главную».
+      return (
+        <WithFab label="Продажа" onClick={() => openDeal("sale")}>
+          <Sales />
+        </WithFab>
+      );
+    case "rassrochki":
+      // Раздел свёрстан адаптивно: списки — карточками, мастер выкупа
+      // полноэкранный (паритет с десктопом).
+      return (
+        <WithFab label="Выкуп" onClick={() => openDeal("buyout")}>
+          <Buyout />
+        </WithFab>
+      );
+    case "partners":
+      // Пункт 11: страница адаптивна (таблица со своим скроллом) —
+      // переиспользуем десктопную в мобильной обёртке.
+      return (
+        <div className="px-1 pb-4">
+          <Partners />
+        </div>
+      );
     case "settings":
       return <MobileSettings />;
     case "docs":
@@ -176,22 +227,32 @@ function MobilePage({
 /* ───────────────────────── верхняя панель ───────────────────────── */
 
 function MobileTopBar({ title }: { title: string }) {
+  // Пункт 7: сводка дня (Z-отчёт) — доступна в любой момент с телефона.
+  const [dayReportOpen, setDayReportOpen] = useState(false);
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)]">
-      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px] bg-ink text-white">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" />
-          <path
-            d="M8 7v10M16 7v10M8 12h8"
-            stroke="#fff"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-        </svg>
-      </div>
+    <header className="shrink-0 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)]">
+      <div className={cn("mx-auto flex h-14 w-full items-center gap-3", TABLET_COLUMN)}>
+      <BrandLogo className="h-9 w-9 rounded-[10px]" />
       <h1 className="font-display text-[18px] font-bold tracking-tight text-ink">
         {title}
       </h1>
+      <div className="ml-auto flex items-center gap-1.5">
+        <button
+          type="button"
+          aria-label="Сводка дня"
+          onClick={() => setDayReportOpen(true)}
+          className="flex h-10 w-10 items-center justify-center rounded-full text-muted transition-colors active:bg-surface-soft"
+        >
+          <ReceiptText size={19} />
+        </button>
+        {/* Пункт 1: подтверждения ключа директора — сценарий «директор с
+            телефона видит висящий запрос и подтверждает». */}
+        <ApprovalsBell />
+      </div>
+      </div>
+      {dayReportOpen && (
+        <DayReportDialog onClose={() => setDayReportOpen(false)} />
+      )}
     </header>
   );
 }
@@ -292,7 +353,7 @@ function MoreSheet({
       <div
         onClick={(e) => e.stopPropagation()}
         style={sheetStyle}
-        className="rounded-t-3xl bg-surface px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up"
+        className="mx-auto w-full max-w-[640px] rounded-t-3xl bg-surface px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up"
       >
         <SheetHandle handleProps={handleProps} />
         <div className="grid grid-cols-4 gap-2">
@@ -348,4 +409,22 @@ function MoreSheet({
 
 function isMoreRoute(route: RouteId): boolean {
   return !tabItems.some((t) => t.id === route);
+}
+
+/**
+ * Десктопная страница в мобильной обёртке + своя плавающая кнопка.
+ * Нужна там, где страница общая с компьютером и сама про мобильный FAB
+ * ничего не знает (Продажи, Выкуп).
+ */
+function WithFab({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  usePageFab(label, onClick);
+  return <div className="px-1 pb-4">{children}</div>;
 }

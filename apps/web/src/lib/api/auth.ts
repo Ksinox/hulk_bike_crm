@@ -11,6 +11,14 @@ export type AuthUser = {
   avatarColor: string;
   /** true — при ближайшем входе обязан сменить пароль, UI блокирует работу до смены */
   mustChangePassword?: boolean;
+  /** Должность словами (14.09). */
+  position?: string | null;
+  /** Ответ директора при создании: уже работает / новый сотрудник. */
+  staffKind?: "existing" | "new" | null;
+  /** Права на щепетильные данные (14.09): нет права — блока нет. */
+  permissions?: Partial<Record<"data.profit" | "data.repairProfit" | "data.partnerShares", boolean>>;
+  /** false — пароль задаёт директор, сам сотрудник его не меняет. */
+  canChangePassword?: boolean;
 };
 
 export type LoginTile = {
@@ -19,6 +27,8 @@ export type LoginTile = {
   login: string;
   role: AuthRole;
   avatarColor: string;
+  /** Должность словами (15.09) — на плитке входа вместо технической роли. */
+  position?: string | null;
 };
 
 export const authKeys = {

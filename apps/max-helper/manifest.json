@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Халк Байк — мессенджеры",
+  "version": "1.0.0",
+  "description": "Открывает чат с клиентом в MAX по номеру телефона прямо из CRM «Халк Байк».",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["tabs"],
+  "host_permissions": ["https://web.max.ru/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://web.max.ru/*"],
+      "js": ["max.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://crm.hulkbike.ru/*",
+        "https://crm-preview.104-128-128-96.sslip.io/*"
+      ],
+      "js": ["crm.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

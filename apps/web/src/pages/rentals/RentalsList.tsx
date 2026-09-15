@@ -24,6 +24,7 @@ import {
   PhoneOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ElectricMark } from "@/components/PowerTypeBadge";
 import { type Rental } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { initialsOf } from "@/lib/mock/clients";
@@ -77,15 +78,29 @@ function ScooterTag({
   label,
   mileage,
   size = "sm",
+  electric = false,
+  rentalNumber,
+  kmClassName,
 }: {
   label: string;
   mileage?: number | null;
   size?: "sm" | "md";
+  /** Пункт 11: отметка электро. */
+  electric?: boolean;
+  /** Арендный номер техники (пункт 15) — приоритетнее номера из имени. */
+  rentalNumber?: number | null;
+  /** Узкий контейнер (партнёрка): пробег складывается первым. */
+  kmClassName?: string;
 }) {
-  const { model, num } = parseScooter(label);
+  const { model, num: nameNum } = parseScooter(label);
+  // Правка 24.08: в кружке показываем АРЕНДНЫЙ номер; «#NN» из имени —
+  // исторический порядок заведения, оператору он не нужен.
+  const num = rentalNumber != null ? String(rentalNumber) : nameNum;
   const dot = size === "md" ? "h-6 min-w-6 text-[12px]" : "h-5 min-w-5 text-[11px]";
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      {/* Пункт 11: электро-отметка ПЕРВОЙ — сразу видно тип техники. */}
+      {electric && <ElectricMark size="sm" />}
       {num != null && (
         <span
           className={cn(
@@ -98,7 +113,7 @@ function ScooterTag({
       )}
       <span className="text-muted">{model}</span>
       {mileage != null && (
-        <span className="text-[11px] tabular-nums text-muted-2">
+        <span className={cn("text-[11px] tabular-nums text-muted-2", kmClassName)}>
           · {fmt(mileage)} км
         </span>
       )}
@@ -163,6 +178,10 @@ type Row = {
   clientId: number;
   clientName: string;
   scooterLabel: string;
+  /** Пункт 11: электротранспорт — отметка в списке. */
+  isElectric: boolean;
+  /** Пункт 15: арендный номер техники (для кружка вместо «#NN»). */
+  rentalNumber: number | null;
   scooterAvatarSrc: string | null;
   mileage: number | null;
   startKey: number;
@@ -180,6 +199,8 @@ type Row = {
   onParking: boolean;
   parkingDays: number;
   unreachable: boolean;
+  /** Партнёрка (27.08): имя инвестора техники — бейдж в колонке «Скутер». */
+  investorName: string | null;
 };
 
 /**
@@ -274,11 +295,26 @@ export function RentalsList({
   viewMode,
   onNew,
   onMeasureWidth,
+  investorOf,
+  narrowAware = false,
 }: {
   items: Rental[];
   selectedId: number | null;
   onSelect: (id: number) => void;
   viewMode: RentalsViewMode;
+  /**
+   * Партнёрка (27.08): резолвер «имя техники → инвестор». Когда передан,
+   * в колонке «Скутер» появляется фиолетовый бейдж с именем инвестора.
+   */
+  investorOf?: (scooterName: string) => string | null;
+  /**
+   * Правка 28.08 (партнёрка): контейнерная адаптация колонок. Родитель
+   * оборачивает список в @container; на узком контейнере колонки прячутся
+   * по приоритету — сначала «Сумма аренды», потом «№», «Связь», «Выдан».
+   * Долг и статус видимы всегда. Без обёртки-@container включать нельзя —
+   * колонки останутся скрытыми (min-width-запросу не с чем сравняться).
+   */
+  narrowAware?: boolean;
   /** v0.8.11: открыть «Новая аренда» — для плитки-заглушки в режиме плиток. */
   onNew?: () => void;
   /**
@@ -344,14 +380,19 @@ export function RentalsList({
       const delta = daysToEnd(r.endPlanned);
       const overdueDays = delta < 0 ? Math.abs(delta) : 0;
       const daysLeft = delta > 0 ? delta : 0;
-      const badgeText =
-        isOverdue && overdueDays > 0
+      // Завершённой аренде «дней до возврата» не бывает: раньше у неё
+      // горел зелёный «2д», и список читался как живой (правка 04.09).
+      const finished = r.status === "completed" || r.status === "cancelled";
+      const badgeText = finished
+        ? "—"
+        : isOverdue && overdueDays > 0
           ? `${overdueDays}д`
           : delta === 0
             ? "0д"
             : `${daysLeft}д`;
-      const badgeTone =
-        isOverdue || hasDebt
+      const badgeTone = finished
+        ? "bg-surface-soft text-muted-2"
+        : isOverdue || hasDebt
           ? "bg-red-600 text-white"
           : delta === 0
             ? "bg-orange-500 text-white"
@@ -371,6 +412,9 @@ export function RentalsList({
         clientId: r.clientId,
         clientName: c?.name ?? `Клиент #${r.clientId}`,
         scooterLabel: r.scooter,
+        // Пункт 11: отметка электро в общем списке аренд.
+        isElectric: model?.isElectric ?? false,
+        rentalNumber: scooter?.rentalSlot ?? null,
         scooterAvatarSrc: fileUrl(model?.avatarKey, { variant: "view" }),
         mileage: scooter?.mileage ?? null,
         startKey: dateKey(r.start),
@@ -393,9 +437,10 @@ export function RentalsList({
           .filter((p) => p.rentalId === r.id)
           .reduce((s, p) => s + p.days, 0),
         unreachable: unreachableSet.has(r.clientId),
+        investorName: investorOf?.(r.scooter) ?? null,
       };
     });
-  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll, unreachableSet, periodSums]);
+  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll, unreachableSet, periodSums, investorOf]);
 
   const sortedRows = useMemo<Row[]>(() => {
     if (!sort) return rows;
@@ -489,24 +534,40 @@ export function RentalsList({
   const hasAnyParking = rows.some((r) => r.parkingDays > 0);
 
   return (
-    <div className="scrollbar-thin h-full overflow-auto px-2">
-      {/* w-auto: колонки прижаты к содержимому (не растянуты на всю ширину). */}
-      <table ref={tableRef} className="w-auto border-collapse text-left">
+    <div
+      className={cn(
+        "scrollbar-thin h-full px-2",
+        // Правка 28.08: в узком режиме горизонтальной прокрутки быть не
+        // должно — колонки складываются, а не уезжают за край.
+        narrowAware ? "overflow-y-auto overflow-x-hidden" : "overflow-auto",
+      )}
+    >
+      {/* w-auto: колонки прижаты к содержимому (не растянуты на всю ширину).
+          Правка 28.08: в narrowAware (партнёрка) таблица тянется на всю
+          ширину карточки — иначе строка выглядела «сжатой», хотя справа
+          оставалось пустое место. */}
+      <table
+        ref={tableRef}
+        className={cn(
+          "border-collapse text-left",
+          narrowAware ? "w-full" : "w-auto",
+        )}
+      >
         <thead className="sticky top-0 z-10 bg-surface">
           <tr className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
-            <Th label="№" col="id" sort={sort} onSort={toggleSort} />
+            <Th label="№" col="id" sort={sort} onSort={toggleSort} className={COL.id(narrowAware)} />
             <Th label="Клиент" col="client" sort={sort} onSort={toggleSort} />
-            <Th label="Связь" col="contact" sort={sort} onSort={toggleSort} align="center" />
+            <Th label="Связь" col="contact" sort={sort} onSort={toggleSort} align="center" className={COL.contact(narrowAware)} />
             <Th label="Скутер" col="scooter" sort={sort} onSort={toggleSort} />
-            <Th label="Выдан" col="start" sort={sort} onSort={toggleSort} />
-            <Th label="Возврат" col="end" sort={sort} onSort={toggleSort} />
+            <Th label="Выдан" col="start" sort={sort} onSort={toggleSort} className={COL.start(narrowAware)} />
+            <Th label="Возврат" col="end" sort={sort} onSort={toggleSort} className={COL.end(narrowAware)} />
             <Th label="Дней" col="days" sort={sort} onSort={toggleSort} align="center" />
             {hasAnyParking && (
               <Th label="Паркинг" col="parking" sort={sort} onSort={toggleSort} align="center" />
             )}
-            <Th label="Сумма аренды" col="rentSum" sort={sort} onSort={toggleSort} align="right" />
-            <Th label="Долг" col="sum" sort={sort} onSort={toggleSort} align="right" />
-            <Th label="Статус" col="status" sort={sort} onSort={toggleSort} />
+            <Th label="Сумма аренды" col="rentSum" sort={sort} onSort={toggleSort} align="right" className={COL.rentSum(narrowAware)} />
+            <Th label="Долг" col="sum" sort={sort} onSort={toggleSort} align="right" className={COL.debt(narrowAware)} />
+            <Th label="Статус" col="status" sort={sort} onSort={toggleSort} className={COL.status(narrowAware)} />
           </tr>
         </thead>
         <tbody>
@@ -517,6 +578,7 @@ export function RentalsList({
               active={row.rental.id === selectedId}
               onSelect={onSelect}
               showParking={hasAnyParking}
+              narrowAware={narrowAware}
             />
           ))}
         </tbody>
@@ -525,18 +587,48 @@ export function RentalsList({
   );
 }
 
+/**
+ * Приоритеты колонок при узком КОНТЕЙНЕРЕ (партнёрка, narrowAware):
+ * раньше таблица просто уезжала под горизонтальный скролл, и «куча
+ * информации скрывалась» — долг и статус оказывались за краем. Теперь
+ * первыми складываются наименее критичные колонки, а долг/статус видимы
+ * всегда. Пороги — ширина контейнера, не окна.
+ */
+/**
+ * Пороги подобраны по РЕАЛЬНОЙ ширине колонок (правка 28.08): раньше они
+ * были завышены, и строка складывалась, когда места ещё хватало — справа
+ * оставалась пустота. Прикидка ширин: клиент ~230, скутер с инвестором
+ * ~300, дни ~70, долг ~110, статус ~110 → базовый набор ≈ 820. Всё
+ * остальное подключается по мере появления места.
+ */
+const COL = {
+  /** Долг и статус — последнее, что складывается: до 700 они колонками,
+   *  ниже переезжают чипами под имя клиента (перекомпоновка, не потеря). */
+  debt: (on: boolean) => (on ? "hidden @[700px]:table-cell" : undefined),
+  status: (on: boolean) => (on ? "hidden @[700px]:table-cell" : undefined),
+  /** «Возврат»: срок дублируется чипом «Дней», поэтому уходит раньше. */
+  end: (on: boolean) => (on ? "hidden @[820px]:table-cell" : undefined),
+  rentSum: (on: boolean) => (on ? "hidden @[930px]:table-cell" : undefined),
+  start: (on: boolean) => (on ? "hidden @[1030px]:table-cell" : undefined),
+  id: (on: boolean) => (on ? "hidden @[1110px]:table-cell" : undefined),
+  contact: (on: boolean) => (on ? "hidden @[1190px]:table-cell" : undefined),
+};
+
 function Th({
   label,
   col,
   sort,
   onSort,
   align = "left",
+  className,
 }: {
   label: string;
   col: SortCol;
   sort: { col: SortCol; dir: "asc" | "desc" } | null;
   onSort: (col: SortCol) => void;
   align?: "left" | "center" | "right";
+  /** Контейнерная адаптация (партнёрка): колонка прячется на узком. */
+  className?: string;
 }) {
   const activeSort = sort?.col === col;
   return (
@@ -545,6 +637,7 @@ function Th({
         "whitespace-nowrap border-b border-border px-4 py-2.5 font-semibold select-none",
         align === "right" && "text-right",
         align === "center" && "text-center",
+        className,
       )}
     >
       <button
@@ -626,11 +719,13 @@ function RentalTableRow({
   active,
   onSelect,
   showParking,
+  narrowAware = false,
 }: {
   row: Row;
   active: boolean;
   onSelect: (id: number) => void;
   showParking?: boolean;
+  narrowAware?: boolean;
 }) {
   return (
     <tr
@@ -646,12 +741,20 @@ function RentalTableRow({
             : "hover:bg-surface-soft/70",
       )}
     >
-      <td className="px-4 py-5 tabular-nums font-mono text-[12px] text-muted-2 whitespace-nowrap">
+      <td
+        className={cn(
+          "px-4 py-5 tabular-nums font-mono text-[12px] text-muted-2 whitespace-nowrap",
+          COL.id(narrowAware),
+        )}
+      >
         #{String(row.rental.id).padStart(4, "0")}
       </td>
       <td className="px-4 py-5">
         <div className="flex items-center gap-3 min-w-0">
-          <ClientAvatar clientId={row.clientId} name={row.clientName} w={42} h={42} />
+          {/* На узком контейнере фото складывается — имя и чипы важнее. */}
+          <span className={cn(narrowAware && "hidden @[640px]:block")}>
+            <ClientAvatar clientId={row.clientId} name={row.clientName} w={42} h={42} />
+          </span>
           <div className="min-w-0">
             {/* Мини-стикеры цветами заметок аренды — видно сразу, что есть
                 заметки. */}
@@ -662,22 +765,70 @@ function RentalTableRow({
             >
               {row.clientName}
             </span>
+            {/* Узкий контейнер: колонки «Долг»/«Статус» сложились — их
+                значения показываем чипами здесь, под именем. Информация
+                перекомпонована, а не скрыта. */}
+            {narrowAware && (
+              <span className="mt-1 flex flex-wrap items-center gap-1.5 @[700px]:hidden">
+                <StatusPill status={row.effStatus} />
+                {row.hasDebt && (
+                  <span className="text-[12px] font-bold tabular-nums text-red-ink">
+                    долг {fmt(row.rightSum)} ₽
+                  </span>
+                )}
+                {!row.hasDebt && row.pendingRent > 0 && (
+                  <span className="text-[12px] font-semibold tabular-nums text-orange-ink">
+                    {fmt(row.pendingRent)} ₽
+                  </span>
+                )}
+              </span>
+            )}
           </div>
         </div>
       </td>
       {/* v0.8.26 (G2): «Связь» сразу после имени — статус читается рядом с ФИО. */}
-      <td className="px-4 py-5 text-center">
+      <td className={cn("px-4 py-5 text-center", COL.contact(narrowAware))}>
         <div className="flex justify-center">
           <ContactToggle clientId={row.clientId} unreachable={row.unreachable} />
         </div>
       </td>
       <td className="px-4 py-5 text-[13px] whitespace-nowrap">
-        <ScooterTag label={row.scooterLabel} mileage={row.mileage} />
+        <span className="inline-flex items-center gap-1.5">
+          <ScooterTag
+            label={row.scooterLabel}
+            mileage={row.mileage}
+            electric={row.isElectric}
+            rentalNumber={row.rentalNumber}
+            kmClassName={narrowAware ? "hidden @[880px]:inline" : undefined}
+          />
+          {/* Партнёрка (27.08): чья техника катается в этой аренде. */}
+          {row.investorName && (
+            <span
+              className={cn(
+                "rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700",
+                narrowAware && "max-w-[130px] truncate @[1000px]:max-w-none",
+              )}
+              title={row.investorName}
+            >
+              {row.investorName}
+            </span>
+          )}
+        </span>
       </td>
-      <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
+      <td
+        className={cn(
+          "px-4 py-5 tabular-nums text-muted whitespace-nowrap",
+          COL.start(narrowAware),
+        )}
+      >
         {row.rental.start}
       </td>
-      <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
+      <td
+        className={cn(
+          "px-4 py-5 tabular-nums text-muted whitespace-nowrap",
+          COL.end(narrowAware),
+        )}
+      >
         {row.rental.endPlanned}
       </td>
       <td className="px-4 py-5 text-center">
@@ -707,11 +858,21 @@ function RentalTableRow({
       )}
       {/* F5: «Сумма аренды» = «Эта аренда» из карточки (текущий период),
           а не накопительная rental.sum по всем продлениям. */}
-      <td className="px-4 py-5 text-right tabular-nums whitespace-nowrap font-semibold text-ink-2">
+      <td
+        className={cn(
+          "px-4 py-5 text-right tabular-nums whitespace-nowrap font-semibold text-ink-2",
+          COL.rentSum(narrowAware),
+        )}
+      >
         {fmt(row.currentPeriodSum)} ₽
       </td>
       {/* «Долг» — задолженность (просрочка/ущерб/паркинг/неоплачено). */}
-      <td className="px-4 py-5 text-right tabular-nums whitespace-nowrap">
+      <td
+        className={cn(
+          "px-4 py-5 text-right tabular-nums whitespace-nowrap",
+          COL.debt(narrowAware),
+        )}
+      >
         {row.hasDebt ? (
           <span className="font-bold text-red-ink">{fmt(row.rightSum)} ₽</span>
         ) : row.pendingRent > 0 ? (
@@ -720,7 +881,7 @@ function RentalTableRow({
           <span className="text-muted-2">—</span>
         )}
       </td>
-      <td className="px-4 py-5 whitespace-nowrap">
+      <td className={cn("px-4 py-5 whitespace-nowrap", COL.status(narrowAware))}>
         <StatusPill status={row.effStatus} />
       </td>
     </tr>
@@ -808,7 +969,8 @@ function RentalTile({
         </div>
         {/* Метка скутера — правый нижний угол: круглый номер + модель. */}
         {(() => {
-          const { model, num } = parseScooter(row.scooterLabel);
+          const { model, num: nameNum } = parseScooter(row.scooterLabel);
+          const num = row.rentalNumber != null ? String(row.rentalNumber) : nameNum;
           return (
             <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-ink/75 py-0.5 pl-0.5 pr-2 text-[10px] font-semibold text-white">
               {num != null && (

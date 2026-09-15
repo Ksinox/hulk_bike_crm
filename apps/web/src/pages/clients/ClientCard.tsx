@@ -6,23 +6,22 @@ import {
   Check,
   Copy,
   FileText,
-  MessageCircle,
   Pencil,
   Phone,
   PhoneOff,
   Scale,
-  Send,
   Trash2,
   UploadCloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { whatsappLink, telegramLink } from "@/lib/messengers";
+import { MessengerButtons } from "@/components/MessengerButtons";
 import {
   getClientDetails,
   SOURCE_LABEL,
   type Client,
 } from "@/lib/mock/clients";
 import { MODEL_LABEL } from "@/lib/mock/rentals";
+import { scooterModelName } from "@/components/ScooterName";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast, confirmDialog } from "@/lib/toast";
 import {
@@ -248,7 +247,7 @@ export function ClientCard({ client }: { client: Client }) {
                     className="inline-flex items-center rounded-full bg-green-soft px-2 py-0.5 text-[11px] font-bold text-green-ink transition-colors hover:bg-green/20"
                     title="Открыть аренду"
                   >
-                    аренда {activeRental.scooter}
+                    аренда {scooterModelName(activeRental.scooter)}
                   </button>
                 )}
                 {activeDebtor && (
@@ -371,16 +370,20 @@ export function ClientCard({ client }: { client: Client }) {
                 }
                 tone={activeRental ? "neutral" : "gray"}
               />
-              <KpiBox
-                label="Дней в аренде"
-                value={
-                  totalRentedDays > 0
-                    ? `${totalRentedDays} ${daysWord(totalRentedDays)}`
-                    : "—"
-                }
-                hint="суммарно по истории"
-                tone={totalRentedDays > 0 ? "neutral" : "gray"}
-              />
+              {/* Третья плитка занимает весь ряд: иначе рядом с ней
+                  оставалась пустая ячейка (фидбэк 01.09). */}
+              <div className="col-span-2">
+                <KpiBox
+                  label="Дней в аренде"
+                  value={
+                    totalRentedDays > 0
+                      ? `${totalRentedDays} ${daysWord(totalRentedDays)}`
+                      : "—"
+                  }
+                  hint="суммарно по истории"
+                  tone={totalRentedDays > 0 ? "neutral" : "gray"}
+                />
+              </div>
             </div>
             <div className="flex h-full flex-col gap-2">
               <KpiBox
@@ -538,8 +541,9 @@ export function ClientCard({ client }: { client: Client }) {
         <EntityNotes entity="client" entityId={client.id} />
       </div>
 
-      {/* Tabs */}
-      <div className="mt-1 flex gap-1 border-b border-border">
+      {/* Tabs. В узкой колонке (карточка быстрого просмотра) вкладки
+          переносятся на вторую строку, а не обрезаются краем (01.09). */}
+      <div className="mt-1 flex flex-wrap gap-x-1 border-b border-border">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -690,25 +694,8 @@ function PhoneDisplay({
           доп
         </span>
       )}
-      {/* Прямой чат по номеру — без сохранения контакта. */}
-      <a
-        href={whatsappLink(phone)}
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Написать в WhatsApp"
-        className="flex h-6 w-6 items-center justify-center rounded-full text-green transition-colors hover:bg-green/10"
-      >
-        <MessageCircle size={13} />
-      </a>
-      <a
-        href={telegramLink(phone)}
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Написать в Telegram"
-        className="flex h-6 w-6 items-center justify-center rounded-full text-sky-600 transition-colors hover:bg-sky-50"
-      >
-        <Send size={13} />
-      </a>
+      {/* Пункт 3: прямой чат по номеру — WhatsApp · Telegram · MAX. */}
+      <MessengerButtons phone={phone} />
       <span className="relative inline-block">
         <button
           type="button"

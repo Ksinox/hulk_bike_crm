@@ -21,6 +21,7 @@ import {
 import { I18nProvider } from "react-aria-components";
 import { parseDate, type CalendarDate } from "@internationalized/date";
 import { cn } from "@/lib/utils";
+import { MessengerButtons } from "@/components/MessengerButtons";
 import { fileUrl } from "@/lib/files";
 import { RangeCalendar } from "@/components/ui/calendar-rac";
 import {
@@ -249,7 +250,16 @@ export function ApplicationView({
         app.birthDate
       );
 
-  const docsPresent = DOC_ORDER.filter((k) => haveKinds.has(k)).length;
+  /*
+   * Заявка на ПОКУПКУ (правка 01.09): водительского удостоверения в ней нет
+   * и быть не должно — человек покупает технику, а не берёт прокатную.
+   * Иначе карточка вечно показывала «2/3» и пустую плитку «Права», как
+   * будто клиент чего-то недодал.
+   */
+  const docKinds = DOC_ORDER.filter(
+    (k) => k !== "license" || app.purpose !== "sale",
+  );
+  const docsPresent = docKinds.filter((k) => haveKinds.has(k)).length;
   const hasAddress = !!(app.passportRegistration || app.liveAddress);
   const addressBadge = app.sameAddress
     ? "Совпадают"
@@ -297,12 +307,16 @@ export function ApplicationView({
           {app.name || "Без имени"}
         </h2>
         {app.phone && (
-          <a
-            href={`tel:${app.phone}`}
-            className="mt-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-[14px] font-bold text-blue-700 transition-colors hover:bg-blue-100"
-          >
-            <Phone size={14} /> {app.phone}
-          </a>
+          <span className="mt-2 flex w-fit items-center gap-1.5">
+            <a
+              href={`tel:${app.phone}`}
+              className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-[14px] font-bold text-blue-700 transition-colors hover:bg-blue-100"
+            >
+              <Phone size={14} /> {app.phone}
+            </a>
+            {/* Пункт 3: WhatsApp · Telegram · MAX у телефона заявки. */}
+            <MessengerButtons phone={app.phone} size="lg" />
+          </span>
         )}
         <div className="mt-2 text-[11.5px] text-muted-2">
           Заявка #{String(app.id).padStart(4, "0")} · подана{" "}
@@ -474,8 +488,14 @@ export function ApplicationView({
     <AccordionCard
       icon={<FileText size={13} />}
       title="Документы"
-      badge={`${docsPresent}/3`}
-      badgeTone={docsPresent === 3 ? "green" : docsPresent > 0 ? "amber" : "red"}
+      badge={`${docsPresent}/${docKinds.length}`}
+      badgeTone={
+        docsPresent === docKinds.length
+          ? "green"
+          : docsPresent > 0
+            ? "amber"
+            : "red"
+      }
       defaultOpen
     >
       {app.files.length === 0 ? (
@@ -484,7 +504,7 @@ export function ApplicationView({
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2">
-          {DOC_ORDER.map((kind) => (
+          {docKinds.map((kind) => (
             <DocTile
               key={kind}
               app={app}

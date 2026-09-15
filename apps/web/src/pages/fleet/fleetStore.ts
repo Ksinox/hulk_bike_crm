@@ -91,6 +91,13 @@ export function addScooter(data: Omit<FleetScooter, "id">): FleetScooter {
     marketValue: data.marketValue ?? null,
     lastOilChangeMileage: data.lastOilChangeMileage ?? null,
     note: data.note ?? null,
+    // Пункт 15: желаемый номер в арендном парке (undefined = авто на бэке).
+    rentalSlot: data.rentalSlot ?? null,
+    // Пункт 11: чья техника — наша или партнёрская (свойство единицы).
+    isPartner: data.isPartner ?? false,
+    partnerShare: data.partnerShare ?? null,
+    // Правка 27.08: техника заводится через инвестора — процент наследуется.
+    investorId: data.investorId ?? null,
   };
   api
     .post(`/api/scooters`, body)
@@ -150,6 +157,12 @@ export function patchScooter(id: number, patch: Partial<FleetScooter>) {
   }
   if (patch.marketValue !== undefined) {
     apiPatch.marketValue = patch.marketValue ?? null;
+  }
+  if (patch.salePrice !== undefined) {
+    apiPatch.salePrice = patch.salePrice ?? null;
+  }
+  if (patch.purchaseBatch !== undefined) {
+    apiPatch.purchaseBatch = patch.purchaseBatch ?? null;
   }
   if (patch.lastOilChangeMileage !== undefined) {
     apiPatch.lastOilChangeMileage = patch.lastOilChangeMileage ?? null;

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { partnerCutOf, usePartnerInfo } from "@/lib/partner";
 import { Card, DeltaPill } from "./KpiCard";
 import { formatRub, type DashboardMetrics } from "./useDashboardMetrics";
 import {
@@ -24,9 +25,18 @@ const TABS: { id: Period; label: string }[] = [
 export function RevenueCard({
   className,
   metrics,
+  compact,
+  blueHeight,
 }: {
   className?: string;
   metrics: DashboardMetrics;
+  /**
+   * Тесная раскладка (фидбэк 01.09): текст мельче, отступы уже, график
+   * ниже — чтобы блок встал вровень с плашками слева, а не растягивался.
+   */
+  compact?: boolean;
+  /** Высота синей части: ровно как ряд плашек загрузки слева. */
+  blueHeight?: number;
 }) {
   const [period, setPeriod] = useState<Period>("month");
   const [fullscreen, setFullscreen] = useState(false);
@@ -55,6 +65,17 @@ export function RevenueCard({
     return periodWindow(period);
   }, [period, customRange]);
 
+  /**
+   * Правка 31.08 (заказчик): выручка — только НАША техника. Операции по
+   * партнёрскому электротранспорту (аренда, продление, просрочка, штрафы,
+   * ущерб) в «Выручку» не попадают вовсе. Раньше они входили за вычетом
+   * доли инвестора, и в списке платежей мелькали чужие строки.
+   */
+  const { shareByRental, excludedRentals } = usePartnerInfo();
+  // Партнёрская техника и любой электротранспорт — не наша выручка (06.09).
+  const isPartnerPayment = (p: { rentalId: number | null }) =>
+    p.rentalId != null && excludedRentals.has(p.rentalId);
+
   const { total, chart, paymentsCount } = useMemo(() => {
     const today = new Date();
 
@@ -62,6 +83,7 @@ export function RevenueCard({
     // (method=deposit — внутренний, нал+безнал = total).
     const inWindow = payments.filter((p) => {
       if (!p.paid || !p.paidAt) return false;
+      if (p.excludedFromRevenue) return false; // пункт 2: аренда удалена
       if (p.type === "deposit" || p.type === "refund") return false;
       // deposit_forfeit (удержанный в ущерб залог) — доход, остальные
       // method='deposit' — внутренние, в выручку не идут.
@@ -69,16 +91,34 @@ export function RevenueCard({
       const t = new Date(p.paidAt).getTime();
       return t >= win.start.getTime() && t < win.end.getTime();
     });
-    const totalSum = inWindow.reduce((s, p) => s + p.amount, 0);
+    // Партнёрские операции считаем отдельно — они нужны для подписи, но
+    // не входят ни в сумму, ни в график, ни в список платежей.
+    const partnerOnly = inWindow.filter(isPartnerPayment);
+    const ownOnly = inWindow.filter((p) => !isPartnerPayment(p));
+    const totalSum = ownOnly.reduce((s, p) => s + p.amount, 0);
+    // Разбивка «наше / партнёрское / инвестору» за то же окно (п.12).
+    let pGross = 0;
+    let pCut = 0;
+    let own = 0;
+    for (const p of partnerOnly) {
+      pGross += p.amount;
+      pCut += partnerCutOf(p, shareByRental);
+    }
+    for (const p of ownOnly) own += p.amount;
 
     // На произвольном диапазоне график не строим (может быть длинным) —
     // показываем сумму + разбивку + список за период.
     if (customRange) {
-      return { total: totalSum, chart: [], paymentsCount: inWindow.length };
+      return {
+        total: totalSum,
+        chart: [],
+        paymentsCount: ownOnly.length,
+        partnerSplit: { gross: pGross, cut: pCut, ours: pGross - pCut, own },
+      };
     }
 
     const byDay = new Map<string, { sum: number; count: number }>();
-    for (const p of inWindow) {
+    for (const p of ownOnly) {
       const d = (p.paidAt ?? "").slice(0, 10);
       if (!d) continue;
       const cur = byDay.get(d) ?? { sum: 0, count: 0 };
@@ -93,7 +133,7 @@ export function RevenueCard({
     if (period === "day") {
       const hours = workingHoursList();
       const byHour = new Map<number, { sum: number; count: number }>();
-      for (const p of inWindow) {
+      for (const p of ownOnly) {
         if (!p.paidAt) continue;
         const h = new Date(p.paidAt).getHours();
         const cur = byHour.get(h) ?? { sum: 0, count: 0 };
@@ -154,8 +194,13 @@ export function RevenueCard({
       }
     }
 
-    return { total: totalSum, chart: bars, paymentsCount: inWindow.length };
-  }, [period, payments, win, customRange]);
+    return {
+      total: totalSum,
+      chart: bars,
+      paymentsCount: ownOnly.length,
+      partnerSplit: { gross: pGross, cut: pCut, ours: pGross - pCut, own },
+    };
+  }, [period, payments, win, customRange, shareByRental, excludedRentals]);
 
   // Разбивка нал/безнал за окно (учитывает выбранный день). Всегда показывает
   // оба значения — независимо от фильтра (фильтр сужает только список).
@@ -164,17 +209,20 @@ export function RevenueCard({
     let cashless = 0;
     for (const p of payments) {
       if (!p.paid || !p.paidAt) continue;
+      if (p.excludedFromRevenue) continue; // пункт 2: аренда удалена
       if (p.type === "deposit" || p.type === "refund") continue;
       if (p.method === "deposit" && p.type !== "deposit_forfeit") continue;
       const t = new Date(p.paidAt).getTime();
       if (t < win.start.getTime() || t >= win.end.getTime()) continue;
       if (!customRange && selectedDay && p.paidAt.slice(0, 10) !== selectedDay)
         continue;
+      // Электротранспорт инвесторов в нал/безнал не попадает (31.08).
+      if (isPartnerPayment(p)) continue;
       if (p.method === "cash") cash += p.amount;
       else cashless += p.amount;
     }
     return { cash, cashless };
-  }, [payments, win, selectedDay, customRange]);
+  }, [payments, win, selectedDay, customRange, excludedRentals]);
   const breakdownTotal = breakdown.cash + breakdown.cashless;
   const cashPct =
     breakdownTotal > 0 ? (breakdown.cash / breakdownTotal) * 100 : 0;
@@ -203,10 +251,27 @@ export function RevenueCard({
           : "месяц";
 
   return (
-    <Card blue className={className}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[13px] font-medium text-white/80">
+    <Card
+      blue
+      className={cn(
+        compact && "flex h-full flex-col p-3",
+        className,
+      )}
+    >
+      <div
+        className={cn(compact && "flex min-h-0 flex-col overflow-hidden")}
+        style={compact && blueHeight ? { height: blueHeight } : undefined}
+      >
+      {/* Узкая колонка (01.09): заголовок и переключатель переносятся, а
+          не наезжают друг на друга. */}
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <div className="min-w-0">
+          <div
+            className={cn(
+              "font-medium text-white/80",
+              compact ? "text-[12px]" : "text-[13px]",
+            )}
+          >
             Выручка
             {(selectedBar || customRange) && (
               <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
@@ -225,11 +290,28 @@ export function RevenueCard({
               </span>
             )}
           </div>
-          <div className="mt-2 font-display text-[28px] font-extrabold tabular-nums">
+          <div
+            className={cn(
+              "font-display font-extrabold tabular-nums",
+              compact ? "mt-0.5 text-[21px]" : "mt-2 text-[28px]",
+            )}
+          >
             {isEmpty ? "0" : formatRub(displayTotal)}
-            <span className="ml-1 text-[18px] font-bold text-white/70">₽</span>
+            <span
+              className={cn(
+                "ml-1 font-bold text-white/70",
+                compact ? "text-[14px]" : "text-[18px]",
+              )}
+            >
+              ₽
+            </span>
           </div>
-          <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-white/80">
+          <div
+            className={cn(
+              "flex flex-col gap-0.5 text-xs text-white/80",
+              compact ? "mt-1 hidden" : "mt-1.5",
+            )}
+          >
             <div className="flex items-center gap-1.5">
               {!isEmpty && displayCount > 0 && (
                 <DeltaPill
@@ -244,7 +326,8 @@ export function RevenueCard({
                 </span>
               )}
             </div>
-            {!selectedBar &&
+            {!compact &&
+              !selectedBar &&
               !customRange &&
               period === "month" &&
               metrics.revenueExpected > 0 && (
@@ -264,8 +347,16 @@ export function RevenueCard({
               )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-full bg-white/15 p-0.5">
+        {/* На узкой колонке (≈1150px) переключатель с кнопкой разворота
+            вылезал за край карточки и давал горизонтальную прокрутку всей
+            страницы. Теперь ряд умеет переноситься и сжиматься (01.09). */}
+        <div
+          className={cn(
+            "flex min-w-0 items-center justify-end gap-2",
+            compact ? "flex-nowrap" : "flex-wrap",
+          )}
+        >
+          <div className="inline-flex shrink-0 rounded-full bg-white/15 p-0.5">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -276,7 +367,8 @@ export function RevenueCard({
                   setCustomRange(null);
                 }}
                 className={cn(
-                  "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                  "rounded-full font-semibold transition-colors",
+                  compact ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs",
                   !customRange && period === t.id
                     ? "bg-white text-blue-700"
                     : "bg-transparent text-white/75 hover:text-white",
@@ -293,7 +385,7 @@ export function RevenueCard({
       {/* Деление нал/безнал — кликабельно: фильтрует список ниже (для сверки
           бухгалтерии «сколько наличкой / сколько переводами»). */}
       {breakdownTotal > 0 && (
-        <div className="mt-3.5">
+        <div className={compact ? "mt-1.5" : "mt-3.5"}>
           <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-white/20">
             <div
               className="bg-white transition-all"
@@ -304,7 +396,12 @@ export function RevenueCard({
               style={{ width: `${100 - cashPct}%` }}
             />
           </div>
-          <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
+          <div
+            className={cn(
+              "flex items-center justify-between gap-2",
+              compact ? "mt-1 text-[10.5px]" : "mt-1.5 text-[11px]",
+            )}
+          >
             <button
               type="button"
               onClick={() =>
@@ -345,13 +442,28 @@ export function RevenueCard({
         </div>
       )}
 
+      {/* Правка 31.08: партнёрский электротранспорт в выручку НЕ входит —
+          сумма выше только по нашей технике. Строку оставляем справкой, но
+          подписываем явно, чтобы её не приняли за часть выручки. */}
+      {/* Подписи про электротранспорт инвесторов здесь больше нет (06.09):
+          в «Выручке» не должно быть ничего про электро — эти деньги целиком
+          живут в «Партнёрке». */}
+
       {/* График — только для периодов (день/неделя/месяц), не для произвольного
           диапазона. Каждый столбик кликабельный → фильтр по дню. */}
-      {!customRange && chart.length > 0 && (
-        <div className="mt-4 flex h-20 items-end gap-1">
+      {!compact && !customRange && chart.length > 0 && (
+        <div
+          className={cn(
+            "flex items-end gap-1",
+            compact ? "mt-2 h-10" : "mt-4 h-20",
+          )}
+        >
           {chart.map((b) => {
             const isSelected = b.date === selectedDay;
-            const heightPx = Math.max((b.sum / max) * 80, b.sum > 0 ? 2 : 1);
+            const heightPx = Math.max(
+              (b.sum / max) * (compact ? 40 : 80),
+              b.sum > 0 ? 2 : 1,
+            );
             const showLabel =
               chart.length <= 7 ||
               chart.indexOf(b) % Math.ceil(chart.length / 10) === 0;
@@ -397,13 +509,42 @@ export function RevenueCard({
         </div>
       )}
 
+      </div>
+
       {/* Список платежей за выбранный срез — на белой плашке. */}
-      <div className="mt-4 -mx-4 -mb-4 rounded-b-[16px] bg-white px-4 pb-4 pt-3">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="text-[12px] font-semibold uppercase tracking-wider text-muted-2">
+      <div
+        className={cn(
+          "-mx-4 -mb-4 rounded-b-[16px] bg-white px-4 pb-4 pt-3",
+          compact
+            ? "mt-3 -mx-3 -mb-3 flex min-h-0 flex-1 flex-col px-3 pb-3 pt-2.5"
+            : "mt-4",
+        )}
+      >
+        <div
+          className={cn(
+            "flex items-center justify-between gap-2",
+            compact ? "mb-1.5" : "mb-2",
+          )}
+        >
+          <span
+            className={cn(
+              "font-semibold uppercase tracking-wider text-muted-2",
+              compact ? "text-[10.5px]" : "text-[12px]",
+            )}
+          >
             Платежи за {rangeLabel}
           </span>
-          {/* Произвольный период — фирменный календарь (день или диапазон). */}
+          {compact && (
+            <span className="text-[10.5px] text-muted-2">
+              {paymentsCount}{" "}
+              {plural(paymentsCount, ["платёж", "платежа", "платежей"])} ·{" "}
+              <b className="tabular-nums text-ink">{formatRub(total)} ₽</b>
+            </span>
+          )}
+          {/* Произвольный период — фирменный календарь (день или диапазон).
+              В тесной раскладке его прячем: место дороже, а выбрать период
+              можно в развёрнутом окне выручки. */}
+          {!compact && (
           <DateRangePicker
             from={customRange?.from ?? null}
             to={customRange?.to ?? null}
@@ -418,9 +559,16 @@ export function RevenueCard({
               }
             }}
           />
+          )}
         </div>
-        <div className="max-h-[300px] overflow-y-auto scrollbar-thin">
+        <div
+          className={cn(
+            "overflow-y-auto scrollbar-thin",
+            compact ? "min-h-0 flex-1" : "max-h-[300px]",
+          )}
+        >
           <RevenueRentalsList
+            hideSummary={compact}
             period={period}
             dayFilter={customRange ? null : selectedDay}
             range={customRange}

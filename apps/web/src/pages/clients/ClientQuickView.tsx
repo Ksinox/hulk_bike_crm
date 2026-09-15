@@ -16,6 +16,7 @@ import {
   getActiveRentalByClient,
   useRentalsByClient,
 } from "@/pages/rentals/rentalsStore";
+import { scooterModelName } from "@/components/ScooterName";
 
 /**
  * Быстрый просмотр карточки клиента — модалка поверх текущей страницы.
@@ -114,7 +115,7 @@ export function ClientQuickView({
                 )}
                 {active && (
                   <span className="inline-flex items-center rounded-full bg-green-soft px-2 py-0.5 text-[10px] font-bold text-green-ink">
-                    аренда {active.scooter}
+                    аренда {scooterModelName(active.scooter)}
                   </span>
                 )}
               </div>

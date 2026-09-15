@@ -21,6 +21,7 @@
  *  6. Излишек → депозит клиента
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { scooterModelName } from "@/components/ScooterName";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -39,6 +40,7 @@ import {
   Minus,
   Plus,
   Pencil,
+  ArrowLeftRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast, confirmDialog } from "@/lib/toast";
@@ -86,15 +88,13 @@ import {
 } from "./overdueAsOf";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileNumPad } from "@/mobile/MobileNumPad";
+import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 
 // v0.4.30: терминала для карт у бизнеса нет — только наличные и
 // перевод. «card» остаётся в типе PaymentMethod ради обратной
 // совместимости с историческими записями в БД, но в UI-селекторах
 // больше не показывается.
-const METHODS: { id: PaymentMethod; label: string; Icon: typeof Banknote }[] = [
-  { id: "cash", label: "Наличные", Icon: Banknote },
-  { id: "transfer", label: "Перевод", Icon: CreditCard },
-];
+
 
 // v0.8.32: тарифные «ступени» по числу дней продления. Источник истины
 // для согласованного расчёта в режиме «по сумме клиента»:
@@ -855,7 +855,18 @@ export function PaymentAcceptDialog({
     setAcceptedStr(target > 0 ? String(target) : "");
   }, [grossTotal, securityToUse, depositToUse, mode, isMobile, cashTouched]);
 
+  // Пункт 8: раздельная оплата — клиент даёт часть наличными, часть
+  // безналом. Разбиение валидно, когда обе части ≥ 1 ₽.
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitCashStr, setSplitCashStr] = useState("");
+
   const accepted = Number(acceptedStr.replace(/\D/g, "")) || 0;
+  const splitCash = Math.min(
+    accepted,
+    Number(splitCashStr.replace(/\D/g, "")) || 0,
+  );
+  const splitTransfer = accepted - splitCash;
+  const splitValid = splitMode && accepted > 0 && splitCash >= 1 && splitTransfer >= 1;
   const totalReceived = depositToUse + securityToUse + accepted;
   // v0.6.11: вычитаем topup из подсчёта overpay/underpay — пополнение
   // залога это «своя» строка платежа, не относится к закрытию долга.
@@ -969,6 +980,12 @@ export function PaymentAcceptDialog({
   const [saving, setSaving] = useState(false);
   const qc = useQueryClient();
 
+  // Пункт 8: выбор одиночного способа выключает раздельный режим
+  // (split заменяет одиночный выбор, и наоборот).
+  useEffect(() => {
+    if (method !== null) setSplitMode(false);
+  }, [method]);
+
   const fmt = (n: number) => n.toLocaleString("ru-RU");
 
   type OpTarget =
@@ -1055,10 +1072,22 @@ export function PaymentAcceptDialog({
     // депозит идут method='deposit' (в выручку повторно не падают); удержанный
     // залог проводим доходом отдельно (deposit_forfeit) в submit().
     const ops: Op[] = [];
+    // Пункт 8: при раздельной оплате принятые деньги — два источника
+    // с разными методами (нал + безнал); иначе один, как раньше.
+    const acceptedFunding: { amount: number; method: PaymentMethod }[] =
+      splitValid
+        ? [
+            { amount: Math.min(splitCash, acceptedAvail), method: "cash" },
+            {
+              amount: acceptedAvail - Math.min(splitCash, acceptedAvail),
+              method: "transfer",
+            },
+          ]
+        : [{ amount: acceptedAvail, method: payMethod }];
     const funding: { amount: number; method: PaymentMethod }[] = [
       { amount: securityToUse, method: "deposit" },
       { amount: depositToUse, method: "deposit" },
-      { amount: acceptedAvail, method: payMethod },
+      ...acceptedFunding,
     ];
     let fundIdx = 0;
     let fundLeft = funding[0]?.amount ?? 0;
@@ -1111,8 +1140,15 @@ export function PaymentAcceptDialog({
     // v0.9: способ оплаты обязателен, когда реально принимаем деньги от
     // клиента (accepted>0). Без осознанного выбора нал/безнал не проводим —
     // иначе статистика по способам будет неверной.
-    if (accepted > 0 && method === null) {
-      toast.error("Выберите способ оплаты", "Наличные или безнал");
+    if (accepted > 0 && method === null && !splitValid) {
+      if (splitMode) {
+        toast.error(
+          "Заполните разбиение",
+          "Обе части (наличные и безнал) должны быть больше нуля.",
+        );
+      } else {
+        toast.error("Выберите способ оплаты", "Наличные или безнал");
+      }
       return;
     }
     setSaving(true);
@@ -1483,6 +1519,15 @@ export function PaymentAcceptDialog({
       // скутера задаёт scooterNextStatus из приёмки.
       if (completing) {
         const dateActual = intake.dateActualForApi();
+        // Пункт 4: причина возврата обязательна.
+        if (!intake.returnReason) {
+          toast.error(
+            "Укажите причину возврата",
+            "Выберите из списка или впишите свой вариант — это обязательное поле.",
+          );
+          setSaving(false);
+          return;
+        }
         const mileage = intake.mileageForApi();
         const scooterNext = intake.scooterNextStatus;
         if (intake.hasDamage) {
@@ -1492,6 +1537,7 @@ export function PaymentAcceptDialog({
               dateActual,
               conditionOk: false,
               equipmentOk: true,
+              returnReason: intake.returnReason,
               // Залог считается «возвращённым» только если зачёта не было.
               depositReturned: depositZachet === 0,
               damageNotes: "",
@@ -1508,6 +1554,7 @@ export function PaymentAcceptDialog({
               dateActual,
               conditionOk: true,
               equipmentOk: true,
+              returnReason: intake.returnReason,
               depositReturned: true,
               mileage,
             },
@@ -1748,8 +1795,156 @@ export function PaymentAcceptDialog({
   // приняты все позиции; способ оплаты обязателен только при accepted>0.
   const submitDisabled =
     saving ||
-    (accepted > 0 && method === null) ||
+    (accepted > 0 && method === null && !splitValid) ||
     (completing ? intake.blocked : totalReceived <= 0 && !forgiveDebt);
+
+  /**
+   * Пункт 8 (переработано по фидбэку 24.08): выбор способа оплаты — ТРИ
+   * РАВНОЗНАЧНЫЕ кнопки в одном ряду: «Наличные» · «Перевод» · «Разделить».
+   *
+   * Логика живая: выбрал «Наличные»/«Перевод» — под кнопками появляется
+   * строка с суммой этим способом. Выбрал «Разделить» — появляются два
+   * поля (наличными / безналом), безнал считается сам как остаток.
+   * Всё раскрывается плавно (grid-rows перехода), никаких «кнопок другого
+   * формата» и висящих блоков.
+   */
+  const renderPayMethods = (opts?: { dense?: boolean }) => {
+    if (accepted <= 0) return null;
+    const dense = opts?.dense ?? false;
+    const choice: "cash" | "transfer" | "split" | null = splitMode
+      ? "split"
+      : method === "cash"
+        ? "cash"
+        : method === "transfer"
+          ? "transfer"
+          : null;
+    const pick = (id: "cash" | "transfer" | "split") => {
+      if (id === "split") {
+        setMethod(null);
+        setSplitMode(true);
+        if (!splitCashStr) setSplitCashStr(String(Math.floor(accepted / 2)));
+      } else {
+        setSplitMode(false);
+        setMethod(id);
+      }
+    };
+    const OPTIONS = [
+      { id: "cash" as const, label: "Наличные", Icon: Banknote },
+      { id: "transfer" as const, label: "Перевод", Icon: CreditCard },
+      { id: "split" as const, label: "Разделить", Icon: ArrowLeftRight },
+    ];
+    return (
+      <div>
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+            Способ оплаты
+          </span>
+          {choice === null && (
+            <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">
+              выберите
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {OPTIONS.map((o) => {
+            const active = choice === o.id;
+            return (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => pick(o.id)}
+                className={cn(
+                  "flex items-center justify-center gap-1.5 rounded-xl border-2 font-bold transition-all",
+                  dense ? "h-10 text-[12.5px]" : "h-11 text-[13px]",
+                  active
+                    ? "border-blue-600 bg-blue-600 text-white shadow-card-sm"
+                    : choice === null
+                      ? "border-orange-ink/40 bg-orange-soft/40 text-ink hover:border-blue-400"
+                      : "border-border bg-surface text-muted hover:border-blue-300 hover:text-ink",
+                )}
+              >
+                <o.Icon size={dense ? 15 : 16} />
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Раскрывающаяся часть — плавно, без скачков высоты. */}
+        <div
+          className={cn(
+            "grid transition-[grid-template-rows,opacity] duration-300 ease-out",
+            choice === null
+              ? "grid-rows-[0fr] opacity-0"
+              : "grid-rows-[1fr] opacity-100",
+          )}
+        >
+          <div className="overflow-hidden">
+            {choice === "split" ? (
+              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-blue-200 bg-blue-50/40 p-2.5">
+                <label className="flex flex-col gap-1">
+                  <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                    <Banknote size={11} /> Наличными
+                  </span>
+                  <span className="flex items-center gap-1 rounded-lg border border-border bg-surface px-2">
+                    <input
+                      inputMode="numeric"
+                      value={splitCashStr}
+                      onChange={(e) =>
+                        setSplitCashStr(e.target.value.replace(/\D/g, ""))
+                      }
+                      className="h-9 w-full bg-transparent text-[14px] font-bold tabular-nums text-ink outline-none"
+                    />
+                    <span className="text-[12px] text-muted">₽</span>
+                  </span>
+                </label>
+                <div className="flex flex-col gap-1">
+                  <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                    <CreditCard size={11} /> Безналом
+                  </span>
+                  <span className="flex h-9 items-center justify-between rounded-lg bg-surface-soft px-2">
+                    <span className="text-[14px] font-bold tabular-nums text-ink">
+                      {fmt(splitTransfer)}
+                    </span>
+                    <span className="text-[12px] text-muted">₽</span>
+                  </span>
+                </div>
+                <div className="col-span-2 text-[10.5px] font-semibold">
+                  {splitValid ? (
+                    <span className="text-muted">
+                      Всего {fmt(accepted)} ₽ — пройдут двумя платежами.
+                    </span>
+                  ) : (
+                    <span className="text-orange-ink">
+                      Обе части должны быть больше нуля (всего {fmt(accepted)} ₽).
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 flex items-center justify-between rounded-xl bg-surface-soft px-3.5 py-2.5">
+                <span className="flex items-center gap-1.5 text-[12px] font-semibold text-muted">
+                  {choice === "cash" ? (
+                    <>
+                      <Banknote size={14} /> Принимаем наличными
+                    </>
+                  ) : (
+                    <>
+                      <CreditCard size={14} /> Принимаем переводом
+                    </>
+                  )}
+                </span>
+                <span className="font-display text-[17px] font-extrabold tabular-nums text-ink">
+                  {fmt(accepted)} ₽
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const mainPanel = (
       <div
@@ -2463,8 +2658,17 @@ export function PaymentAcceptDialog({
                               setExtInputOverride(
                                 Math.max(1, Math.round(extDays / 7)),
                               );
+                              // Пункт 6: ставка тоже конвертируется (₽/сут →
+                              // ₽/нед = ×7), иначе итог резко «мерцал»:
+                              // 600 ₽/сут при 7 днях → вдруг 600 ₽/НЕД.
+                              if (extCustomRate > 0)
+                                setExtCustomRate(extCustomRate * 7);
                             } else {
                               setExtInputOverride(Math.max(0, extDays));
+                              if (extCustomRate > 0)
+                                setExtCustomRate(
+                                  Math.max(1, Math.round(extCustomRate / 7)),
+                                );
                             }
                             setExtCustomUnit(u);
                           }}
@@ -2872,43 +3076,7 @@ export function PaymentAcceptDialog({
                 деньги от клиента и способ не выбран, кнопка приёма заблокирована,
                 а карточки подсвечены оранжевым «выберите». Это нужно для точной
                 статистики нал/безнал. */}
-            <div>
-              <div className="mb-1.5 flex items-center gap-1.5">
-                <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-                  Способ оплаты
-                </span>
-                {accepted > 0 && method === null && (
-                  <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">
-                    выберите
-                  </span>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {METHODS.map((m) => {
-                  const active = method === m.id;
-                  const needsChoice = accepted > 0 && method === null;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setMethod(m.id)}
-                      className={cn(
-                        "flex h-11 items-center justify-center gap-2 rounded-xl border-2 text-[13.5px] font-bold transition-all",
-                        active
-                          ? "border-blue-600 bg-blue-600 text-white shadow-card-sm"
-                          : needsChoice
-                            ? "border-orange-ink/45 bg-orange-soft/40 text-ink"
-                            : "border-border bg-surface text-muted hover:border-blue-300 hover:text-ink",
-                      )}
-                    >
-                      <m.Icon size={17} />
-                      {m.label}
-                      {active && <Check size={14} strokeWidth={3} />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {renderPayMethods()}
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -3136,7 +3304,7 @@ export function PaymentAcceptDialog({
             {(rental as { clientName?: string }).clientName
               ? `${(rental as { clientName?: string }).clientName} · `
               : ""}
-            {rental.scooter}
+            {scooterModelName(rental.scooter)}
           </div>
         </div>
         <button
@@ -3527,44 +3695,7 @@ export function PaymentAcceptDialog({
                 )}
               </div>
             </div>
-            {/* Способ оплаты */}
-            <div>
-              <div className="mb-1 flex items-center gap-1.5">
-                <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-                  Способ
-                </span>
-                {accepted > 0 && method === null && (
-                  <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">
-                    выберите
-                  </span>
-                )}
-              </div>
-              <div className="flex overflow-hidden rounded-xl border border-border text-[12.5px]">
-                {METHODS.map((m, i) => {
-                  const active = method === m.id;
-                  const needsChoice = accepted > 0 && method === null;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setMethod(m.id)}
-                      className={cn(
-                        "flex items-center gap-1.5 px-3.5 py-2 font-semibold transition-colors",
-                        i > 0 && "border-l border-border",
-                        active
-                          ? "bg-blue-600 text-white"
-                          : needsChoice
-                            ? "bg-orange-soft/40 text-ink"
-                            : "bg-surface text-muted hover:text-ink",
-                      )}
-                    >
-                      <m.Icon size={15} />
-                      {m.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {renderPayMethods({ dense: true })}
           </div>
         )}
         {/* Кнопка действия */}
@@ -3659,7 +3790,9 @@ export function PaymentAcceptDialog({
     return (
       <>
         {actPreview}
-        <div className="fixed inset-0 z-[100] flex flex-col bg-surface animate-fade-in">
+        <div className="fixed inset-0 z-[100] flex flex-col bg-surface lg:items-center lg:bg-ink/45 lg:backdrop-blur-sm animate-fade-in">
+          {/* Планшет: мастер колонкой по центру (mobile/tablet.ts). */}
+          <div className={TABLET_WIZARD_PANEL}>
           {/* HEADER */}
           <div className="flex items-center gap-2 border-b border-border bg-surface-soft px-3 py-2.5">
             <button
@@ -3674,7 +3807,7 @@ export function PaymentAcceptDialog({
                 Завершение · #{String(rental.id).padStart(4, "0")}
               </div>
               <div className="truncate text-[11px] text-muted-2">
-                {rental.scooter}
+                {scooterModelName(rental.scooter)}
               </div>
             </div>
             <div className="text-[11px] font-semibold text-muted-2">
@@ -3965,38 +4098,7 @@ export function PaymentAcceptDialog({
                         </span>
                       )}
                     </div>
-                    <div>
-                      <div className="mb-1 flex items-center gap-1.5">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                          Способ оплаты
-                        </span>
-                        {accepted > 0 && method === null && (
-                          <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">
-                            выберите
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        {METHODS.map((m) => {
-                          const active = method === m.id;
-                          return (
-                            <button
-                              key={m.id}
-                              type="button"
-                              onClick={() => setMethod(m.id)}
-                              className={cn(
-                                "flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl border text-[14px] font-semibold transition-colors",
-                                active
-                                  ? "border-blue-600 bg-blue-600 text-white"
-                                  : "border-border bg-surface text-ink-2",
-                              )}
-                            >
-                              <m.Icon size={16} /> {m.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    {renderPayMethods()}
                   </>
                 ) : (
                   <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-5 text-center text-[14px] font-medium text-emerald-700">
@@ -4056,7 +4158,7 @@ export function PaymentAcceptDialog({
               onClick={() => setForgiveMenuOpen(false)}
             >
               <div
-                className="rounded-t-3xl bg-surface pb-[max(env(safe-area-inset-bottom),1rem)] shadow-card-lg animate-sheet-up"
+                className="mx-auto w-full max-w-[640px] rounded-t-3xl bg-surface pb-[max(env(safe-area-inset-bottom),1rem)] shadow-card-lg animate-sheet-up"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex justify-center pb-1 pt-2.5">
@@ -4186,6 +4288,7 @@ export function PaymentAcceptDialog({
               }}
             />
           )}
+          </div>
         </div>
         <ReturnDamagePicker intake={intake} />
       </>
@@ -4247,7 +4350,9 @@ export function PaymentAcceptDialog({
     return (
       <>
         {actPreview}
-        <div className="fixed inset-0 z-[100] flex flex-col bg-surface animate-fade-in">
+        <div className="fixed inset-0 z-[100] flex flex-col bg-surface lg:items-center lg:bg-ink/45 lg:backdrop-blur-sm animate-fade-in">
+          {/* Планшет: мастер колонкой по центру (mobile/tablet.ts). */}
+          <div className={TABLET_WIZARD_PANEL}>
           {/* HEADER */}
           <div className="flex items-center gap-2 border-b border-border bg-surface-soft px-3 py-2.5">
             <button
@@ -4261,7 +4366,7 @@ export function PaymentAcceptDialog({
               <div className="truncate text-[15px] font-semibold text-ink">
                 Принять платёж · #{String(rental.id).padStart(4, "0")}
               </div>
-              <div className="truncate text-[11px] text-muted-2">{rental.scooter}</div>
+              <div className="truncate text-[11px] text-muted-2">{scooterModelName(rental.scooter)}</div>
             </div>
             <div className="text-[11px] font-semibold text-muted-2">
               {payStep + 1}/{stepCount}
@@ -4611,24 +4716,7 @@ export function PaymentAcceptDialog({
                   </span>
                 </button>
                 {accepted > 0 && (
-                  <div className="mb-2.5 flex items-center gap-2">
-                    {METHODS.map((m) => {
-                      const active = method === m.id;
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => setMethod(m.id)}
-                          className={cn("flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold transition-colors", active ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-surface text-ink-2")}
-                        >
-                          <m.Icon size={15} /> {m.label}
-                        </button>
-                      );
-                    })}
-                    {method === null && (
-                      <span className="shrink-0 rounded-full bg-orange-soft px-1.5 py-1 text-[10px] font-bold text-orange-ink">способ?</span>
-                    )}
-                  </div>
+                  <div className="mb-2.5">{renderPayMethods({ dense: true })}</div>
                 )}
                 <div className="flex gap-2">
                   <button type="button" onClick={() => (payStep === 0 ? requestClose() : goPayStep(payStep - 1))} className="h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]">{payStep === 0 ? "Отмена" : "Назад"}</button>
@@ -4670,7 +4758,7 @@ export function PaymentAcceptDialog({
               onClick={() => setForgiveMenuOpen(false)}
             >
               <div
-                className="rounded-t-3xl bg-surface pb-[max(env(safe-area-inset-bottom),1rem)] shadow-card-lg animate-sheet-up"
+                className="mx-auto w-full max-w-[640px] rounded-t-3xl bg-surface pb-[max(env(safe-area-inset-bottom),1rem)] shadow-card-lg animate-sheet-up"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex justify-center pb-1 pt-2.5">
@@ -4754,6 +4842,7 @@ export function PaymentAcceptDialog({
               }}
             />
           )}
+          </div>
         </div>
       </>
     );

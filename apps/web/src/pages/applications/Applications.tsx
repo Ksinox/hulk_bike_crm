@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/clientApplications";
 import { ApplicationsList } from "./ApplicationsList";
 import { SendApplicationButton } from "./SendApplicationButton";
+import { saleFormUrl } from "@/pages/sales/saleForm";
 import { NewApplicationModal } from "@/pages/clients/NewApplicationModal";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { ApplicationConvertFlow } from "@/pages/clients/ApplicationConvertFlow";
@@ -38,7 +39,19 @@ const TABS: { id: Tab; label: string; statusFilter: string }[] = [
   { id: "all", label: "Все", statusFilter: "all" },
 ];
 
-export function Applications() {
+export function Applications({
+  purpose,
+  embedded,
+}: {
+  /**
+   * Правка 31.08: заявки живут внутри своего раздела — арендные в
+   * «Арендах», на покупку в «Продажах». Фильтруем список по типу.
+   * Не задан — показываем все (обратная совместимость).
+   */
+  purpose?: "rent" | "sale";
+  /** Внутри раздела: без Topbar и без крупного заголовка страницы. */
+  embedded?: boolean;
+} = {}) {
   const [tab, setTab] = useState<Tab>("new");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -77,7 +90,11 @@ export function Applications() {
   const rejectMut = useRejectApplication();
   const spamMut = useSpamApplication();
 
-  const items = listQ.data ?? [];
+  const all = listQ.data ?? [];
+  // Старые заявки заведены до разделения — считаем их арендными.
+  const items = purpose
+    ? all.filter((a) => (a.purpose ?? "rent") === purpose)
+    : all;
   const openApp = openId != null ? items.find((a) => a.id === openId) ?? null : null;
 
   const counters = useMemo(() => {
@@ -87,23 +104,43 @@ export function Applications() {
     return { current: items.length };
   }, [items]);
 
+  const isSale = purpose === "sale";
+
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
-      <Topbar />
+      {!embedded && <Topbar />}
 
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 font-display text-[34px] font-extrabold leading-none text-ink">
-            <Inbox size={28} className="text-blue-600" />
-            Заявки
-          </h1>
-          <div className="mt-1.5 text-[13px] text-muted-2">
-            Все анкеты клиентов с публичной ссылки. Можно искать по ФИО,
-            телефону и паспорту.
-          </div>
+          {embedded ? (
+            <div className="text-[13px] text-muted-2">
+              {isSale
+                ? "Анкеты покупателей: паспортные данные, чтобы завести клиента в CRM. Технику покупатель выбирает вживую, поэтому в анкете её нет."
+                : "Анкеты клиентов с публичной ссылки. Поиск по ФИО, телефону и паспорту."}
+            </div>
+          ) : (
+            <>
+              <h1 className="flex items-center gap-2 font-display text-[34px] font-extrabold leading-none text-ink">
+                <Inbox size={28} className="text-blue-600" />
+                Заявки
+              </h1>
+              <div className="mt-1.5 text-[13px] text-muted-2">
+                Все анкеты клиентов с публичной ссылки. Можно искать по ФИО,
+                телефону и паспорту.
+              </div>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          <SendApplicationButton />
+          {isSale ? (
+            <SendApplicationButton
+              label="Анкета покупателя"
+              text="Здравствуйте! Для оформления покупки скутера в Халк Байк заполните, пожалуйста, короткую анкету с паспортными данными: "
+              formUrl={saleFormUrl()}
+            />
+          ) : (
+            <SendApplicationButton />
+          )}
           <div className="relative w-[280px]">
             <Search
               size={14}

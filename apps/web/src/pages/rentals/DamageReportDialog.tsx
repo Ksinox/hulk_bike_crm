@@ -43,8 +43,10 @@ import {
   analyzeFile,
   type StagedMedia,
 } from "./DamageMediaCapture";
+import { ScooterName } from "@/components/ScooterName";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileNumPad } from "@/mobile/MobileNumPad";
+import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -758,10 +760,12 @@ export function DamageReportDialog({
     return (
       <div
         className={cn(
-          "fixed inset-0 z-[120] flex flex-col bg-surface",
+          "fixed inset-0 z-[120] flex flex-col bg-surface lg:items-center lg:bg-ink/45 lg:backdrop-blur-sm",
           closing ? "animate-fade-out" : "animate-fade-in",
         )}
       >
+        {/* Планшет: мастер колонкой по центру (mobile/tablet.ts). */}
+        <div className={TABLET_WIZARD_PANEL}>
         {/* HEADER */}
         <div className="flex items-center gap-2 border-b border-border bg-surface-soft px-3 py-2.5">
           <button
@@ -776,7 +780,12 @@ export function DamageReportDialog({
               {isEdit ? "Изменить акт" : "Зафиксировать ущерб"}
             </div>
             <div className="truncate text-[11px] text-muted-2">
-              {rental.scooter}
+              <ScooterName
+                name={rental.scooter}
+                number={scooter?.rentalSlot ?? undefined}
+                exNumber={scooter?.exRentalSlot ?? undefined}
+                size="sm"
+              />
               {modelName ? ` · ${modelName}` : ""} · {clientName}
             </div>
           </div>
@@ -1161,6 +1170,7 @@ export function DamageReportDialog({
             }}
           />
         )}
+        </div>
       </div>
     );
   }
@@ -1189,7 +1199,12 @@ export function DamageReportDialog({
               {String(rental.id).padStart(4, "0")}
             </div>
             <div className="text-[12px] text-muted-2">
-              {rental.scooter}
+              <ScooterName
+                name={rental.scooter}
+                number={scooter?.rentalSlot ?? undefined}
+                exNumber={scooter?.exRentalSlot ?? undefined}
+                size="sm"
+              />
               {modelName ? ` · ${modelName}` : ""} · {clientName}
             </div>
           </div>

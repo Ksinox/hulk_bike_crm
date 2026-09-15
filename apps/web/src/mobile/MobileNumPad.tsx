@@ -78,7 +78,8 @@ export function MobileNumPad({
       onClick={onCancel}
     >
       <div
-        className="flex flex-col rounded-t-3xl bg-surface pb-[max(env(safe-area-inset-bottom),1rem)] shadow-card-lg animate-sheet-up"
+        // max-w: на планшете цифры не разъезжаются на всю ширину экрана
+        className="mx-auto flex w-full max-w-[520px] flex-col rounded-t-3xl bg-surface pb-[max(env(safe-area-inset-bottom),1rem)] shadow-card-lg animate-sheet-up"
         onClick={(e) => e.stopPropagation()}
       >
         {/* грабер */}

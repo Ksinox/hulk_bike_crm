@@ -1,5 +1,9 @@
 import type { Config } from "tailwindcss";
 import animate from "tailwindcss-animate";
+// Правка 28.08: container queries (@container / @[900px]:) — блоки
+// перестраиваются по ширине СВОЕГО контейнера, а не окна (дровер открыт →
+// контент сузился → сетки складываются). В Tailwind 3.4 это плагин.
+import containerQueries from "@tailwindcss/container-queries";
 
 const config: Config = {
   darkMode: ["class"],
@@ -140,6 +144,15 @@ const config: Config = {
           "0%": { opacity: "1", transform: "translateY(0)" },
           "100%": { opacity: "0", transform: "translateY(-24px)" },
         },
+        // «Погружение» в раздел: экран влетает вперёд, а не выезжает сбоку.
+        "dive-in": {
+          "0%": { opacity: "0", transform: "scale(0.94)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        "bar-grow": {
+          "0%": { transform: "scaleY(0)", opacity: "0.4" },
+          "100%": { transform: "scaleY(1)", opacity: "1" },
+        },
         "pop-in": {
           "0%": { opacity: "0", transform: "scale(0.92)" },
           "100%": { opacity: "1", transform: "scale(1)" },
@@ -159,10 +172,13 @@ const config: Config = {
           "slide-in-down 300ms cubic-bezier(0.22, 1, 0.36, 1) both",
         "slide-out-up": "slide-out-up 220ms ease-in both",
         "pop-in": "pop-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both",
+        // Столбик графика вырастает снизу — «Продажи», динамика.
+        "bar-grow": "bar-grow 520ms cubic-bezier(0.22, 1, 0.36, 1) both",
+        "dive-in": "dive-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both",
       },
     },
   },
-  plugins: [animate],
+  plugins: [animate, containerQueries],
 };
 
 export default config;

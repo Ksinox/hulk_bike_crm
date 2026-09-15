@@ -48,7 +48,8 @@ function pickRateByPeriod(
 }
 import { logActivity } from "../services/activityLog.js";
 import type { DiffPayload } from "../services/activityLog.js";
-import { rentalStatusLabel } from "../services/activityMessages.js";
+import { requireDirectorApproval } from "./approvals.js";
+import { rentalStatusLabel, scooterStatusLabel } from "../services/activityMessages.js";
 import { overdueDailyRate } from "../services/overdueCharge.js";
 
 const RentalStatusEnum = z.enum(["active", "completed"]);
@@ -92,6 +93,11 @@ const CreateRentalBody = z
     note: z.string().optional().nullable(),
     /** v0.9.8: создана по произвольному («своему») тарифу (ставка вручную). */
     customTariff: z.boolean().optional(),
+    /**
+     * Осознанное согласие оформить клиенту ВТОРУЮ открытую аренду.
+     * По умолчанию вторая аренда блокируется (см. проверку client_busy).
+     */
+    allowSecondForClient: z.boolean().optional(),
   })
   .strict();
 
@@ -144,6 +150,8 @@ const CompleteBody = z
     damageNotes: z.string().optional().nullable(),
     mileageAtReturn: z.number().int().min(0).optional(),
     scooterNextStatus: z.enum(SCOOTER_NEXT_STATUSES).optional(),
+    /** Пункт 4: причина возврата (обязательность обеспечивает UI). */
+    returnReason: z.string().max(200).optional().nullable(),
   })
   .strict();
 
@@ -266,6 +274,43 @@ export async function rentalsRoutes(app: FastifyInstance) {
           message: `Скутер ещё в открытой аренде #${String(r.id).padStart(4, "0")} (${rentalStatusLabel(r.status)}). Сначала закройте её.`,
           rentalId: r.id,
           rentalStatus: r.status,
+        });
+      }
+    }
+
+    /**
+     * Одна открытая аренда на клиента (правка 27.08).
+     *
+     * Заказчик увидел на превью двух активных аренд у одного человека и
+     * сказал, что так быть не должно. На практике вторая открытая аренда —
+     * почти всегда ошибка оператора: прошлую не закрыли, а оформили новую,
+     * и дальше по клиенту двоятся долги, депозит и просрочка.
+     *
+     * Блокируем, но не намертво: редкий законный случай (человек берёт
+     * вторую единицу) проходит с флагом allowSecondForClient — фронт
+     * показывает, какая аренда уже открыта, и спрашивает подтверждение.
+     *
+     * Продление (parentRentalId) под проверку не попадает: это
+     * продолжение той же сделки, а не второй договор.
+     */
+    if (!d.allowSecondForClient && !d.parentRentalId) {
+      const openForClient = await db
+        .select({ id: rentals.id, scooterId: rentals.scooterId })
+        .from(rentals)
+        .where(
+          and(
+            eq(rentals.clientId, d.clientId),
+            sql`${rentals.status} = 'active'`,
+            isNull(rentals.archivedAt),
+          ),
+        );
+      if (openForClient.length > 0) {
+        const open = openForClient[0]!;
+        return reply.code(409).send({
+          error: "client_busy",
+          message: `У клиента уже открыта аренда #${String(open.id).padStart(4, "0")}. Сначала закройте её — или подтвердите, что это вторая единица.`,
+          rentalId: open.id,
+          scooterId: open.scooterId,
         });
       }
     }
@@ -726,6 +771,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
     }
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    // Пункт 1: удаление аренды — защищённое действие, требует ключ директора.
+    if (!(await requireDirectorApproval(app, req, reply, "rental_delete")))
+      return;
 
     // v0.6.51: опциональная причина удаления в архив (напр. «Создано
     // случайно»). Передаётся из карточки аренды; сохраняется в archivedReason
@@ -977,11 +1025,47 @@ export async function rentalsRoutes(app: FastifyInstance) {
       }
     }
 
+    // Пункт 2: оплаты удалённой аренды исключаем из выручки (флагом, не
+    // удалением — история платежей сохраняется и видна в карточке).
+    // Сумму «сколько ушло из выручки» считаем по тем же правилам, что и
+    // выручка: paid, не залог/возврат, не оплата из депозита (кроме
+    // deposit_forfeit — удержанный залог был доходом).
+    const rentPays = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.rentalId, id));
+    const excludedRevenue = rentPays
+      .filter(
+        (p) =>
+          p.paid &&
+          !p.excludedFromRevenue &&
+          p.type !== "deposit" &&
+          p.type !== "refund" &&
+          !(p.method === "deposit" && p.type !== "deposit_forfeit"),
+      )
+      .reduce((s, p) => s + p.amount, 0);
+    await db
+      .update(payments)
+      .set({ excludedFromRevenue: true })
+      .where(eq(payments.rentalId, id));
+
     await logActivity(req, {
       entity: "rental",
       entityId: id,
       action: "archived",
-      summary: `Аренда #${String(id).padStart(4, "0")} перемещена в архив${archiveReason ? ` · ${archiveReason}` : ""}`,
+      summary: `Аренда #${String(id).padStart(4, "0")} удалена в архив${archiveReason ? ` · ${archiveReason}` : ""}${excludedRevenue > 0 ? ` · из выручки исключено ${excludedRevenue} ₽` : ""} · подтверждено ключом директора`,
+      meta: { directorApproved: true, excludedRevenue, reason: archiveReason },
+      diff:
+        excludedRevenue > 0
+          ? {
+              revenue: {
+                label: "В выручке от аренды",
+                from: excludedRevenue,
+                to: 0,
+                kind: "money",
+              },
+            }
+          : undefined,
     });
     return reply.code(204).send();
   });
@@ -1262,11 +1346,33 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .code(404)
           .send({ error: "not found or not archived" });
 
+      // Пункт 2: восстановление возвращает оплаты аренды в выручку.
+      const backPays = await db
+        .update(payments)
+        .set({ excludedFromRevenue: false })
+        .where(
+          and(
+            eq(payments.rentalId, id),
+            eq(payments.excludedFromRevenue, true),
+          ),
+        )
+        .returning();
+      const returnedRevenue = backPays
+        .filter(
+          (p) =>
+            p.paid &&
+            p.type !== "deposit" &&
+            p.type !== "refund" &&
+            !(p.method === "deposit" && p.type !== "deposit_forfeit"),
+        )
+        .reduce((s, p) => s + p.amount, 0);
+
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "unarchived",
-        summary: `Аренда #${String(id).padStart(4, "0")} восстановлена из архива`,
+        summary: `Аренда #${String(id).padStart(4, "0")} восстановлена из архива${returnedRevenue > 0 ? ` · оплаты возвращены в выручку (${returnedRevenue} ₽)` : ""}`,
+        meta: { returnedRevenue },
       });
       return row;
     },
@@ -1564,14 +1670,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
         };
       });
 
+      // Пункт 4: причина возврата — в аренду и в журнал.
+      if (d.returnReason && d.returnReason.trim()) {
+        await db
+          .update(rentals)
+          .set({ returnReason: d.returnReason.trim() })
+          .where(eq(rentals.id, id));
+      }
       const summary = await summaryForRental(id);
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "completed",
-        summary: withDamage
+        summary: `${withDamage
           ? `Завершена аренда ${summary} · зафиксирован ущерб ${(d.damageAmount ?? 0).toLocaleString("ru-RU")} ₽`
-          : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`,
+          : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`}${d.returnReason ? ` · причина возврата: ${d.returnReason}` : ""}`,
         diff: {
           status: {
             label: "Статус",
@@ -2269,6 +2382,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           payKind?: "overdue_days" | "overdue_fine" | "manual";
           debtEntryId?: number;
           residualToDeposit?: number;
+          // Пункт 9: id записи «штраф сохранён» (overdue_fine_carry) —
+          // удаляется вместе с откатом оплаты дней.
+          carryEntryId?: number;
           // security: пополнение залога — прежние суммы залога
           deposit?: number;
           depositOriginal?: number;
@@ -2399,6 +2515,13 @@ export async function rentalsRoutes(app: FastifyInstance) {
                 UPDATE clients SET deposit_balance = deposit_balance - ${snap.residualToDeposit}
                  WHERE id = ${snap.clientId}
               `);
+            }
+            // Пункт 9: убираем зафиксированный штраф за выкупленные дни —
+            // дни возвращаются в просрочку, штраф снова станет computed.
+            if (snap.carryEntryId) {
+              await tx
+                .delete(debtEntries)
+                .where(eq(debtEntries.id, snap.carryEntryId));
             }
           }
           if (snap.debtEntryId) {
@@ -3380,7 +3503,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entity: "rental",
         entityId: id,
         action: "scooter_swapped",
-        summary: `Замена скутера${catLabel ? ` · ${catLabel}` : ""} в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}${result.canceledFee > 0 ? ` (погашен долг по замене ${result.canceledFee} ₽)` : ""}${result.refundToDeposit > 0 ? ` (возврат ${result.refundToDeposit} ₽ в депозит)` : ""}`,
+        /**
+         * Правка 31.08: в тексте видно, КАКАЯ техника снята и КУДА она
+         * ушла. Раньше строка была «Замена скутера · Другое в аренде
+         * #0262» — по ней нельзя было понять, что снятый скутер уехал в
+         * ремонт и выбыл из парка аренды. Именно так у заказчика «пропала»
+         * единица из 62.
+         */
+        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}: ${prevScooterName} → ${newScooterName}${catLabel ? ` · причина: ${catLabel}` : ""}${d.oldScooterStatus ? ` · снятый переведён в «${scooterStatusLabel(d.oldScooterStatus)}»` : ""}${result.feeAmount > 0 ? ` · доплата ${result.feeAmount} ₽` : ""}${result.canceledFee > 0 ? ` · погашен долг по замене ${result.canceledFee} ₽` : ""}${result.refundToDeposit > 0 ? ` · возврат ${result.refundToDeposit} ₽ в депозит` : ""}`,
         // v0.8.14: «ревизорские» поля — кто на кого заменён, причина и куда
         // ушёл старый скутер (в ремонт / обратно в парк) на момент замены.
         meta: {
@@ -3499,18 +3629,16 @@ export async function rentalsRoutes(app: FastifyInstance) {
   }
 
   /**
-   * ХОТФИКС 24.08.2026: начало ТЕКУЩЕГО эпизода просрочки (МСК) —
-   * следующий день после планового возврата.
+   * Фикс 24.08.2026 (баг найден на проде): начало ТЕКУЩЕГО эпизода
+   * просрочки по МСК — следующий день после планового возврата.
    *
-   * Баг: штраф начисляется от ТЕКУЩЕЙ просрочки, а оплаты и прощения
-   * штрафа копились без привязки ко времени и вычитались из любого
-   * будущего начисления. Клиент гасил штрафы за прошлые просрочки,
-   * выкупал просроченные дни (срок сдвигался) — новая просрочка давала
-   * штраф, который тут же «съедался» старыми оплатами. Внешне это
-   * выглядело как «утром исчезли все штрафы за просрочки».
-   *
-   * Теперь штраф гасят только те оплаты и прощения, что сделаны в
-   * текущем эпизоде просрочки; более ранние закрывали прошлые эпизоды.
+   * Зачем: штраф начисляется от ТЕКУЩЕЙ просрочки, а оплаты и прощения
+   * штрафа копились вечно и вычитались из любого будущего начисления.
+   * Клиент гасил штрафы за июльские просрочки, выкупал дни (срок
+   * сдвигался) — и новая просрочка давала штраф, который тут же
+   * «съедался» старыми оплатами. У заказчика это выглядело как
+   * «сегодня утром исчезли все штрафы». Теперь гасят только те оплаты
+   * и прощения, что сделаны в текущем эпизоде просрочки.
    */
   function overdueEpochStartMs(endPlannedAt: Date): number {
     const msk = new Date(
@@ -3518,6 +3646,56 @@ export async function rentalsRoutes(app: FastifyInstance) {
     );
     const endDay = new Date(msk.getFullYear(), msk.getMonth(), msk.getDate());
     return endDay.getTime() + 86_400_000;
+  }
+
+  /**
+   * Заказчик 06.09 (п.4, «в Партнёрке долг не гасится»): оплата штрафа,
+   * сделанная в тот же день, что и выкуп просроченных дней, попадала ДО
+   * начала нового эпизода (день после сдвинутого возврата) и в баланс не
+   * шла — а зафиксированный при выкупе дней штраф (carry) шёл всегда.
+   * Итог: клиент всё оплатил, долг 750 ₽ остался.
+   *
+   * Правило теперь такое: оплаты/прощения штрафа текущего эпизода гасят
+   * текущее начисление; более ранние — гасят только тот штраф, который к
+   * их моменту был ЗАФИКСИРОВАН (carry), и не больше него. Так старые
+   * оплаты по-прежнему не съедают новый штраф (фикс 24.08), а оплата
+   * сохранённого штрафа его закрывает.
+   */
+  function fineLedger(
+    entries: {
+      kind: string;
+      amount: number;
+      createdAt: Date | string | null;
+      appliedToEndPlanned: boolean | null;
+    }[],
+    epochStartMs: number,
+  ): { fineCarry: number; fineSettled: number } {
+    const sorted = [...entries].sort(
+      (a, b) =>
+        new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+    );
+    let fineCarry = 0;
+    let carryPaid = 0;
+    let fineSettled = 0;
+    for (const e of sorted) {
+      if (e.kind === "overdue_fine_carry") {
+        fineCarry += e.amount;
+        continue;
+      }
+      const settles =
+        e.kind === "overdue_fine_payment" ||
+        (e.kind === "overdue_fine_forgive" && !e.appliedToEndPlanned);
+      if (!settles) continue;
+      if (inEpoch(e.createdAt, epochStartMs)) {
+        fineSettled += e.amount;
+      } else {
+        const room = Math.max(0, fineCarry - carryPaid);
+        const take = Math.min(e.amount, room);
+        carryPaid += take;
+        fineSettled += take;
+      }
+    }
+    return { fineCarry, fineSettled };
   }
 
   /** Долговая запись относится к текущему эпизоду просрочки? */
@@ -3689,21 +3867,26 @@ export async function rentalsRoutes(app: FastifyInstance) {
       );
       const daysCharge = dailyRate * overdueDays;
       const fineCharge = Math.round(dailyRate * 0.5) * overdueDays;
+      // Фикс 24.08 (прод): начало ТЕКУЩЕГО эпизода просрочки — день после
+      // планового возврата. Оплаты/прощения штрафа, сделанные раньше,
+      // закрывали ПРОШЛЫЕ просрочки и в текущем начислении не участвуют.
+      const epochStart = endDate.getTime() + 86_400_000;
 
       // Раскладываем debt_entries
       const myEntries = entries.filter((e) => e.rentalId === r.id);
-      // Хотфикс 24.08: границы текущего эпизода просрочки.
-      const epochStart = endDate.getTime() + 86_400_000;
       let daysForgiveExplicit = 0;
       let fineForgiveExplicit = 0;
       let daysPayExplicit = 0;
       let finePayExplicit = 0;
+      // Суммы, относящиеся именно к текущему эпизоду (ими и гасим штраф).
       let fineForgiveCurrent = 0;
       let finePayCurrent = 0;
       let mixedForgive = 0;
       let mixedPayment = 0;
       let manualCharged = 0;
       let manualForgiven = 0;
+      // Пункт 9: штраф, зафиксированный при выкупе дней.
+      let fineCarry = 0;
       for (const e of myEntries) {
         if (e.kind === "overdue_days_forgive") daysForgiveExplicit += e.amount;
         // v0.9.1: штраф, прощённый ВМЕСТЕ с днями (appliedToEndPlanned=true),
@@ -3719,7 +3902,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         else if (e.kind === "overdue_fine_payment") {
           finePayExplicit += e.amount;
           if (inEpoch(e.createdAt, epochStart)) finePayCurrent += e.amount;
-        }
+        } else if (e.kind === "overdue_fine_carry") fineCarry += e.amount;
         else if (e.kind === "overdue_forgive") mixedForgive += e.amount;
         else if (e.kind === "overdue_payment") mixedPayment += e.amount;
         else if (e.kind === "manual_charge") manualCharged += e.amount;
@@ -3735,10 +3918,18 @@ export async function rentalsRoutes(app: FastifyInstance) {
       void mixedForgive;
       void mixedPayment;
       const daysBalance = daysCharge;
-      // Хотфикс 24.08: гасим только оплатами/прощениями текущего эпизода.
+      // Пункт 9: + fineCarry — штраф за выкупленные дни остаётся долгом.
+      // Фикс 24.08: вычитаем только оплаты/прощения ТЕКУЩЕГО эпизода —
+      // иначе платежи за прошлые просрочки обнуляют новый штраф.
+      // Фикс 06.09 (п.4): см. fineLedger — оплата зафиксированного штрафа
+      // засчитывается, даже если сделана до начала нового эпизода.
+      void fineForgiveCurrent;
+      void finePayCurrent;
+      void fineCarry;
+      const ledger = fineLedger(myEntries, epochStart);
       const fineBalance = Math.max(
         0,
-        fineCharge - fineForgiveCurrent - finePayCurrent,
+        fineCharge + ledger.fineCarry - ledger.fineSettled,
       );
       const manualBalance = Math.max(0, manualCharged - manualForgiven);
 
@@ -3873,7 +4064,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // счёт). Для отображения «сколько прощено» считаем всё (fineForgiveExplicit),
     // а в баланс идёт только самостоятельное прощение (fineForgiveStandalone).
     let fineForgiveStandalone = 0;
-    // Хотфикс 24.08: суммы текущего эпизода просрочки.
+    // Пункт 9: штраф, зафиксированный при выкупе дней (сдвиг endPlanned
+    // уменьшил computed-штраф, carry возвращает его в долг).
+    let fineCarry = 0;
+    // Фикс 24.08: границы текущего эпизода просрочки (см. overdueEpochStartMs).
     const epochStartMs = overdueEpochStartMs(rental.endPlannedAt);
     let fineForgiveCurrent = 0;
     let finePayCurrent = 0;
@@ -3883,13 +4077,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
         fineForgiveExplicit += e.amount;
         if (!e.appliedToEndPlanned) {
           fineForgiveStandalone += e.amount;
-          if (inEpoch(e.createdAt, epochStartMs)) fineForgiveCurrent += e.amount;
+          if (inEpoch(e.createdAt, epochStartMs))
+            fineForgiveCurrent += e.amount;
         }
       } else if (e.kind === "overdue_days_payment") daysPayExplicit += e.amount;
       else if (e.kind === "overdue_fine_payment") {
         finePayExplicit += e.amount;
         if (inEpoch(e.createdAt, epochStartMs)) finePayCurrent += e.amount;
       }
+      else if (e.kind === "overdue_fine_carry") fineCarry += e.amount;
       else if (e.kind === "overdue_forgive") mixedForgive += e.amount;
       else if (e.kind === "overdue_payment") mixedPayment += e.amount;
       else if (e.kind === "manual_charge") manualCharged += e.amount;
@@ -3912,10 +4108,16 @@ export async function rentalsRoutes(app: FastifyInstance) {
     void mixedForgive;
     void mixedPayment;
     const daysBalance = daysCharge;
-    // Хотфикс 24.08: гасим только оплатами/прощениями текущего эпизода.
+    // Пункт 9: + fineCarry — штраф за выкупленные дни остаётся долгом.
+    // Фикс 24.08: гасим только оплатами/прощениями ТЕКУЩЕГО эпизода.
+    // Фикс 06.09 (п.4): та же логика, что в агрегате (fineLedger).
+    void fineForgiveCurrent;
+    void finePayCurrent;
+    void fineCarry;
+    const ledger = fineLedger(events, epochStartMs);
     const fineBalance = Math.max(
       0,
-      fineCharge - fineForgiveCurrent - finePayCurrent,
+      fineCharge + ledger.fineCarry - ledger.fineSettled,
     );
     const overdueBalance = daysBalance + fineBalance;
     // Для UI «сколько уже простили/оплатили» — суммируем всё.
@@ -4132,6 +4334,121 @@ export async function rentalsRoutes(app: FastifyInstance) {
           // клиента — иначе деньги «терялись». Например, оплачено 600 при
           // dailyRate=500 — 1 день shift (500 ₽), 100 ₽ уходило в воздух.
           residualToDeposit = parsed.data.amount - daysAdded * dailyRate;
+
+          // ═══ Пункт 9 (Волков/Свидзинский): штраф за выкупленные дни НЕ
+          // должен исчезать. Сдвиг endPlanned уменьшает overdueDays, и
+          // fineCharge (= fineDaily × overdueDays) пересчитывался вниз —
+          // штраф за оплаченные дни молча списывался (клиент получал
+          // скидку). Фиксируем его отдельной записью-начислением
+          // 'overdue_fine_carry': /debt прибавляет её к fineCharge, и
+          // штраф остаётся долгом до оплаты или явного прощения. ═══
+          const fineDaily = Math.round(dailyRate * 0.5);
+          let carryEntryId: number | null = null;
+          let fineCarryAmount = 0;
+          if (daysAdded > 0 && fineDaily > 0) {
+            // Фикс 06.09 (п.4): если клиент уже оплатил часть штрафа ДО
+            // выкупа дней, фиксируем только непогашенный остаток — иначе
+            // оплаченный штраф возвращался в долг.
+            const priorEntries = await db
+              .select({
+                kind: debtEntries.kind,
+                amount: debtEntries.amount,
+                createdAt: debtEntries.createdAt,
+                appliedToEndPlanned: debtEntries.appliedToEndPlanned,
+              })
+              .from(debtEntries)
+              .where(eq(debtEntries.rentalId, id));
+            const priorLedger = fineLedger(
+              priorEntries,
+              overdueEpochStartMs(r.endPlannedAt),
+            );
+            const outstandingBefore = Math.max(
+              0,
+              overdueDays * fineDaily + priorLedger.fineCarry - priorLedger.fineSettled,
+            );
+            fineCarryAmount = Math.min(daysAdded * fineDaily, outstandingBefore);
+          }
+          if (fineCarryAmount > 0) {
+            const [carryRow] = await db
+              .insert(debtEntries)
+              .values({
+                rentalId: id,
+                kind: "overdue_fine_carry",
+                amount: fineCarryAmount,
+                comment: `Штраф 50% за ${daysAdded} дн просрочки — дни оплачены, штраф сохранён`,
+                createdByUserId: userId,
+                createdByName: userName,
+                appliedToEndPlanned: true,
+              })
+              .returning();
+            carryEntryId = carryRow?.id ?? null;
+          }
+
+          // Остаток идёт в счёт ШТРАФА (а не в депозит), пока штраф не
+          // погашен — так факт после оплаты сходится с обещанием диалога
+          // («останется долгом N ₽»). Излишек сверх штрафа — в депозит.
+          let residualToFine = 0;
+          let fineEntryId: number | null = null;
+          if (residualToDeposit > 0) {
+            const fineEntries = await db
+              .select({
+                kind: debtEntries.kind,
+                amount: debtEntries.amount,
+                appliedToEndPlanned: debtEntries.appliedToEndPlanned,
+              })
+              .from(debtEntries)
+              .where(eq(debtEntries.rentalId, id));
+            let fineCarrySum = 0;
+            let finePaid = 0;
+            let fineForgivenStandalone = 0;
+            for (const e of fineEntries) {
+              if (e.kind === "overdue_fine_carry") fineCarrySum += e.amount;
+              else if (e.kind === "overdue_fine_payment") finePaid += e.amount;
+              else if (
+                e.kind === "overdue_fine_forgive" &&
+                !e.appliedToEndPlanned
+              )
+                fineForgivenStandalone += e.amount;
+            }
+            const remainingOverdue = overdueDays - daysAdded;
+            const fineOutstanding = Math.max(
+              0,
+              remainingOverdue * fineDaily +
+                fineCarrySum -
+                finePaid -
+                fineForgivenStandalone,
+            );
+            residualToFine = Math.min(residualToDeposit, fineOutstanding);
+            if (residualToFine > 0) {
+              residualToDeposit -= residualToFine;
+              const [fineRow] = await db
+                .insert(debtEntries)
+                .values({
+                  rentalId: id,
+                  kind: "overdue_fine_payment",
+                  amount: residualToFine,
+                  comment: "Оплата штрафа просрочки (остаток от оплаты дней)",
+                  createdByUserId: userId,
+                  createdByName: userName,
+                })
+                .returning();
+              fineEntryId = fineRow?.id ?? null;
+              await db.insert(payments).values({
+                rentalId: id,
+                type: "fine",
+                amount: residualToFine,
+                method: payMethod,
+                paid: true,
+                paidAt: payPaidAt,
+                note: "Оплата штрафа просрочки (остаток от оплаты дней)",
+                rollbackSnapshot: {
+                  kind: "payment",
+                  payKind: "overdue_fine",
+                  debtEntryId: fineEntryId,
+                } as unknown as object,
+              });
+            }
+          }
           if (daysAdded > 0) {
             endPlannedShift = daysAdded;
             const newEnd = new Date(
@@ -4185,6 +4502,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
                   sum: r.sum,
                   residualToDeposit,
                   clientId: r.clientId,
+                  // Пункт 9: при откате удаляем и зафиксированный штраф
+                  // за выкупленные дни (carry) — иначе он задвоится.
+                  carryEntryId,
                 } as unknown as object,
               });
             }

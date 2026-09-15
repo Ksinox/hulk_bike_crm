@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ElectricMark } from "@/components/PowerTypeBadge";
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "./KpiCard";
@@ -6,6 +7,7 @@ import { StatusPill } from "./StatusPill";
 import { ClientAvatar } from "./ReturnsList";
 import { formatRub, type OverdueItem } from "./useDashboardMetrics";
 import { navigate } from "@/app/navigationStore";
+import { useScooterNaming } from "@/lib/scooterNaming";
 
 export function OverdueTable({
   className,
@@ -130,6 +132,7 @@ function OverdueRow({
 }) {
   const initials = initialsOf(o.clientName);
   const phoneHref = phoneToTel(o.clientPhone);
+  const naming = useScooterNaming();
   const onRowClick = () => {
     // v0.3.8: при клике с дашборда открываем сразу таб «История долгов» —
     // оператор видит из чего сложилась сумма и может списать просрочку.
@@ -150,7 +153,12 @@ function OverdueRow({
           </div>
         </div>
       </Td>
-      <Td overdue>{o.scooterName}</Td>
+      <Td overdue>
+        <span className="inline-flex items-center gap-1.5">
+          {naming.isPartner(o.scooterName) && <ElectricMark size="sm" />}
+          {naming.render(o.scooterName, { size: "sm" })}
+        </span>
+      </Td>
       <Td overdue>
         <span className="font-bold text-red-ink">{formatRub(o.debt)} ₽</span>
       </Td>

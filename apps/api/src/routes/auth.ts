@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { effectivePermissions, isFullAccessRole } from "../auth/permissions.js";
 import bcrypt from "bcryptjs";
 import { eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -37,6 +38,7 @@ export async function authRoutes(app: FastifyInstance) {
           login: users.login,
           role: users.role,
           avatarColor: users.avatarColor,
+          position: users.position,
         })
         .from(users)
         .where(
@@ -89,6 +91,7 @@ export async function authRoutes(app: FastifyInstance) {
       userId: row.id,
       role: row.role,
       login: row.login,
+      sv: row.sessionVersion,
     };
     const maxAge = remember ? 30 * 24 * 3600 : 12 * 3600; // 30 дней или 12 часов
     const token = app.jwt.sign(payload, {
@@ -143,6 +146,10 @@ export async function authRoutes(app: FastifyInstance) {
           avatarColor: users.avatarColor,
           mustChangePassword: users.mustChangePassword,
           active: users.active,
+          position: users.position,
+          permissions: users.permissions,
+          sessionVersion: users.sessionVersion,
+          staffKind: users.staffKind,
         })
         .from(users)
         .where(eq(users.id, u.userId));
@@ -160,7 +167,15 @@ export async function authRoutes(app: FastifyInstance) {
         login: row.login,
         role: row.role,
         avatarColor: row.avatarColor,
-        mustChangePassword: row.mustChangePassword,
+        // Сотруднику пароль задаёт директор — требовать смену нельзя, иначе
+        // старый аккаунт с этим флагом застрял бы на экране смены пароля.
+        mustChangePassword: isFullAccessRole(row.role) ? row.mustChangePassword : false,
+        position: row.position,
+        staffKind: row.staffKind,
+        // 14.09: права на щепетильные данные — фронт по ним не рисует блоки.
+        permissions: effectivePermissions(row.role, row.permissions),
+        // Пароль сотрудника задаёт директор: сам он его не меняет.
+        canChangePassword: isFullAccessRole(row.role),
       };
     },
   );
@@ -237,6 +252,13 @@ export async function authRoutes(app: FastifyInstance) {
         .from(users)
         .where(eq(users.id, req.user.userId));
       if (!row) return reply.code(401).send({ error: "user deleted" });
+      // 14.09: пароль сотрудника задаёт только директор.
+      if (!isFullAccessRole(row.role)) {
+        return reply.code(403).send({
+          error: "password_managed_by_director",
+          message: "Пароль меняет директор — обратитесь к нему.",
+        });
+      }
 
       const ok = await bcrypt.compare(currentPassword, row.passwordHash);
       if (!ok)

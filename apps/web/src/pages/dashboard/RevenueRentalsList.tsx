@@ -1,12 +1,16 @@
 import { useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { changePaymentMethod } from "@/pages/rentals/rentalsStore";
+import { toast } from "@/lib/toast";
 import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
+import { usePartnerInfo } from "@/lib/partner";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import { currentBillingPeriod } from "@/lib/billingPeriod";
+import { useScooterNaming } from "@/lib/scooterNaming";
 import { useDashboardDrawer } from "./DashboardDrawer";
 
 export type RevenuePeriod = "day" | "week" | "month";
@@ -86,6 +90,9 @@ export function isCashPayment(p: { method: string }): boolean {
 
 /** Считать ли платёж выручкой нал/безнал (не залог/возврат, не из депозита). */
 export function isRevenuePayment(p: ApiPayment): boolean {
+  // Пункт 2: оплаты удалённых аренд исключены из выручки (бэк ставит флаг
+  // при ручном удалении и снимает при восстановлении из архива).
+  if (p.excludedFromRevenue) return false;
   if (!p.paid || !p.paidAt) return false;
   if (p.type === "deposit" || p.type === "refund") return false;
   // method='deposit' — оплата из депозита клиента: не нал и не безнал
@@ -151,10 +158,13 @@ export function RevenueRentalsList({
   methodFilter = "all",
   types,
   scope = "all",
+  hideSummary,
 }: {
   period: RevenuePeriod;
   onRowClick?: (rentalId: number) => void;
   compact?: boolean;
+  /** Итоговая строка не нужна: те же числа уже стоят в шапке блока (01.09). */
+  hideSummary?: boolean;
   /** Конкретный день (YYYY-MM-DD) — фильтр по клику на столбик графика. */
   dayFilter?: string | null;
   /** Произвольный диапазон (YYYY-MM-DD) — приоритетнее period/dayFilter. */
@@ -173,11 +183,13 @@ export function RevenueRentalsList({
     [activeRentals, archivedRentals],
   );
   const { data: payments = [] } = useApiPayments();
+  const { excludedRentals } = usePartnerInfo();
   const { data: clients = [] } = useApiClients();
   const drawer = useDashboardDrawer();
   // v0.9.7: раскрытие состава аренды (тело) у платежа по клику на шеврон.
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { data: scooters = [] } = useApiScooters();
+  const naming = useScooterNaming();
   // Якоря расчётного периода грузятся с сервера асинхронно и пишутся в
   // глобал billingPeriod. Подписываемся, чтобы окно ниже пересчиталось,
   // когда они догрузятся (иначе список фильтровал бы по стале-периоду).
@@ -197,6 +209,10 @@ export function RevenueRentalsList({
     return payments
       .filter((p) => {
         if (!isRevenuePayment(p)) return false;
+        // Правка 31.08: в списке выручки не должно быть НИ ОДНОЙ операции
+        // по партнёрскому электротранспорту — ни аренды, ни просрочки, ни
+        // штрафов. Эти деньги живут в разделе «Партнёрка».
+        if (p.rentalId != null && excludedRentals.has(p.rentalId)) return false;
         if (scope === "rentals" && p.rentalId == null) return false;
         const t = new Date(p.paidAt!).getTime();
         if (t < start.getTime() || t >= end.getTime()) return false;
@@ -231,6 +247,9 @@ export function RevenueRentalsList({
           paidAt: p.paidAt!,
           amount: p.amount,
           cash: isCashPayment(p),
+          // Пункт 8: исходный способ — оплаты из залога/депозита формат
+          // не меняют (это не деньги клиента).
+          method: p.method,
           typeLabel: REVENUE_TYPE_LABEL[tk],
           clientName: client?.name ?? "—",
           scooterName: scooter?.name ?? "—",
@@ -242,6 +261,7 @@ export function RevenueRentalsList({
       // при продлении), тонул вниз, хотя приняли его только что.
       .sort((a, b) => b.paymentId - a.paymentId);
   }, [
+    excludedRentals,
     rentals,
     payments,
     clients,
@@ -283,7 +303,12 @@ export function RevenueRentalsList({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between text-[11px] text-muted-2">
+      <div
+        className={cn(
+          "items-center justify-between text-[11px] text-muted-2",
+          hideSummary ? "hidden" : "flex",
+        )}
+      >
         <span>
           {rows.length}{" "}
           {plural(rows.length, ["платёж", "платежа", "платежей"])}
@@ -309,7 +334,7 @@ export function RevenueRentalsList({
           )}
         </span>
       </div>
-      <div className="flex flex-col divide-y divide-border rounded-[10px] border border-border bg-white">
+      <div className="@container flex flex-col divide-y divide-border rounded-[10px] border border-border bg-white">
         {rows.map((r) => {
           const expanded = expandedId === r.paymentId;
           return (
@@ -321,31 +346,37 @@ export function RevenueRentalsList({
                     if (onRowClick) onRowClick(r.rentalId);
                     else drawer.openRental(r.rentalId);
                   }}
-                  className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left @[380px]:gap-3"
                 >
-                  <div className="w-[68px] shrink-0 text-[11px] font-medium tabular-nums leading-tight text-muted-2">
+                  {/* Узкая колонка (01.09): дата уезжает во вторую строку,
+                      иначе на имя клиента остаётся два символа. */}
+                  <div className="hidden w-[68px] shrink-0 text-[11px] font-medium tabular-nums leading-tight text-muted-2 @[380px]:block">
                     {fmtDateTime(r.paidAt)}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-semibold text-ink">
-                      {r.scooterName} · {r.clientName}
+                      {naming.render(r.scooterName, { size: "sm" })} ·{" "}
+                      {r.clientName}
                     </div>
-                    <div className="text-[11px] text-muted-2">{r.typeLabel}</div>
+                    <div className="truncate text-[11px] text-muted-2">
+                      <span className="tabular-nums @[380px]:hidden">
+                        {fmtDateTime(r.paidAt)} ·{" "}
+                      </span>
+                      {r.typeLabel}
+                    </div>
                   </div>
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                      r.cash
-                        ? "bg-green-soft text-green-ink"
-                        : "bg-blue-50 text-blue-700",
-                    )}
-                  >
-                    {r.cash ? "нал" : "безнал"}
-                  </span>
-                  <div className="w-[72px] text-right text-[13px] font-bold tabular-nums text-ink">
+                  <div className="shrink-0 text-right text-[13px] font-bold tabular-nums text-ink @[380px]:w-[72px]">
                     {fmt(r.amount)} ₽
                   </div>
                 </button>
+                {/* Пункт 8: бейдж способа — кликабельный (нал ↔ безнал).
+                    Вынесен из кнопки-строки: кнопка в кнопке невалидна. */}
+                <MethodBadge
+                  paymentId={r.paymentId}
+                  method={r.method}
+                  cash={r.cash}
+                  amount={r.amount}
+                />
                 {/* Шеврон «состав аренды» — только у платежей аренды/продления. */}
                 {r.comp ? (
                   <button
@@ -452,6 +483,95 @@ function CompositionRow({
         {value}
       </span>
     </div>
+  );
+}
+
+/**
+ * Пункт 8: кликабельный бейдж способа оплаты в строке платежа.
+ * Клик открывает мини-меню «Наличные / Безнал»; выбор — PATCH платежа,
+ * бэк пишет запись в журнал с diff «было → стало». Оплаты из
+ * залога/депозита (method='deposit') формат не меняют — бейдж статичен.
+ */
+function MethodBadge({
+  paymentId,
+  method,
+  cash,
+  amount,
+}: {
+  paymentId: number;
+  method: ApiPayment["method"];
+  cash: boolean;
+  amount: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const badge = (
+    <span
+      className={cn(
+        "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+        cash ? "bg-green-soft text-green-ink" : "bg-blue-50 text-blue-700",
+      )}
+    >
+      {cash ? "нал" : "безнал"}
+    </span>
+  );
+  if (method === "deposit") return <span className="shrink-0">{badge}</span>;
+
+  const pick = async (m: "cash" | "transfer") => {
+    setOpen(false);
+    if ((m === "cash") === cash) return;
+    setBusy(true);
+    await changePaymentMethod(paymentId, m);
+    setBusy(false);
+    toast.success(
+      "Способ оплаты изменён",
+      `${amount.toLocaleString("ru-RU")} ₽ — теперь ${m === "cash" ? "наличные" : "безнал"}. Запись в журнале.`,
+    );
+  };
+
+  return (
+    <span className="relative shrink-0">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => setOpen((v) => !v)}
+        title="Сменить способ оплаты (нал ↔ безнал)"
+        className="rounded-full transition-transform hover:scale-105 disabled:opacity-50"
+      >
+        {badge}
+      </button>
+      {open && (
+        <>
+          <span className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <span className="absolute right-0 top-full z-50 mt-1 flex w-[140px] flex-col overflow-hidden rounded-xl border border-border bg-white py-1 shadow-card-lg">
+            {(
+              [
+                ["cash", "Наличные"],
+                ["transfer", "Безнал"],
+              ] as const
+            ).map(([m, lbl]) => {
+              const active = (m === "cash") === cash;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => pick(m)}
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-colors",
+                    active
+                      ? "bg-blue-50 text-blue-700"
+                      : "text-ink-2 hover:bg-surface-soft",
+                  )}
+                >
+                  {active && <Check size={12} />}
+                  {lbl}
+                </button>
+              );
+            })}
+          </span>
+        </>
+      )}
+    </span>
   );
 }
 

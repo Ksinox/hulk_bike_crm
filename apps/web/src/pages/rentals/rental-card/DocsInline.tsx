@@ -27,6 +27,8 @@ import {
   rentalDocSnapshotUrl,
 } from "@/lib/api/rentals";
 import { useApiClients } from "@/lib/api/clients";
+import { useApiScooters } from "@/lib/api/scooters";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { toast, confirmDialog } from "@/lib/toast";
 import type { Rental } from "@/lib/mock/rentals";
 import { DocumentPreviewModal } from "@/pages/rentals/DocumentPreviewModal";
@@ -66,13 +68,26 @@ export function DocsInline({ rental }: { rental: Rental }) {
   const API_BASE =
     import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
   const { data: apiClients } = useApiClients();
+  const { data: apiScooters = [] } = useApiScooters();
+  const { data: models = [] } = useApiScooterModels();
   const client = apiClients?.find((c) => c.id === rental.clientId);
   const [preview, setPreview] = useState<DocType | null>(null);
 
-  const apiType = (type: DocType): string =>
-    type === "contract_full" && client?.isForeigner
-      ? "contract_full_intl"
-      : type;
+  /**
+   * Правки 2.0, п.11: для электротранспорта печатается СВОЙ договор —
+   * «Договор проката электровелосипеда». Иностранная версия сохраняет
+   * приоритет (она про документы клиента, а не про технику).
+   */
+  const scooter = apiScooters.find((s) => s.name === rental.scooter);
+  const modelOf = models.find((m) => m.id === scooter?.modelId);
+  const isEbike = !!modelOf?.isElectric;
+
+  const apiType = (type: DocType): string => {
+    if (type !== "contract_full") return type;
+    if (client?.isForeigner) return "contract_full_intl";
+    if (isEbike) return "contract_full_ebike";
+    return type;
+  };
 
   const previewUrl = (type: DocType) =>
     `${API_BASE}/api/rentals/${rental.id}/document/${apiType(type)}?format=html`;

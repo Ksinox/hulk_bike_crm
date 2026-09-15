@@ -233,6 +233,21 @@ function buildActivitySummary(
 ): ActivitySummaryView {
   const action = item.action;
   const diff = readRecord(readRecord(item.meta)?.diff);
+
+  /**
+   * События по ТЕХНИКЕ бэк описывает готовым предложением: «Статус Jog №3:
+   * «Не распределён» → «Продаётся» · ID · рама · пробег · вручную в
+   * карточке». Показываем его как есть.
+   *
+   * Без этой ветки запись со статусом попадала в арендную (`action`
+   * содержит «status»), где ждут diff.status от аренды: пилюли «было →
+   * стало» не находились, и в журнале техники оставался голый заголовок
+   * «Изменён статус» — ровно то, из-за чего и не могли понять, куда делся
+   * скутер.
+   */
+  if (item.entity === "scooter" && (item.summary || "").trim()) {
+    return { title: item.summary.trim(), change: null, extras: [] };
+  }
   const money = (v: unknown): string =>
     `${Number(v ?? 0).toLocaleString("ru-RU")} ₽`;
   const fee = readRecord(diff?.fee);
@@ -992,6 +1007,34 @@ function buildActivitySummary(
     };
   }
 
+  // ── Пункт 2: удаление аренды в архив / восстановление. Запись
+  //    самодостаточна: причина, судьба выручки, подтверждение ключом. ──
+  if (item.entity === "rental" && action === "archived") {
+    const m = readRecord(item.meta);
+    const extras: string[] = [];
+    if (typeof m?.reason === "string" && m.reason)
+      extras.push(`Причина: ${m.reason}`);
+    const excluded = typeof m?.excludedRevenue === "number" ? m.excludedRevenue : null;
+    if (excluded != null && excluded > 0)
+      extras.push(`Из выручки исключено ${money(excluded)}`);
+    if (m?.directorApproved === true)
+      extras.push("Подтверждено ключом директора");
+    return { title: "Аренда удалена в архив", change: null, extras };
+  }
+  if (item.entity === "rental" && action === "unarchived") {
+    const m = readRecord(item.meta);
+    const returned =
+      typeof m?.returnedRevenue === "number" ? m.returnedRevenue : null;
+    return {
+      title: "Аренда восстановлена из архива",
+      change: null,
+      extras:
+        returned != null && returned > 0
+          ? [`Оплаты возвращены в выручку: ${money(returned)}`]
+          : [],
+    };
+  }
+
   // ── Создание аренды: показываем «тело» — из чего складывается сумма
   //    (аренда + экипировка + залог). Снимок берётся из meta.composition
   //    (см. бэкенд rentals.ts, лог rental_created). ──
@@ -1537,7 +1580,7 @@ export function ActivityEventRow({
           ? "text-red-ink"
           : "text-ink";
     return (
-      <div className="flex w-full items-start gap-3 rounded-[12px] px-2.5 py-3 transition-colors hover:bg-surface-soft">
+      <div className="flex w-full items-start gap-3 rounded-[12px] px-2.5 py-3 transition-colors hover:bg-surface-soft max-sm:flex-wrap">
         <span
           className={cn(
             "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
@@ -1602,7 +1645,9 @@ export function ActivityEventRow({
             </div>
           )}
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1 pl-2 text-right">
+        {/* На телефоне правая колонка (сумма, время, кто) переезжает под текст
+            строкой — иначе она отжимала описание в узкий столбик (06.09). */}
+        <div className="flex shrink-0 flex-col items-end gap-1 pl-2 text-right max-sm:basis-full max-sm:flex-row max-sm:flex-wrap max-sm:items-center max-sm:justify-start max-sm:gap-x-3 max-sm:pl-12 max-sm:text-left">
           {view.headline && (
             <div
               className={cn(

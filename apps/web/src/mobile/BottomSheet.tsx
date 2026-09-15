@@ -103,7 +103,8 @@ export function MobileBottomSheet({
       <div
         ref={panelRef}
         className={cn(
-          "w-full rounded-t-3xl bg-surface shadow-card-lg",
+          // max-w: на планшете лист не растягивается на всю ширину экрана
+          "mx-auto w-full max-w-[640px] rounded-t-3xl bg-surface shadow-card-lg",
           // въезд снизу — только в покое; во время drag/закрытия рулит inline-transform
           !closing && !dragging && dragY === 0 && "animate-sheet-up",
           "pb-[max(env(safe-area-inset-bottom),1.5rem)]",

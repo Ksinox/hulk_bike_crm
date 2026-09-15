@@ -1,5 +1,6 @@
 import { Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TABLET_PAD_X_4, TABLET_PAD_X_HEADER } from "./tablet";
 
 /**
  * Полноэкранная мобильная форма-модалка. Шапка (Закрыть + заголовок),
@@ -25,7 +26,7 @@ export function MobileFormScreen({
 }) {
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-bg">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-3 pt-[env(safe-area-inset-top)]">
+      <header className={cn("flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-3 pt-[env(safe-area-inset-top)]", TABLET_PAD_X_HEADER)}>
         <button
           type="button"
           onClick={onClose}
@@ -37,9 +38,9 @@ export function MobileFormScreen({
         <h1 className="font-display text-[17px] font-bold text-ink">{title}</h1>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 pb-28">{children}</div>
+      <div className={cn("flex-1 overflow-y-auto px-4 py-4 pb-28", TABLET_PAD_X_4)}>{children}</div>
 
-      <footer className="absolute inset-x-0 bottom-0 border-t border-border bg-surface px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
+      <footer className={cn("absolute inset-x-0 bottom-0 border-t border-border bg-surface px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]", TABLET_PAD_X_4)}>
         <button
           type="button"
           onClick={onSubmit}

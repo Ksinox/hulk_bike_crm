@@ -81,6 +81,21 @@ export type ApiScooter = {
   vin: string | null;
   engineNo: string | null;
   frameNumber: string | null;
+  /** Пункт 15: порядковый номер места в арендном парке (1..N). */
+  rentalSlot?: number | null;
+  /** Пункт 16: последний арендный номер — ярлык «был в аренде». */
+  exRentalSlot?: number | null;
+  /** Пункт 15: уникальный ID — 4 последние цифры номера рамы. */
+  uid?: string | null;
+  /**
+   * Правки 2.0, п.7: инвестор партнёрской техники. Задан → единица
+   * партнёрская (isPartner=true проставляется на сервере).
+   */
+  investorId?: number | null;
+  /** Пункт 11: партнёрская техника (свойство единицы, не модели). */
+  isPartner?: boolean;
+  /** Процент инвестора по единице; null → общий из настроек. */
+  partnerShare?: number | null;
   year: number | null;
   color: string | null;
   mileage: number;
@@ -88,6 +103,9 @@ export type ApiScooter = {
   purchaseDate: string | null;
   purchasePrice: number | null;
   marketValue: number | null;
+  /** Блок «Продажи» (31.08): цена продажи и партия закупа. */
+  salePrice: number | null;
+  purchaseBatch: string | null;
   lastOilChangeMileage: number | null;
   note: string | null;
   archivedAt: string | null;
@@ -155,6 +173,8 @@ export type ApiRental = {
   equipment: string[];
   equipmentJson: RentalEquipmentItem[];
   damageAmount: number | null;
+  /** Пункт 4: причина возврата, указанная при закрытии аренды. */
+  returnReason?: string | null;
   note: string | null;
   /** Архив (soft-delete). null если активна. */
   archivedAt: string | null;

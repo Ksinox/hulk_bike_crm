@@ -15,6 +15,7 @@ import {
   useTileHoverPreview,
 } from "./ParkTileHoverCard";
 import { ParkRadialFilters, type ParkStatusId } from "./ParkRadialFilters";
+import { ScooterName } from "@/components/ScooterName";
 
 /** Извлечь номер из имени скутера ("Jog #07" → 7). Используется для
  * сортировки плиток парка по возрастанию номера, без блочной разбивки
@@ -105,9 +106,12 @@ export function ParkPanel({
     // Сортируем плитки по номеру скутера: #1 → #2 → … → #55. Заказчик
     // хочет видеть единый поток без группировки Jog/Gear блоками —
     // оператор быстрее находит конкретный номер.
-    const scooters = [...(scootersQ.data ?? [])].sort(
-      (a, b) => parkNumber(a.name) - parkNumber(b.name),
-    );
+    // Правка 25.08: из парка убираем только ПРОДАННУЮ технику — права
+    // на неё перешли покупателю. Выкуп остаётся нашим (клиент платит по
+    // графику), поэтому в панели парка он виден.
+    const scooters = [...(scootersQ.data ?? [])]
+      .filter((s) => s.baseStatus !== "sold")
+      .sort((a, b) => parkNumber(a.name) - parkNumber(b.name));
     const rentals = rentalsQ.data ?? [];
 
     // Скутер «занят» (числится в аренде на дашборде) пока существует
@@ -162,6 +166,9 @@ export function ParkPanel({
         id: s.id,
         name: s.name,
         model: s.model,
+        // Правка 24.08: на плитке показываем АРЕНДНЫЙ номер, а не «#NN»
+        // из имени (историческая нумерация заведения).
+        rentalSlot: s.rentalSlot ?? null,
         status: computeTileStatus(s, activeByScooter.get(s.id), {
           isOverdue,
           hasDamage,
@@ -298,7 +305,10 @@ export function ParkPanel({
                 : s.status === st;
           const statusMatch =
             statuses.size === 0 || [...statuses].some(matchOneStatus);
-          const num = s.name.split("#")[1] ?? s.name;
+          const num =
+            s.rentalSlot != null
+              ? String(s.rentalSlot)
+              : (s.name.split("#")[1] ?? s.name);
           const handleClick = () => {
             // Клик в зависимости от статуса — разные операционные действия.
             // v0.3.1: late_today тоже открывает аренду (это активная аренда
@@ -476,7 +486,12 @@ function ReassignDialog({
           <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
             Распределить скутер
           </div>
-          <div className="text-[15px] font-bold text-ink">{scooter.name}</div>
+          <ScooterName
+            name={scooter.name}
+            number={scooter.rentalSlot}
+            exNumber={scooter.exRentalSlot}
+            className="text-[15px] font-bold text-ink"
+          />
         </div>
         <div className="flex flex-col gap-1 px-3 py-3">
           {options.map((o) => (

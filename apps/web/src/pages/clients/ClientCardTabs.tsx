@@ -30,6 +30,7 @@ import {
 } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useRentalsByClient } from "@/pages/rentals/rentalsStore";
+import { useScooterNaming } from "@/lib/scooterNaming";
 import { navigate } from "@/app/navigationStore";
 
 function fmt(n: number): string {
@@ -95,6 +96,8 @@ function periodText(r: Rental): { main: string; hint: string | null } {
 
 export function RentalsTab({ client }: { client: Client }) {
   const rentals = useRentalsByClient(client.id);
+  // Модель + круглый бейдж арендного номера вместо «Jog #03».
+  const naming = useScooterNaming();
   if (rentals.length === 0)
     return <Empty text="У клиента ещё не было аренд" />;
 
@@ -155,7 +158,7 @@ export function RentalsTab({ client }: { client: Client }) {
                 title="Открыть аренду"
               >
                 <td className="px-3 py-2 font-semibold text-ink">
-                  {r.scooter}
+                  {naming.render(r.scooter, { size: "sm" })}
                 </td>
                 <td className="px-3 py-2 text-muted">
                   <div>{p.main}</div>
@@ -205,6 +208,7 @@ export function RentalsTab({ client }: { client: Client }) {
 // заметка и переход в аренду. Вся инфа из таблицы сохранена.
 function MobileRentalRow({ r }: { r: Rental }) {
   const [open, setOpen] = useState(false);
+  const naming = useScooterNaming();
   const p = periodText(r);
   const eff = effectiveRentalStatus(r.status, r.endPlanned);
   return (
@@ -216,7 +220,7 @@ function MobileRentalRow({ r }: { r: Rental }) {
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-bold text-ink">{r.scooter}</span>
+            {naming.render(r.scooter, { className: "font-bold text-ink" })}
             <span
               className={cn(
                 "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
@@ -274,6 +278,7 @@ function DetailLine({ label, value }: { label: string; value: string }) {
 /* =================== Рассрочки =================== */
 
 export function InstalmentsTab({ d }: { d: ClientDetails }) {
+  const naming = useScooterNaming();
   if (d.instalments.length === 0)
     return <Empty text="Нет активных рассрочек" />;
   return (
@@ -286,7 +291,9 @@ export function InstalmentsTab({ d }: { d: ClientDetails }) {
             className="rounded-[14px] border border-border p-3"
           >
             <div className="flex items-center justify-between gap-2">
-              <div className="font-semibold text-ink">{x.scooter}</div>
+              <div className="font-semibold text-ink">
+                {naming.render(x.scooter, { size: "sm" })}
+              </div>
               <span className="text-[11px] text-muted-2">
                 с {x.start}
               </span>

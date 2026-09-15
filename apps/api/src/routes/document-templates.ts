@@ -68,6 +68,14 @@ export async function documentTemplatesRoutes(app: FastifyInstance) {
         );
         return { html: renderDamageSystemForEditor() };
       }
+      // Договор аренды с правом выкупа (06.09): свой набор переменных
+      // buyout.*, живёт в buyout-document.ts.
+      if (t === "contract_buyout") {
+        const { renderBuyoutSystemForEditor } = await import(
+          "../documents/buyout-document.js"
+        );
+        return { html: renderBuyoutSystemForEditor() };
+      }
       return reply.code(400).send({ error: "bad type" });
     },
   );

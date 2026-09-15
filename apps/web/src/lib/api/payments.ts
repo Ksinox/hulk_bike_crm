@@ -23,6 +23,8 @@ export type ApiPayment = {
   note: string | null;
   /** v0.4.26: ссылка на damage_report для типа='damage'. */
   damageReportId?: number | null;
+  /** Пункт 2: платёж исключён из выручки (аренда удалена вручную). */
+  excludedFromRevenue?: boolean;
   createdAt: string;
 };
 

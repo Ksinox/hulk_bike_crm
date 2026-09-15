@@ -1,16 +1,20 @@
 import { useState } from "react";
 import {
+  AlarmClock,
   AlertTriangle,
   ArrowRight,
   ChevronLeft,
   Clock,
   Maximize2,
+  Phone,
   Wallet,
 } from "lucide-react";
 import { useRentals } from "@/pages/rentals/rentalsStore";
+import { useScooterNaming } from "@/lib/scooterNaming";
 import { RentalCard } from "@/pages/rentals/RentalCard";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { navigate } from "@/app/navigationStore";
+import { useReminders } from "@/lib/api/reminders";
 import type { RouteId } from "@/app/route";
 import { useMe } from "@/lib/api/auth";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -20,6 +24,15 @@ import { ParkLoadGauge } from "@/pages/dashboard/ParkLoadGauge";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { MobileRevenueScreen } from "./MobileRevenueScreen";
 import { RowCallButton, useCallClient } from "../call";
+import { usePageFab } from "../fab";
+import { MobileBottomSheet } from "../BottomSheet";
+import {
+  DEAL_TYPES,
+  READY_TYPES,
+  openDeal,
+} from "@/pages/clients/CreateDealMenu";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import {
   formatRub,
@@ -30,6 +43,7 @@ import {
   type OverdueItem,
   type ReturnItem,
 } from "@/pages/dashboard/useDashboardMetrics";
+import { TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
 
 /**
  * Мобильный дашборд. Переиспользует тот же data-хук, что и десктоп
@@ -44,6 +58,8 @@ export function MobileDashboard({
 }) {
   const { data: me } = useMe();
   const m = useDashboardMetrics();
+  // Есть ли электротранспорт — от этого зависит раскладка верхних плиток.
+  const hasElectro = m.rentableElectro > 0 || m.activeElectroCount > 0;
   const rev = useBillingPeriodRevenue("all");
   const [revenueOpen, setRevenueOpen] = useState(false);
   // #172: открытие карточки аренды из строк просрочки/возврата + звонок.
@@ -52,6 +68,19 @@ export function MobileDashboard({
   // Полноэкранный список ВСЕХ просрочек (с дашборда «Все →»): звонок + карточка.
   const [overdueListOpen, setOverdueListOpen] = useState(false);
   const { callClient, callSheet } = useCallClient();
+  // Напоминания — тот же источник, что на десктопе (01.09).
+  const { data: remindersData } = useReminders();
+  const reminders = remindersData?.items ?? [];
+
+  // Пункт 5: «Новая сделка» с главного экрана — лист типов сделки
+  // (та же механика, что «Создать сделку» у клиента; живая пока «Аренда»).
+  const [dealSheetOpen, setDealSheetOpen] = useState(false);
+  const [newRentalOpen, setNewRentalOpen] = useState(false);
+  usePageFab(
+    "Сделка",
+    () => setDealSheetOpen(true),
+    openRentalId != null || overdueListOpen || revenueOpen || newRentalOpen,
+  );
 
   if (m.isLoading) {
     return <DashboardSkeleton />;
@@ -99,18 +128,53 @@ export function MobileDashboard({
           и активные аренды) РЯДОМ с плашкой «Поступит сегодня». Плашки
           «Просрочено» / «Активных аренд» / «Загрузка парка» убраны: просрочки
           видны списком ниже, активные аренды и % загрузки — внутри круга. */}
+      {/* Правка 27.08: два чипса парка стоят РЯДОМ (бензин + электро) — их
+          логично сравнивать друг с другом, а не через «Поступит сегодня».
+          Деньги переехали под них во всю ширину. Если электротранспорта нет,
+          пара как раньше: парк + деньги. */}
       <div className="grid grid-cols-2 items-stretch gap-3">
         <ParkLoadGauge
+          title="Бензиновые"
           percent={m.loadPercent}
-          active={m.activeRentalsCount}
+          active={m.activePetrolCount}
           rentable={m.rentableFleet}
           onClick={() => onSelect("fleet")}
-          size={84}
+          size={92}
           layout="stack"
           className="rounded-2xl p-3.5"
         />
+        {hasElectro ? (
+          <ParkLoadGauge
+            title="Электро"
+            tone="electro"
+            percent={m.loadPercentElectro}
+            active={m.activeElectroCount}
+            rentable={m.rentableElectro}
+            onClick={() => onSelect("partners")}
+            size={92}
+            layout="stack"
+            className="rounded-2xl p-3.5"
+          />
+        ) : (
+          <KpiTile
+            icon={<Wallet size={16} />}
+            tone="green"
+            label="Поступит сегодня"
+            value={m.todayIncoming > 0 ? formatRub(m.todayIncoming) : "0"}
+            unit="₽"
+            foot={
+              m.todayIncomingCount > 0
+                ? `${m.todayIncomingCount} ${plural(m.todayIncomingCount, ["возврат", "возврата", "возвратов"])}`
+                : "нет возвратов"
+            }
+          />
+        )}
+      </div>
+
+      {hasElectro && (
         <KpiTile
-          icon={<Wallet size={16} />}
+          wide
+          icon={<Wallet size={18} />}
           tone="green"
           label="Поступит сегодня"
           value={m.todayIncoming > 0 ? formatRub(m.todayIncoming) : "0"}
@@ -121,7 +185,74 @@ export function MobileDashboard({
               : "нет возвратов"
           }
         />
-      </div>
+      )}
+
+      {/* Напоминания: кому звонить про платёж по выкупу и когда выплата
+          инвестору. Паритет с десктопом (01.09). */}
+      {reminders.length > 0 && (
+        <Section
+          title="Напоминания"
+          count={reminders.length}
+          icon={<AlarmClock size={15} />}
+          tone={remindersData?.counts.overdue ? "red" : undefined}
+        >
+          {reminders.slice(0, 6).map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() =>
+                r.link?.section === "rassrochki"
+                  ? navigate({ route: "rassrochki", buyoutDealId: r.link.entityId })
+                  : navigate({ route: "partners" })
+              }
+              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left active:bg-surface-soft"
+            >
+              <span
+                className={cn(
+                  "h-2 w-2 shrink-0 rounded-full",
+                  r.urgency === "overdue"
+                    ? "bg-red"
+                    : r.urgency === "today"
+                      ? "bg-orange"
+                      : "bg-blue",
+                )}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-bold text-ink">
+                  {r.title}
+                </span>
+                <span className="block truncate text-[12px] text-muted">
+                  {r.subtitle}
+                </span>
+              </span>
+              {r.amount != null && (
+                <span className="shrink-0 text-[13.5px] font-bold tabular-nums text-ink-2">
+                  {r.amount.toLocaleString("ru-RU")} ₽
+                </span>
+              )}
+              {r.phone && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    callClient(r.title, [r.phone]);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.stopPropagation();
+                      callClient(r.title, [r.phone]);
+                    }
+                  }}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-soft text-green-ink"
+                >
+                  <Phone size={15} />
+                </span>
+              )}
+            </button>
+          ))}
+        </Section>
+      )}
 
       {/* #дашборд: долги (просрочки + висящие) подняты НАД парком — заказчик:
           горящие деньги первыми, парк ниже (на мобиле тоже). */}
@@ -213,7 +344,7 @@ export function MobileDashboard({
           не задействуем: это быстрый операционный список просрочек. */}
       {overdueListOpen && (
         <div className="fixed inset-0 z-[50] flex h-[100dvh] min-h-0 flex-col bg-bg animate-slide-in-right">
-          <header className="flex items-center gap-2 border-b border-border bg-surface px-2 py-2.5">
+          <header className={cn("flex items-center gap-2 border-b border-border bg-surface px-2 py-2.5", TABLET_PAD_X_HEADER)}>
             <button
               type="button"
               onClick={() => setOverdueListOpen(false)}
@@ -233,7 +364,7 @@ export function MobileDashboard({
               </div>
             </div>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+          <div className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain p-3", TABLET_PAD_X)}>
             {m.overdue.length === 0 ? (
               <EmptyRow text="Просрочек нет — все аренды в графике" />
             ) : (
@@ -274,6 +405,86 @@ export function MobileDashboard({
       {/* Выбор номера для звонка (если у клиента два телефона) — общий
           нижний лист из mobile/call. */}
       {callSheet}
+
+      {/* Нижний лист «Новая сделка» — крупные пункты под палец. 07.09:
+          типы те же, что на компьютере (READY_TYPES), включая «Ремонт»;
+          раньше на мобиле жила только «Аренда». */}
+      {dealSheetOpen && (
+        <MobileBottomSheet onClose={() => setDealSheetOpen(false)}>
+          {({ close }) => (
+            <div className="px-4 pt-1">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                Новая сделка
+              </div>
+              <div className="mb-3 text-[17px] font-bold text-ink">
+                Что оформляем?
+              </div>
+              <div className="flex flex-col gap-2">
+                {DEAL_TYPES.map((dt) => {
+                  const Icon = dt.icon;
+                  const enabled = READY_TYPES.includes(dt.id);
+                  return (
+                    <button
+                      key={dt.id}
+                      type="button"
+                      disabled={!enabled}
+                      onClick={
+                        enabled
+                          ? () => {
+                              close();
+                              window.setTimeout(() => {
+                                if (dt.id === "rental") setNewRentalOpen(true);
+                                else openDeal(dt.id);
+                              }, 290);
+                            }
+                          : undefined
+                      }
+                      className={cn(
+                        "flex min-h-[64px] w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors",
+                        enabled
+                          ? "border-blue-200 bg-blue-50/60 active:bg-blue-100"
+                          : "border-border bg-surface-soft opacity-60",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+                          enabled ? "bg-blue-600 text-white" : "bg-surface text-muted-2",
+                        )}
+                      >
+                        <Icon size={20} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 text-[15px] font-bold text-ink">
+                          {dt.label}
+                          {!enabled && (
+                            <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                              скоро
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 text-[12px] text-muted">{dt.hint}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </MobileBottomSheet>
+      )}
+
+      {/* Создание аренды из листа сделки (модалка уже адаптивна). */}
+      {newRentalOpen && (
+        <NewRentalModal
+          onClose={() => setNewRentalOpen(false)}
+          onCreated={(r) => {
+            setNewRentalOpen(false);
+            toast.success("Аренда создана");
+            navigate({ route: "rentals", rentalId: r.id });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -297,6 +508,7 @@ function KpiTile({
   unit,
   foot,
   onClick,
+  wide,
 }: {
   icon: React.ReactNode;
   tone: Tone;
@@ -305,8 +517,54 @@ function KpiTile({
   unit?: string;
   foot: string;
   onClick?: () => void;
+  /** Плитка во всю ширину: раскладка в строку, иначе справа пустует место. */
+  wide?: boolean;
 }) {
   const s = toneStyles[tone];
+  if (wide) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={!onClick}
+        className={cn(
+          "flex items-center gap-3 rounded-2xl bg-surface p-3.5 text-left shadow-card",
+          onClick && "active:scale-[0.98]",
+        )}
+      >
+        <span
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+            s.icon,
+          )}
+        >
+          {icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-medium leading-tight text-muted">
+            {label}
+          </div>
+          <div className="mt-0.5 text-[11px] leading-tight text-muted-2">
+            {foot}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-baseline gap-1">
+          <span
+            className={cn(
+              "font-display text-[26px] font-bold leading-none tabular-nums",
+              s.value,
+            )}
+          >
+            {value}
+          </span>
+          {unit && (
+            <span className="text-[13px] font-semibold text-muted">{unit}</span>
+          )}
+        </div>
+        {onClick && <ArrowRight size={14} className="shrink-0 text-muted-2" />}
+      </button>
+    );
+  }
   return (
     <button
       type="button"
@@ -503,6 +761,7 @@ function ReturnRow({
   onCall: () => void;
 }) {
   const hasPhone = !!(item.clientPhone || item.clientPhone2);
+  const naming = useScooterNaming();
   return (
     <div className="flex items-center gap-2 py-1">
       <button
@@ -515,7 +774,7 @@ function ReturnRow({
             {item.clientName}
           </div>
           <div className="truncate text-[11px] text-muted">
-            {item.scooterName}
+            {naming.render(item.scooterName, { size: "sm" })}
           </div>
         </div>
         <div className="text-right">
@@ -542,6 +801,7 @@ function OverdueRow({
   onCall: () => void;
 }) {
   const hasPhone = !!(item.clientPhone || item.clientPhone2);
+  const naming = useScooterNaming();
   return (
     <div className="flex items-center gap-2 py-1">
       <button
@@ -554,7 +814,7 @@ function OverdueRow({
             {item.clientName}
           </div>
           <div className="truncate text-[11px] text-muted">
-            {item.scooterName}
+            {naming.render(item.scooterName, { size: "sm" })}
           </div>
         </div>
         <div className="text-right">

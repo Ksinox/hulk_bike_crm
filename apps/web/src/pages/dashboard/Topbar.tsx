@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Bell,
-  Bike,
   Calendar,
   ChevronDown,
   Crown,
   LogOut,
-  Settings,
+  ReceiptText,
   ShieldCheck,
   UserCog,
   UserPlus,
@@ -14,11 +13,14 @@ import {
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ApprovalsBell } from "@/components/ApprovalsInbox";
 import { setRole, useRole, type UserRole } from "@/lib/role";
 import { useLogout, useMe } from "@/lib/api/auth";
 import { GlobalSearch } from "./GlobalSearch";
 import { ProfileModal } from "./ProfileModal";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
+import { DayReportDialog } from "@/components/DayReport";
+import { NewDealButton } from "@/pages/clients/CreateDealMenu";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { useDashboardDrawer } from "./DashboardDrawer";
 import { navigate } from "@/app/navigationStore";
@@ -35,6 +37,8 @@ export function Topbar() {
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [newRentalOpen, setNewRentalOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
+  // Пункт 7: сводка дня (Z-отчёт)
+  const [dayReportOpen, setDayReportOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
   const { unreadCount: changelogUnread } = useUnreadChangelog();
@@ -74,13 +78,19 @@ export function Topbar() {
     .join("");
 
   return (
-    <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-2.5 shadow-card-sm">
+    // flex-nowrap: панель обязана оставаться ОДНОЙ строкой. Подписи
+    // сворачиваются до иконок, а не переносятся на вторую строку.
+    //
+    // @container, а не обычные брейкпоинты по окну (правка 01.09): когда
+    // справа выезжает карточка быстрого просмотра, окно широкое, а места
+    // у шапки мало — по окну она считала бы себя просторной и ломалась.
+    <div className="@container flex min-w-0 flex-nowrap items-center gap-2 rounded-xl bg-surface px-3 py-2.5 shadow-card-sm">
       <GlobalSearch />
-      <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-[13px] font-semibold text-blue-700">
+      <div className="hidden shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-blue-50 px-3 py-1.5 text-[13px] font-semibold text-blue-700 @[1140px]:inline-flex">
         <Calendar size={14} />
         {formatTodayRu()}
       </div>
-      <div className="flex-1" />
+      <div className="min-w-0 flex-1" />
 
       {/* v0.3.1: быстрые действия с дашборда — оператору не нужно
           переходить в «Клиенты» / «Аренды» чтобы создать запись.
@@ -88,26 +98,31 @@ export function Topbar() {
       <button
         type="button"
         onClick={() => setNewClientOpen(true)}
-        className="hidden md:inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-soft px-3 py-1.5 text-[13px] font-semibold text-ink-2 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+        className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-surface-soft px-2.5 py-1.5 text-[13px] font-semibold text-ink-2 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 @[560px]:inline-flex"
         title="Новый клиент"
       >
-        <UserPlus size={14} /> Новый клиент
+        <UserPlus size={14} />
+        <span className="hidden @[1320px]:inline">Новый клиент</span>
       </button>
-      <button
-        type="button"
-        onClick={() => setNewRentalOpen(true)}
-        className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[13px] font-bold text-white transition-colors hover:bg-blue-600"
-        title="Новая аренда"
-      >
-        <Bike size={14} /> Новая аренда
-      </button>
+      {/* Пункт 5: «Новая сделка» — выпадающий список типов (аренда,
+          рассрочка, продажа, ремонт); пункты включаются по мере
+          готовности. Механика та же, что «Создать сделку» у клиента. */}
+      <NewDealButton onRental={() => setNewRentalOpen(true)} />
 
       {isCreator && <CreatorViewSwitcher current={role} onChange={setRole} />}
 
-      <IconBtn aria-label="Настройки — скоро" title="Настройки — скоро" disabled>
-        <Settings size={18} />
-        <SoonDot />
+      {/* Пункт 7: сводка за текущие сутки (Z-отчёт) — доступна в любой
+          момент дня, не кассовая. */}
+      <IconBtn
+        aria-label="Сводка дня"
+        title="Сводка дня (Z-отчёт)"
+        onClick={() => setDayReportOpen(true)}
+      >
+        <ReceiptText size={18} />
       </IconBtn>
+
+      {/* Пункт 1: висящие подтверждения ключа директора (виден при запросах). */}
+      <ApprovalsBell />
 
       <div className="relative" ref={bellRef}>
         <IconBtn
@@ -179,6 +194,9 @@ export function Topbar() {
         )}
       </div>
       {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
+      {dayReportOpen && (
+        <DayReportDialog onClose={() => setDayReportOpen(false)} />
+      )}
       {newClientOpen && (
         <AddClientModal
           onClose={() => setNewClientOpen(false)}
@@ -225,14 +243,17 @@ function CreatorViewSwitcher({
   const label = current === "director" ? "Директор" : "Администратор";
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative shrink-0" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-full bg-purple-soft px-3 py-1.5 text-[12px] font-bold text-purple-ink transition-colors hover:bg-purple/20"
+        className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-purple-soft px-3 py-1.5 text-[12px] font-bold text-purple-ink transition-colors hover:bg-purple/20"
         title="Creator: смотреть как роль"
       >
-        <Crown size={13} /> Смотрю как: {label}
+        <Crown size={13} />
+        {/* В тесноте (например когда справа открыта карточка) остаётся
+            корона — панель не должна ломаться из-за подписи (01.09). */}
+        <span className="hidden @[880px]:inline">Смотрю как: {label}</span>
         <ChevronDown size={12} />
       </button>
       {open && (
@@ -399,15 +420,6 @@ function ChangelogPopover({
   );
 }
 
-/** Точка-индикатор "скоро" в углу круглой кнопки. */
-function SoonDot() {
-  return (
-    <span
-      className="absolute rounded-full border-2 border-surface bg-muted-2/70"
-      style={{ top: 6, right: 6, height: 8, width: 8 }}
-    />
-  );
-}
 
 /** Сегодня — на русском. Пример: "Сегодня, чт 23 апр". */
 function formatTodayRu(): string {

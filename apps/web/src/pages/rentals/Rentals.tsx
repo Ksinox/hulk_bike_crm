@@ -7,6 +7,7 @@ import {
   Rows3,
 } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { ApplicationsButton } from "@/pages/applications/ApplicationsPanel";
 import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
 import {
   RentalsFilters,
@@ -16,6 +17,7 @@ import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
 import { RentalCard, ActTransferPreview, RentalHistoryColumn } from "./RentalCard";
 import { cn } from "@/lib/utils";
+import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { consumePending, onNavigate } from "@/app/navigationStore";
@@ -120,6 +122,8 @@ function matchStatus(
   }
   if (f === "completed")
     return r.status === "completed" || r.status === "cancelled";
+  // «Возвраты» (06.09, п.1): период проверяется отдельно, по endActual.
+  if (f === "returned") return r.status === "completed";
   if (f === "issue") {
     // v0.4.36: unreachable клиента засчитываем только для ЖИВЫХ аренд.
     // Раньше закрытая 3 месяца назад аренда «не отвечающего» клиента
@@ -382,8 +386,41 @@ export function Rentals() {
   const [revenueOpen, setRevenueOpen] = useState(false);
 
   // Если выбрана вкладка «Архив» — берём архивный список, иначе обычный.
+  // «Возвраты» (06.09): завершённые есть и в живом списке, и в архиве —
+  // берём оба, иначе счётчик и список расходятся.
   const rentals =
-    filters.status === "archived" ? archivedList : activeRentals;
+    filters.status === "archived"
+      ? archivedList
+      : filters.status === "returned"
+        ? [...activeRentals, ...archivedList]
+        : activeRentals;
+
+  /** Возвраты за период: завершённые по фактической дате (06.09, п.1). */
+  const returnedPeriod = filters.returnedPeriod ?? "today";
+  const returnedInPeriod = useMemo(() => {
+    const [td, tm, ty] = today.split(".").map(Number);
+    const end = new Date(ty!, tm! - 1, td!).getTime();
+    const start = returnedPeriod === "week" ? end - 6 * 86_400_000 : end;
+    const inPeriod = (r: Rental) => {
+      if (r.status !== "completed" || !r.endActual) return false;
+      const [d, m, y] = r.endActual.split(".").map(Number);
+      if (!d || !m || !y) return false;
+      const t = new Date(y, m - 1, d).getTime();
+      return t >= start && t <= end;
+    };
+    const seen = new Set<number>();
+    const out: Rental[] = [];
+    for (const r of [...activeRentals, ...archivedList]) {
+      if (seen.has(r.id) || !inPeriod(r)) continue;
+      seen.add(r.id);
+      out.push(r);
+    }
+    return out;
+  }, [activeRentals, archivedList, today, returnedPeriod]);
+  const returnedIds = useMemo(
+    () => new Set(returnedInPeriod.map((r) => r.id)),
+    [returnedInPeriod],
+  );
 
   useEffect(() => {
     if (selectedId != null) return;
@@ -444,6 +481,36 @@ export function Rentals() {
     }
   }, [selectedId, activeRentals, archivedList]);
 
+  /**
+   * Правки 2.0, п.9: имена партнёрской техники — её аренды живут в
+   * разделе «Партнёрка» и в этом списке не показываются.
+   */
+  const partnerScooterNames = useMemo(
+    () => new Set(apiScooters.filter((s) => s.isPartner).map((s) => s.name)),
+    [apiScooters],
+  );
+
+  /**
+   * Правка 27.08: два таба техники — «Бензиновые» (наши, по умолчанию) и
+   * «Партнёрская». Партнёрские аренды по-прежнему живут в «Партнёрке», но
+   * отсюда их тоже видно: тот же список, те же колонки, та же карточка.
+   */
+  const [fleetTab, setFleetTabRaw] = useState<"petrol" | "partner">("petrol");
+  /** Смена таба закрывает открытую карточку — она из другого списка. */
+  const setFleetTab = (t: "petrol" | "partner") => {
+    if (t === fleetTab) return;
+    setFleetTabRaw(t);
+    setSelectedId(null);
+    setPanelOpen(false);
+  };
+  const partnerRentalsCount = useMemo(
+    () =>
+      rentals.filter(
+        (r) => partnerScooterNames.has(r.scooter) && r.status === "active",
+      ).length,
+    [rentals, partnerScooterNames],
+  );
+
   const filtered = useMemo(() => {
     // v0.4.57: фильтр диапазона дат выдачи аренды через DateRangeFilter.
     // Старый PeriodFilter (по биллинговым периодам 15→14) выпилен —
@@ -472,9 +539,20 @@ export function Rentals() {
       if (et && endIso > et) return false;
       return true;
     };
+    // «Возвраты» (06.09, п.1): только завершённые в выбранном периоде;
+    // список собран из живых и архивных — один id не дублируем.
+    const seenIds = new Set<number>();
     return rentals
       .filter(
         (r) =>
+          (filters.status !== "returned" ||
+            (returnedIds.has(r.id) && !seenIds.has(r.id) && !!seenIds.add(r.id))) &&
+          // Правки 2.0, п.9 + 27.08: списки не смешиваются. Таб
+          // «Бензиновые» — только наша техника, таб «Партнёрская» —
+          // только техника инвесторов (та же, что в «Партнёрке»).
+          (fleetTab === "partner"
+            ? partnerScooterNames.has(r.scooter)
+            : !partnerScooterNames.has(r.scooter)) &&
           matchStatus(
             r,
             filters.status,
@@ -491,7 +569,7 @@ export function Rentals() {
         if (sr !== 0) return sr;
         return b.id - a.id;
       });
-  }, [filters, rentals, unreachable, apiClients, today, rentalPoolSize]);
+  }, [filters, rentals, unreachable, apiClients, today, rentalPoolSize, partnerScooterNames, fleetTab, returnedIds]);
 
   const kpi = useMemo<Kpi[]>(() => {
     // v0.4.10: период и сумма выручки приходят из useBillingPeriodRevenue —
@@ -566,6 +644,27 @@ export function Rentals() {
         tone: overdueDebt > 0 ? "red" : "neutral",
       },
       {
+        // Заказчик 06.09 (п.1): сколько аренд завершилось — сегодня по
+        // умолчанию, переключение на неделю. Клик — список этих возвратов.
+        label: "Возвраты",
+        value: String(returnedInPeriod.length),
+        hint: returnedPeriod === "week" ? "за 7 дней" : "сегодня",
+        tone: returnedInPeriod.length > 0 ? "blue" : "neutral",
+        onClick: () => setFilters({ ...filters, status: "returned", returnedPeriod }),
+        toggle: {
+          options: [
+            { id: "today", label: "Сегодня" },
+            { id: "week", label: "Неделя" },
+          ],
+          value: returnedPeriod,
+          onChange: (id) =>
+            setFilters({
+              ...filters,
+              returnedPeriod: id === "week" ? "week" : "today",
+            }),
+        },
+      },
+      {
         label: "Выручка",
         // Точная сумма без округления — заказчик специально просил, в
         // бухгалтерии «33 тыс» вместо «33 400» создаёт путаницу.
@@ -576,7 +675,7 @@ export function Rentals() {
         onClick: () => setRevenueOpen(true),
       },
     ];
-  }, [rentals, revenue, today, totalDebtByRentalId]);
+  }, [rentals, revenue, today, totalDebtByRentalId, returnedInPeriod, returnedPeriod, filters]);
 
   // v0.7.2: push-панель — карточка выбранной аренды живёт в потоке справа
   // и сдвигает/сжимает список (не overlay, не затемнение). Панель можно
@@ -717,6 +816,45 @@ export function Rentals() {
               <h1 className="font-display text-[26px] font-extrabold leading-none text-ink">
                 Аренды
               </h1>
+              {/* Правка 31.08: заявки на аренду живут здесь, а не отдельным
+                  пунктом меню — работают с ними именно отсюда. */}
+              <ApplicationsButton purpose="rent" />
+              {/* Правка 27.08: табы техники — бензиновые (наши) и
+                  партнёрская. Второй таб виден, только если партнёрская
+                  техника вообще есть. */}
+              {partnerScooterNames.size > 0 && (
+                <div className="flex shrink-0 items-center rounded-full bg-surface-soft p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setFleetTab("petrol")}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                      fleetTab === "petrol"
+                        ? "bg-surface text-ink shadow-card-sm"
+                        : "text-muted hover:text-ink",
+                    )}
+                  >
+                    <PetrolMark size="sm" /> Бензиновые
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFleetTab("partner")}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                      fleetTab === "partner"
+                        ? "bg-surface text-ink shadow-card-sm"
+                        : "text-muted hover:text-ink",
+                    )}
+                  >
+                    <ElectricMark size="sm" /> Партнёрская
+                    {partnerRentalsCount > 0 && (
+                      <span className="rounded-full bg-emerald-100 px-1.5 text-[10.5px] font-bold text-emerald-700">
+                        {partnerRentalsCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
               {/* v0.7.2: когда панель скрыта, но аренда выбрана — вкладка
                   «Показать карточку» возвращает панель. */}
               {selected && !panelOpen && (

@@ -22,8 +22,10 @@ import {
 } from "@/lib/mock/fleet";
 import { useScooterMaintenance } from "@/lib/api/scooter-maintenance";
 import { useRepairJobs } from "@/lib/api/repair-jobs";
+import { useCan } from "@/lib/permissions";
 import { useRole } from "@/lib/role";
 import { MODEL_LABEL } from "@/lib/mock/rentals";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { STATUS_LABEL as RENTAL_STATUS_LABEL } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
@@ -49,8 +51,16 @@ import { toast } from "@/lib/toast";
 import { askArchiveReason } from "@/pages/fleet/archiveReason";
 import type { Rental } from "@/lib/mock/rentals";
 import type { ApiClient } from "@/lib/api/types";
+import { TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
 
-type TabId = "history" | "timeline" | "repairs" | "expenses" | "docs";
+type TabId =
+  | "overview"
+  | "econ"
+  | "history"
+  | "timeline"
+  | "repairs"
+  | "expenses"
+  | "docs";
 
 const MONTH_RU = [
   "янв", "фев", "мар", "апр", "май", "июн",
@@ -126,7 +136,9 @@ export function MobileScooterCard({
   const rentals = useRentals();
   const { data: apiClients } = useApiClients();
   const role = useRole();
-  const [tab, setTab] = useState<TabId>("history");
+  // 14.09: «Экономика» — закуп и окупаемость; без права на прибыль вкладки нет.
+  const canProfit = useCan("data.profit");
+  const [tab, setTab] = useState<TabId>("overview");
   const [editOpen, setEditOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [newRentalOpen, setNewRentalOpen] = useState(false);
@@ -142,7 +154,7 @@ export function MobileScooterCard({
     if (!reason) return;
     try {
       await archiveMut.mutateAsync({ id: scooter.id, reason });
-      toast.success(`«${scooter.name}» перенесён в архив`, `Причина: ${reason}`);
+      toast.success(`«${scooterModelName(scooter.name)}» перенесён в архив`, `Причина: ${reason}`);
       onBack();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409)
@@ -206,9 +218,23 @@ export function MobileScooterCard({
     : 0;
   const remainingMonths = Math.max(0, serviceLifeMonths - ageMonths);
 
+  /**
+   * Правка 28.08: карточка была длинным полотном — всё листалось подряд.
+   * Теперь разделы переключаются пилюлями вверху: «Обзор» (фото, аренда,
+   * техпаспорт, обслуживание), «Экономика» (окупаемость, директору),
+   * дальше прежние. Пальцем — один тап вместо долгой прокрутки.
+   */
   const tabs: { id: TabId; label: string; count?: number }[] = [
-    { id: "history", label: "История аренд", count: scooterRentals.length },
-    { id: "timeline", label: "Лента событий" },
+    { id: "overview", label: "Обзор" },
+    ...(role === "director" && canProfit
+      ? ([{ id: "econ", label: "Экономика" }] as {
+          id: TabId;
+          label: string;
+          count?: number;
+        }[])
+      : []),
+    { id: "history", label: "Аренды", count: scooterRentals.length },
+    { id: "timeline", label: "События" },
     { id: "repairs", label: "Ремонты", count: repairJobsList.length },
     { id: "expenses", label: "Расходы", count: maintenanceList.length },
     { id: "docs", label: "Документы" },
@@ -217,7 +243,7 @@ export function MobileScooterCard({
   return (
     <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-bg animate-slide-in-right">
       {/* Шапка */}
-      <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border bg-surface px-2 pt-[env(safe-area-inset-top)]">
+      <header className={cn("flex h-14 shrink-0 items-center gap-1 border-b border-border bg-surface px-2 pt-[env(safe-area-inset-top)]", TABLET_PAD_X_HEADER)}>
         <button
           type="button"
           onClick={onBack}
@@ -227,7 +253,11 @@ export function MobileScooterCard({
           <ChevronLeft size={24} />
         </button>
         <h1 className="min-w-0 flex-1 truncate font-display text-[17px] font-bold text-ink">
-          {scooter.name}
+          <ScooterName
+            name={scooter.name}
+            number={scooter.rentalSlot}
+            exNumber={scooter.exRentalSlot}
+          />
         </h1>
         <button
           type="button"
@@ -239,14 +269,71 @@ export function MobileScooterCard({
         </button>
       </header>
 
-      <main className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3 pb-8 overscroll-contain">
+      <main className={cn("min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3 pb-8 overscroll-contain", TABLET_PAD_X)}>
+        {/* ===== Пилюли-табы: наверху, липкие ===== */}
+        <div className="no-scrollbar sticky -top-3 z-10 -mx-3 bg-bg/95 px-3 py-1 backdrop-blur overflow-x-auto">
+          <div className="flex w-max gap-1.5">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
+                  tab === t.id ? "bg-ink text-white" : "bg-surface-soft text-muted",
+                )}
+              >
+                {t.label}
+                {t.count != null && t.count > 0 && (
+                  <span
+                    className={cn(
+                      "inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums",
+                      tab === t.id ? "bg-white/20" : "bg-surface text-muted-2",
+                    )}
+                  >
+                    {t.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+        <section>
+          {tab === "history" && (
+            <ScooterHistoryList
+              rentals={scooterRentals}
+              clients={apiClients ?? []}
+              currentId={activeRental?.id}
+            />
+          )}
+          {tab === "timeline" && <ScooterTimeline scooterId={scooter.id} />}
+          {tab === "repairs" && (
+            <RepairsTab
+              scooterId={scooter.id}
+              baseStatus={scooter.baseStatus}
+              onSendToRepair={() => setStatusOpen(true)}
+            />
+          )}
+          {tab === "expenses" && <ExpensesTab scooterId={scooter.id} />}
+          {tab === "docs" && <ScooterDocumentsTab scooter={scooter} />}
+        </section>
+
+
+        {/* ===== Обзор ===== */}
+        {tab === "overview" && (
+          <>
         {/* ===== Фото-герой ===== */}
         <section className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
           <ScooterHeroPhoto scooter={scooter} />
           <div className="flex items-center justify-between gap-2 px-4 py-3">
             <div className="min-w-0">
               <div className="truncate font-display text-[20px] font-extrabold leading-tight text-ink">
-                {scooter.name}
+                <ScooterName
+                  name={scooter.name}
+                  number={scooter.rentalSlot}
+                  exNumber={scooter.exRentalSlot}
+                  size="lg"
+                />
               </div>
               <div className="text-[12px] text-muted">{MODEL_LABEL[scooter.model]}</div>
             </div>
@@ -464,8 +551,12 @@ export function MobileScooterCard({
           </section>
         )}
 
-        {/* ===== ROI (директору, сворачиваемый) ===== */}
-        {role === "director" && (
+        {/* ===== Заметки и галерея — часть обзора ===== */}
+          </>
+        )}
+
+        {/* ===== ROI (директору) — вкладка «Экономика» ===== */}
+        {role === "director" && canProfit && tab === "econ" && (
           <section className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
             <button
               type="button"
@@ -571,63 +662,17 @@ export function MobileScooterCard({
           </section>
         )}
 
-        {/* ===== Заметки ===== */}
-        <section className="rounded-2xl border border-border bg-surface-soft/40 p-3">
-          <EntityNotes entity="scooter" entityId={scooter.id} />
-        </section>
-
-        {/* ===== Галерея ===== */}
-        <section className="rounded-2xl bg-surface p-4 shadow-card-sm">
-          <ScooterPhotosGallery scooterId={scooter.id} />
-        </section>
-
-        {/* ===== Пилюли-табы ===== */}
-        <div className="no-scrollbar -mx-3 overflow-x-auto px-3">
-          <div className="flex w-max gap-1.5">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTab(t.id)}
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
-                  tab === t.id ? "bg-ink text-white" : "bg-surface-soft text-muted",
-                )}
-              >
-                {t.label}
-                {t.count != null && t.count > 0 && (
-                  <span
-                    className={cn(
-                      "inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums",
-                      tab === t.id ? "bg-white/20" : "bg-surface text-muted-2",
-                    )}
-                  >
-                    {t.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-        <section>
-          {tab === "history" && (
-            <ScooterHistoryList
-              rentals={scooterRentals}
-              clients={apiClients ?? []}
-              currentId={activeRental?.id}
-            />
-          )}
-          {tab === "timeline" && <ScooterTimeline scooterId={scooter.id} />}
-          {tab === "repairs" && (
-            <RepairsTab
-              scooterId={scooter.id}
-              baseStatus={scooter.baseStatus}
-              onSendToRepair={() => setStatusOpen(true)}
-            />
-          )}
-          {tab === "expenses" && <ExpensesTab scooterId={scooter.id} />}
-          {tab === "docs" && <ScooterDocumentsTab scooter={scooter} />}
-        </section>
+        {/* ===== Заметки и галерея — вкладка «Обзор» ===== */}
+        {tab === "overview" && (
+          <>
+            <section className="rounded-2xl border border-border bg-surface-soft/40 p-3">
+              <EntityNotes entity="scooter" entityId={scooter.id} />
+            </section>
+            <section className="rounded-2xl bg-surface p-4 shadow-card-sm">
+              <ScooterPhotosGallery scooterId={scooter.id} />
+            </section>
+          </>
+        )}
 
         {/* ===== В архив — внизу, директору/создателю ===== */}
         {canArchive && (

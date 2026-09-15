@@ -7,6 +7,10 @@ type NavRequest = {
   scooterId?: number;
   /** v0.6: открыть конкретное дело-должника в модуле «Должники». */
   debtorId?: number;
+  /** Правка 31.08: открыть мастер продажи сразу после перехода в «Продажи». */
+  newSale?: boolean;
+  /** 01.09: открыть карточку сделки выкупа (переход из напоминаний). */
+  buyoutDealId?: number;
   /**
    * Открыть превью договора+акта по аренде сразу после перехода.
    * Используется при продлении: оператор продлил → видим новую карточку
@@ -54,12 +58,32 @@ export function consumePending(route: RouteId):
       debtorId?: number;
       from?: BackTarget;
       openTab?: NavRequest["openTab"];
+      newSale?: boolean;
+      buyoutDealId?: number;
     }
   | null {
   if (!pending || pending.route !== route) return null;
-  const { clientId, rentalId, scooterId, debtorId, from, openTab } = pending;
+  const {
+    clientId,
+    rentalId,
+    scooterId,
+    debtorId,
+    from,
+    openTab,
+    newSale,
+    buyoutDealId,
+  } = pending;
   pending = null;
-  return { clientId, rentalId, scooterId, debtorId, from, openTab };
+  return {
+    clientId,
+    rentalId,
+    scooterId,
+    debtorId,
+    from,
+    openTab,
+    newSale,
+    buyoutDealId,
+  };
 }
 
 /** Подписаться на события навигации (для App) */

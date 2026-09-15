@@ -42,7 +42,7 @@ export async function appSettingsRoutes(app: FastifyInstance) {
       if (!allowed.includes(req.user?.role as never)) {
         return reply.code(403).send({ error: "forbidden" });
       }
-      const Body = z.object({ value: z.string().min(1).max(200) });
+      const Body = z.object({ value: z.string().min(1).max(2000) });
       const parsed = Body.safeParse(req.body);
       if (!parsed.success) {
         return reply

@@ -53,6 +53,27 @@ function categoryCondition(cat: string): SQL | undefined {
       return or(ilike(A, "%complet%"), ilike(A, "%status%"));
     case "rollback":
       return or(ilike(A, "%rolled_back%"), eq(A, "revert_completion"));
+    case "scooter":
+      /**
+       * Правка 31.08: «Техника» — все действия со скутерами в одном месте
+       * (задача заказчика после инцидента с «пропавшим» скутером).
+       * Ловим и события самой техники (добавление, архив, удаление,
+       * смена статуса, правка VIN/рамы/двигателя), и те действия из аренд,
+       * которые МЕНЯЮТ технику: замена скутера в аренде переводит снятый в
+       * другой статус — без неё картина неполная.
+       */
+      return or(
+        eq(E, "scooter"),
+        ilike(A, "%scooter%"),
+      );
+    case "approved":
+      // Пункт 2: фильтр «подтверждено ключом директора» — сами события
+      // очереди подтверждений + действия, выполненные с подтверждением
+      // (meta.directorApproved = true).
+      return or(
+        eq(E, "approval"),
+        sql`(${activityLog.meta} ->> 'directorApproved')::boolean IS TRUE`,
+      );
     default:
       return undefined;
   }
@@ -97,6 +118,9 @@ export async function activityRoutes(app: FastifyInstance) {
           "damage",
           "complete",
           "rollback",
+          "scooter",
+          // Пункт 2: действия, подтверждённые ключом директора.
+          "approved",
         ])
         .optional(),
       // Фильтр по исполнителю (роли): director / admin / creator / mechanic / accountant.

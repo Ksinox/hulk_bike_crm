@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { scooterModelName } from "@/components/ScooterName";
 import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronDown, ChevronLeft, Pencil, CheckCircle2, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ReturnReasonPicker } from "@/components/ReturnReasonPicker";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileNumPad } from "@/mobile/MobileNumPad";
 import {
@@ -16,6 +18,7 @@ import { useApiEquipment } from "@/lib/api/equipment";
 import { useApiPriceList } from "@/lib/api/price-list";
 import { fileUrl } from "@/lib/files";
 import type { DamageSeedItem } from "./DamageReportDialog";
+import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 
 /**
  * v0.9 (Этап 2): приёмка позиций при завершении аренды, вынесенная из
@@ -98,6 +101,8 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
   const [scooterNextStatus, setScooterNextStatus] =
     useState<ScooterNextStatus>("rental_pool");
   const [scooterStatusTouched, setScooterStatusTouched] = useState(false);
+  // Пункт 4: обязательная причина возврата (выбор в приёмке).
+  const [returnReason, setReturnReason] = useState<string | null>(null);
   // #28: фото/видео ущерба — копим локально (staged), заливаем в акт после
   // его создания на завершении (PaymentAcceptDialog). Привязка — на весь акт.
   const [mediaStaged, setMediaStaged] = useState<StagedMedia[]>([]);
@@ -194,8 +199,12 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
 
   // Кнопка «Завершить» заблокирована, пока по каждой позиции не выбрано
   // состояние и все проблемы не заполнены.
+  // Правка 2.3 (26.08): пробег при возврате обязателен — без него
+  // не бьётся статистика износа и интервалы замены масла.
+  const mileageMissing = !mileageAtReturn.trim();
   const blocked =
     !allDecided ||
+    mileageMissing ||
     (cardStates[scooterCard] === "problem" && !linesFilled(scooterDamages)) ||
     !allEquipmentProblemsFilled;
 
@@ -279,6 +288,8 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     setScooterNextStatus,
     scooterStatusTouched,
     setScooterStatusTouched,
+    returnReason,
+    setReturnReason,
     // #28: медиа ущерба (staged → upload после создания акта)
     mediaStaged,
     addMedia,
@@ -301,6 +312,7 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     equipmentDamageTotal,
     hasDamage,
     blocked,
+    mileageMissing,
     damageLines,
     // helpers
     dateActualForApi,
@@ -340,6 +352,8 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
     scooterNextStatus,
     setScooterNextStatus,
     setScooterStatusTouched,
+    returnReason,
+    setReturnReason,
     scooterModel,
     scooterAvatar,
     equipmentItems,
@@ -402,8 +416,8 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
         </div>
         {/* Скутер — основная позиция, во всю ширину */}
         <ReturnItemCard
-          title={rental.scooter}
-          subtitle={scooterModel?.name ?? rental.scooter}
+          title={scooterModelName(rental.scooter)}
+          subtitle={scooterModel?.name ?? scooterModelName(rental.scooter)}
           imageUrl={scooterAvatar}
           fallbackIcon="scooter"
           state={scooterState}
@@ -491,13 +505,21 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
             Пробег, км{" "}
-            {currentMileage != null ? (
+            {currentMileage != null && (
               <span className="normal-case text-muted-2/70">
                 · было {currentMileage.toLocaleString("ru-RU")}
               </span>
-            ) : (
-              <span className="normal-case text-muted-2/70">опц.</span>
-            )}
+            )}{" "}
+            <span
+              className={cn(
+                "normal-case",
+                mileageAtReturn.trim()
+                  ? "text-muted-2/70"
+                  : "font-bold text-red-ink",
+              )}
+            >
+              обязательно
+            </span>
           </label>
           <input
             type="number"
@@ -509,7 +531,12 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
                 ? `${currentMileage.toLocaleString("ru-RU")}`
                 : "—"
             }
-            className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
+            className={cn(
+              "mt-1 h-9 w-full rounded-[10px] border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600",
+              mileageAtReturn.trim()
+                ? "border-border"
+                : "border-red-ink/40 bg-red-soft/30",
+            )}
           />
           {currentMileage != null &&
             mileageAtReturn &&
@@ -521,11 +548,17 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
             ) : Number(mileageAtReturn) > 0 &&
               Number(mileageAtReturn) < currentMileage ? (
               <div className="mt-1 text-[10.5px] text-orange-ink">
-                ⚠ меньше текущего — изменение игнорируется
+                меньше текущего — изменение игнорируется
               </div>
             ) : null)}
         </div>
       </div>
+
+      {/* Пункт 4: обязательная причина возврата. */}
+      <ReturnReasonPicker
+        value={returnReason}
+        onChange={setReturnReason}
+      />
 
       {/* v0.6.1: выбор статуса скутера после завершения */}
       {rental.scooterId != null && (
@@ -629,7 +662,7 @@ export function ReturnDamagePicker({ intake }: { intake: ReturnIntake }) {
       scooterModelId={t.kind === "scooter" ? (scooter?.modelId ?? null) : null}
       title={
         t.kind === "scooter"
-          ? `Повреждения · ${rental.scooter}`
+          ? `Повреждения · ${scooterModelName(rental.scooter)}`
           : `Ущерб · ${t.name}`
       }
       subtitle={
@@ -908,7 +941,9 @@ function DamagePicker({
   // нативную клавиатуру. Выезжает как полный экран поверх мастера закрытия.
   if (isMobile) {
     return (
-      <div className="fixed inset-0 z-[130] flex flex-col bg-surface animate-fade-in">
+      <div className="fixed inset-0 z-[130] flex flex-col bg-surface lg:items-center lg:bg-ink/45 lg:backdrop-blur-sm animate-fade-in">
+        {/* Планшет: мастер колонкой по центру (mobile/tablet.ts). */}
+        <div className={TABLET_WIZARD_PANEL}>
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-border bg-surface-soft px-3 py-2.5">
           <button
@@ -1157,6 +1192,7 @@ function DamagePicker({
             }}
           />
         )}
+        </div>
       </div>
     );
   }

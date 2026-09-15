@@ -872,7 +872,7 @@ export function CalendarPanel({
           {isBranchEdit && lastBranch ? (
             !editPreview || !editPreview.branch ? (
               <span className="text-[12px] text-ink-2">
-                📅 Правим <b>последнее продление</b> ({isoToShort(lastBranch.end1Iso)}–
+                Правим <b>последнее продление</b> ({isoToShort(lastBranch.end1Iso)}–
                 {isoToShort(lastBranch.end2Iso)}). Кликните новую дату возврата —
                 не раньше <b>{isoToShort(lastBranch.end1Iso)}</b> (прошлый период
                 не двигаем).
@@ -931,7 +931,7 @@ export function CalendarPanel({
             )
           ) : !editPreview ? (
             <span className="text-[12px] text-ink-2">
-              📅 Кликните на календаре новую дату возврата. Старт{" "}
+              Кликните на календаре новую дату возврата. Старт{" "}
               <b>{rental.start}</b> зафиксирован.
             </span>
           ) : (

@@ -4,7 +4,10 @@ import { cn } from "@/lib/utils";
 import type { FleetScooter } from "@/lib/mock/fleet";
 import type { ScooterModel } from "@/lib/mock/rentals";
 import { patchScooter } from "./fleetStore";
+import { setNextApprovalContext } from "@/lib/directorGate";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { useRole } from "@/lib/role";
+import { useCan } from "@/lib/permissions";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import {
   ModelPicker,
@@ -20,6 +23,8 @@ export function ScooterEditForm({
   onClose: () => void;
 }) {
   const role = useRole();
+  // 14.09: закуп — только у тех, кому директор открыл прибыль и закуп.
+  const canProfit = useCan("data.profit");
   const [closing, setClosing] = useState(false);
   const { data: models = [] } = useApiScooterModels();
 
@@ -82,6 +87,12 @@ export function ScooterEditForm({
   const [marketValue, setMarketValue] = useState(
     scooter.marketValue != null ? String(scooter.marketValue) : "",
   );
+  // Блок «Продажи» (31.08): цена продажи и партия закупа живут здесь же —
+  // «Продажи» читают ровно эти поля, второй копии данных нет.
+  const [salePrice, setSalePrice] = useState(
+    scooter.salePrice != null ? String(scooter.salePrice) : "",
+  );
+  const [purchaseBatch, setPurchaseBatch] = useState(scooter.purchaseBatch ?? "");
 
   const requestClose = () => {
     if (closing) return;
@@ -135,7 +146,7 @@ export function ScooterEditForm({
       modelId: modelId ?? undefined,
       name: newName,
     };
-    if (role === "director") {
+    if (role === "director" && canProfit) {
       const n = Number(purchasePrice);
       patch.purchasePrice = Number.isFinite(n) && n > 0 ? n : undefined;
     }
@@ -143,6 +154,35 @@ export function ScooterEditForm({
     // директору»: это договорная величина, не закупочная себестоимость.
     const mv = Number(marketValue);
     patch.marketValue = Number.isFinite(mv) && mv > 0 ? mv : undefined;
+    const sp = Number(salePrice);
+    patch.salePrice = Number.isFinite(sp) && sp > 0 ? sp : undefined;
+    patch.purchaseBatch = purchaseBatch.trim() || undefined;
+    // Правка 2.2: смена рамы/двигателя защищена ключом директора (бэк
+    // ответит 428) — заранее кладём в окно подтверждения, что именно
+    // меняется, чтобы директор видел старое и новое значение.
+    const identityDetails: string[] = [];
+    if (
+      (scooter.frameNumber ?? "").trim() &&
+      frameNumber.trim() !== (scooter.frameNumber ?? "").trim()
+    ) {
+      identityDetails.push(
+        `Рама/VIN: ${scooter.frameNumber} → ${frameNumber.trim() || "—"}`,
+      );
+    }
+    if (
+      (scooter.engineNo ?? "").trim() &&
+      engineNo.trim() !== (scooter.engineNo ?? "").trim()
+    ) {
+      identityDetails.push(
+        `Двигатель: ${scooter.engineNo} → ${engineNo.trim() || "—"}`,
+      );
+    }
+    if (identityDetails.length > 0) {
+      setNextApprovalContext({
+        summary: `Смена идентификаторов техники ${scooterModelName(scooter.name)}`,
+        details: identityDetails,
+      });
+    }
     patchScooter(scooter.id, patch);
     requestClose();
   };
@@ -168,7 +208,11 @@ export function ScooterEditForm({
               Редактирование
             </div>
             <div className="mt-0.5 font-display text-[17px] font-extrabold text-ink">
-              {scooter.name}
+              <ScooterName
+                name={scooter.name}
+                number={scooter.rentalSlot}
+                exNumber={scooter.exRentalSlot}
+              />
             </div>
           </div>
           <button
@@ -285,7 +329,7 @@ export function ScooterEditForm({
               </Field>
             </div>
 
-            {role === "director" && (
+            {role === "director" && canProfit && (
               <Field
                 label="Цена закупа, ₽"
                 hint={
@@ -318,6 +362,39 @@ export function ScooterEditForm({
                 onChange={(e) => setMarketValue(e.target.value)}
                 placeholder="150000"
                 className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[14px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
+              />
+            </Field>
+
+            <Field
+              label="Цена продажи, ₽"
+              hint={
+                <span className="text-[11px] text-muted-2">
+                  для раздела «Продажи»
+                </span>
+              }
+            >
+              <input
+                type="number"
+                value={salePrice}
+                onChange={(e) => setSalePrice(e.target.value)}
+                placeholder="120000"
+                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[14px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
+              />
+            </Field>
+
+            <Field
+              label="Партия закупа"
+              hint={
+                <span className="text-[11px] text-muted-2">
+                  в какой поставке приехал
+                </span>
+              }
+            >
+              <input
+                value={purchaseBatch}
+                onChange={(e) => setPurchaseBatch(e.target.value)}
+                placeholder="Партия 3, апрель 2026"
+                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[14px] text-ink outline-none focus:border-blue-600"
               />
             </Field>
 

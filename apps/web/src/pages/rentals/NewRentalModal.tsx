@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Check, Lock, Search, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initialsOf, type Client } from "@/lib/mock/clients";
@@ -16,14 +22,17 @@ import {
 import { addRental, addRentalAsync, useRentals } from "./rentalsStore";
 import { RentalContractPreview } from "./RentalContractPreview";
 import { toast } from "@/lib/toast";
+import { ApiError } from "@/lib/api";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
 import { useApiEquipment } from "@/lib/api/equipment";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { ChevronLeft, ArrowRight } from "lucide-react";
+import { ScooterName } from "@/components/ScooterName";
 
 // Заголовки шагов мобильного мастера аренды.
 const STEP_TITLES = ["Клиент", "Скутер", "Срок", "Оплата"] as const;
@@ -128,6 +137,10 @@ export function NewRentalModal({
   const [clientOpen, setClientOpen] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
   // Фильтр по модели в селекторе скутеров — пустая строка = все модели.
+  /** Категория техники в выборе скутера: все / бензин / электро. */
+  const [powerFilter, setPowerFilter] = useState<"all" | "petrol" | "electric">(
+    "all",
+  );
   const [scooterModelFilter, setScooterModelFilter] = useState<string>(
     initialModelFilter ?? "",
   );
@@ -232,6 +245,34 @@ export function NewRentalModal({
   const [customMode, setCustomMode] = useState<boolean>(false);
   const [customUnit, setCustomUnit] = useState<"day" | "week">("day");
   const [customRate, setCustomRate] = useState<string>("");
+
+  // Пункт 6 (мерцание при «своём тарифе»): раньше включение произвольного
+  // тарифа обнуляло ставку (поле пустое → «Ставка 0 ₽», «Итог 0 ₽»), а
+  // переключение сут↔нед заставляло цифры прыгать (7 дн → «1 неделя», ставка
+  // оставалась суточной). Теперь переключения БЕСШОВНЫЕ:
+  //  • включили «Произвольный тариф» → ставка предзаполняется текущей;
+  //  • сут → нед: ставка ×7, срок округляется до целых недель;
+  //  • нед → сут: ставка ÷7. Цифры «Ставка/Итог» не мигают нулями.
+  const toggleCustomMode = (on: boolean) => {
+    setCustomMode(on);
+    if (on && !customRate) {
+      const base =
+        customUnit === "week" ? computedRate * 7 : computedRate;
+      if (base > 0) setCustomRate(String(base));
+    }
+  };
+  const switchCustomUnit = (u: "day" | "week") => {
+    if (u === customUnit) return;
+    const cur = Number(customRate) || 0;
+    if (u === "week") {
+      if (cur > 0) setCustomRate(String(cur * 7));
+      // срок — до целых недель (иначе поле «недель» и дни расходятся)
+      setDays(Math.max(7, Math.round(days / 7) * 7));
+    } else if (cur > 0) {
+      setCustomRate(String(Math.max(1, Math.round(cur / 7))));
+    }
+    setCustomUnit(u);
+  };
   const rate = customMode
     ? Math.max(0, Number(customRate) || 0)
     : computedRate;
@@ -326,6 +367,31 @@ export function NewRentalModal({
    * В аренду можно отдавать ТОЛЬКО скутеры со статусом 'rental_pool'
    * (выделенные владельцем в парк аренды).
    */
+  /** Электро-модели каталога — по ним помечаем и фильтруем технику. */
+  const electricModelIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const m of modelsCatalog) if (m.isElectric) set.add(m.id);
+    return set;
+  }, [modelsCatalog]);
+  const isElectricScooter = useCallback(
+    (s: { modelId?: number | null }) =>
+      s.modelId != null && electricModelIds.has(s.modelId),
+    [electricModelIds],
+  );
+  /** Есть ли в свободном парке оба типа — иначе выбор категории не нужен. */
+  const hasBothPower = useMemo(() => {
+    let petrol = false;
+    let electric = false;
+    for (const s of apiScooters ?? []) {
+      if (blocked.has(s.name) || s.baseStatus !== "rental_pool" || s.archivedAt)
+        continue;
+      if (isElectricScooter(s)) electric = true;
+      else petrol = true;
+      if (petrol && electric) return true;
+    }
+    return false;
+  }, [apiScooters, blocked, isElectricScooter]);
+
   const availableScooters = useMemo(
     () =>
       (apiScooters ?? [])
@@ -334,10 +400,18 @@ export function NewRentalModal({
             !blocked.has(s.name) &&
             s.baseStatus === "rental_pool" &&
             !s.archivedAt &&
+            (powerFilter === "all" ||
+              (powerFilter === "electric") === isElectricScooter(s)) &&
             (scooterModelFilter === "" || s.model === scooterModelFilter),
         )
-        .map((s) => ({ name: s.name, model: s.model })),
-    [apiScooters, blocked, scooterModelFilter],
+        .map((s) => ({
+          name: s.name,
+          model: s.model,
+          rentalSlot: s.rentalSlot ?? undefined,
+          exRentalSlot: s.exRentalSlot ?? undefined,
+          electric: isElectricScooter(s),
+        })),
+    [apiScooters, blocked, scooterModelFilter, powerFilter, isElectricScooter],
   );
 
   /** Список моделей с количеством свободных скутеров — для чипов фильтра. */
@@ -348,6 +422,11 @@ export function NewRentalModal({
         blocked.has(s.name) ||
         s.baseStatus !== "rental_pool" ||
         s.archivedAt
+      )
+        continue;
+      if (
+        powerFilter !== "all" &&
+        (powerFilter === "electric") !== isElectricScooter(s)
       )
         continue;
       counts.set(s.model, (counts.get(s.model) ?? 0) + 1);
@@ -364,7 +443,17 @@ export function NewRentalModal({
   // со страницы Аренды). onCreated/закрытие вызываем уже после превью.
   const [createdRental, setCreatedRental] = useState<Rental | null>(null);
 
-  const handleSave = async () => {
+  /**
+   * Правка 27.08: у клиента уже есть открытая аренда. API отдаёт 409
+   * client_busy, и вместо глухой ошибки спрашиваем оператора: закрыть
+   * прошлую или это правда вторая единица.
+   */
+  const [secondRentalAsk, setSecondRentalAsk] = useState<{
+    rentalId: number;
+    message: string;
+  } | null>(null);
+
+  const handleSave = async (allowSecondForClient = false) => {
     if (!canSave || !scooterName || saving) return;
     setSaving(true);
 
@@ -408,15 +497,28 @@ export function NewRentalModal({
         note: note.trim() || undefined,
         contractUploaded: false,
         paymentConfirmed: null,
+        allowSecondForClient,
       } as Parameters<typeof addRental>[0]);
       // НЕ закрываем сразу: показываем превью договора поверх (z-120).
       // onCreated(created) + requestClose() вызовем при закрытии превью.
       setCreatedRental(created);
+      setSecondRentalAsk(null);
     } catch (e) {
-      toast.error(
-        "Не удалось создать аренду",
-        (e as Error).message ?? "Попробуйте ещё раз",
-      );
+      const err = e as ApiError;
+      const body = err?.body as
+        | { error?: string; message?: string; rentalId?: number }
+        | undefined;
+      if (err?.status === 409 && body?.error === "client_busy") {
+        setSecondRentalAsk({
+          rentalId: body.rentalId ?? 0,
+          message: body.message ?? "У клиента уже есть открытая аренда.",
+        });
+      } else {
+        toast.error(
+          "Не удалось создать аренду",
+          (e as Error).message ?? "Попробуйте ещё раз",
+        );
+      }
     } finally {
       setSaving(false);
     }
@@ -619,7 +721,12 @@ export function NewRentalModal({
               >
                 <div>
                   <div className="text-[13px] font-semibold text-ink">
-                    {scooterName}
+                    <ScooterName
+                      name={scooterName}
+                      number={selectedScooter?.rentalSlot ?? undefined}
+                      exNumber={selectedScooter?.exRentalSlot ?? undefined}
+                      size="sm"
+                    />
                   </div>
                   <div className="text-[11px] text-muted-2">
                     {MODEL_LABEL[model]} · тариф{" "}
@@ -634,10 +741,42 @@ export function NewRentalModal({
                 modelChips={modelChips}
                 filter={scooterModelFilter}
                 onFilter={setScooterModelFilter}
+                power={powerFilter}
+                onPower={hasBothPower ? setPowerFilter : undefined}
                 onPick={(name) => setScooterName(name)}
               />
             ) : (
               <>
+              {hasBothPower && (
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                  {(
+                    [
+                      ["all", "Все"],
+                      ["petrol", "Бензин"],
+                      ["electric", "Электро"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        setPowerFilter(key);
+                        setScooterModelFilter("");
+                      }}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                        powerFilter === key
+                          ? "border-blue-600 bg-blue-50 text-blue-700"
+                          : "border-border bg-surface text-muted hover:border-blue-600/40",
+                      )}
+                    >
+                      {key === "electric" && <ElectricMark size="sm" />}
+                      {key === "petrol" && <PetrolMark size="sm" />}
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
               {modelChips.length > 1 && (
                 <div className="mb-2 flex flex-wrap gap-1">
                   <button
@@ -682,7 +821,15 @@ export function NewRentalModal({
                       onClick={() => setScooterName(s.name)}
                       className="rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-ink transition-colors hover:bg-blue-50 hover:text-blue-700"
                     >
-                      {s.name}
+                      <span className="inline-flex items-center gap-1.5">
+                        {s.electric && <ElectricMark size="sm" />}
+                        <ScooterName
+                          name={s.name}
+                          number={s.rentalSlot}
+                          exNumber={s.exRentalSlot}
+                          size="sm"
+                        />
+                      </span>
                     </button>
                   ))
                 )}
@@ -780,7 +927,7 @@ export function NewRentalModal({
                         key={p}
                         aria-disabled={!active}
                         className={cn(
-                          "relative rounded-[10px] border px-3 py-2 text-[11px] transition-all",
+                          "relative rounded-[10px] border px-3 py-2 text-[11px] transition-colors",
                           active
                             ? "border-blue-500 bg-blue-50 text-blue-700 ring-1 ring-blue-500"
                             : "border-transparent bg-surface-soft text-muted-2 opacity-55",
@@ -822,7 +969,7 @@ export function NewRentalModal({
                 <input
                   type="checkbox"
                   checked={customMode}
-                  onChange={(e) => setCustomMode(e.target.checked)}
+                  onChange={(e) => toggleCustomMode(e.target.checked)}
                   className="h-4 w-4 cursor-pointer accent-blue-600"
                 />
                 <span className="text-[12px] font-semibold">
@@ -846,7 +993,7 @@ export function NewRentalModal({
                       <button
                         key={u}
                         type="button"
-                        onClick={() => setCustomUnit(u)}
+                        onClick={() => switchCustomUnit(u)}
                         className={cn(
                           "rounded-[6px] px-2 py-1 text-[11px] font-semibold transition-colors",
                           customUnit === u
@@ -1070,6 +1217,8 @@ export function NewRentalModal({
               <OrderSummary
                 clientName={client?.name ?? "—"}
                 scooterName={scooterName}
+                scooterNumber={selectedScooter?.rentalSlot ?? undefined}
+                scooterExNumber={selectedScooter?.exRentalSlot ?? undefined}
                 model={MODEL_LABEL[model]}
                 period={`${start} ${startTime} → ${endPlanned} ${startTime}`}
                 days={days}
@@ -1122,7 +1271,7 @@ export function NewRentalModal({
               <button
                 type="button"
                 disabled={!canSave || saving}
-                onClick={handleSave}
+                onClick={() => void handleSave()}
                 className={cn(
                   "flex min-h-[48px] flex-1 items-center justify-center rounded-xl text-[14px] font-bold transition-colors",
                   canSave && !saving
@@ -1150,7 +1299,7 @@ export function NewRentalModal({
               <button
                 type="button"
                 disabled={!canSave}
-                onClick={handleSave}
+                onClick={() => void handleSave()}
                 className={cn(
                   "rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",
                   canSave
@@ -1187,6 +1336,50 @@ export function NewRentalModal({
             requestClose();
           }}
         />
+      )}
+
+      {/* Правка 27.08: у клиента уже открыта аренда. Чаще всего это забытая
+          незакрытая сделка — по ней потом двоятся долги и залог. Показываем,
+          какая именно открыта, и требуем осознанного решения. */}
+      {secondRentalAsk && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-ink/55 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-[420px] rounded-2xl bg-surface p-5 shadow-card-lg">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+                <Lock size={18} />
+              </span>
+              <div className="min-w-0">
+                <div className="font-display text-[17px] font-bold text-ink">
+                  У клиента уже есть аренда
+                </div>
+                <p className="mt-1 text-[13px] leading-snug text-muted">
+                  {secondRentalAsk.message}
+                </p>
+                <p className="mt-2 text-[12px] leading-snug text-muted-2">
+                  Если прошлую сделку просто забыли закрыть — закройте её, иначе
+                  долги и залог будут считаться по двум арендам сразу.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
+              <button
+                type="button"
+                onClick={() => setSecondRentalAsk(null)}
+                className="h-11 flex-1 rounded-xl bg-blue-600 px-4 text-[14px] font-bold text-white active:scale-[0.99]"
+              >
+                Вернуться и проверить
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void handleSave(true)}
+                className="h-11 flex-1 rounded-xl border border-border px-4 text-[14px] font-semibold text-ink disabled:opacity-60"
+              >
+                Это вторая единица
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1366,16 +1559,57 @@ function MobileScooterPicker({
   modelChips,
   filter,
   onFilter,
+  power,
+  onPower,
   onPick,
 }: {
-  scooters: { name: string; model: ScooterModel }[];
+  scooters: {
+    name: string;
+    model: ScooterModel;
+    rentalSlot?: number;
+    exRentalSlot?: number;
+    electric?: boolean;
+  }[];
   modelChips: [string, number][];
   filter: string;
   onFilter: (m: string) => void;
+  /** Категория техники; onPower не задан — в парке один тип, выбор не нужен. */
+  power: "all" | "petrol" | "electric";
+  onPower?: (p: "all" | "petrol" | "electric") => void;
   onPick: (name: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-2.5">
+      {onPower && (
+        <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">
+          {(
+            [
+              ["all", "Все"],
+              ["petrol", "Бензин"],
+              ["electric", "Электро"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => {
+                onPower(key);
+                onFilter("");
+              }}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-semibold",
+                power === key
+                  ? "border-blue-600 bg-blue-50 text-blue-700"
+                  : "border-border bg-surface text-muted",
+              )}
+            >
+              {key === "electric" && <ElectricMark size="sm" />}
+              {key === "petrol" && <PetrolMark size="sm" />}
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       {modelChips.length > 1 && (
         <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">
           <button
@@ -1416,7 +1650,15 @@ function MobileScooterPicker({
               onClick={() => onPick(s.name)}
               className="flex flex-col gap-0.5 rounded-xl border border-border bg-surface p-3 text-left active:bg-blue-50"
             >
-              <span className="text-[15px] font-bold text-ink">{s.name}</span>
+              <span className="flex items-center gap-1.5">
+                {s.electric && <ElectricMark size="sm" />}
+                <ScooterName
+                  name={s.name}
+                  number={s.rentalSlot}
+                  exNumber={s.exRentalSlot}
+                  className="text-[15px] font-bold text-ink"
+                />
+              </span>
               <span className="text-[12px] text-muted-2">{MODEL_LABEL[s.model]}</span>
             </button>
           ))}
@@ -1429,6 +1671,8 @@ function MobileScooterPicker({
 function OrderSummary({
   clientName,
   scooterName,
+  scooterNumber,
+  scooterExNumber,
   model,
   period,
   days,
@@ -1440,6 +1684,9 @@ function OrderSummary({
 }: {
   clientName: string;
   scooterName: string | null;
+  /** Арендный номер выбранного скутера — для круглого бейджа. */
+  scooterNumber?: number;
+  scooterExNumber?: number;
   model: string;
   period: string;
   days: number;
@@ -1458,7 +1705,21 @@ function OrderSummary({
         <SummaryRow label="Клиент" value={clientName} />
         <SummaryRow
           label="Скутер"
-          value={scooterName ? `${scooterName} · ${model}` : "—"}
+          value={
+            scooterName ? (
+              <span className="inline-flex items-center gap-1.5">
+                <ScooterName
+                  name={scooterName}
+                  number={scooterNumber}
+                  exNumber={scooterExNumber}
+                  size="sm"
+                />
+                <span>· {model}</span>
+              </span>
+            ) : (
+              "—"
+            )
+          }
         />
         <SummaryRow label="Срок" value={`${period} · ${days} дн`} />
         <SummaryRow label="Тариф" value={`${rate} ₽/${rateUnit}`} />
@@ -1475,7 +1736,13 @@ function OrderSummary({
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
   return (
     <div className="flex items-start justify-between gap-3">
       <dt className="shrink-0 text-muted-2">{label}</dt>

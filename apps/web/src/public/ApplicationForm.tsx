@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Sparkles,
   X,
+  Banknote,
 } from "lucide-react";
 import {
   ApiError,
@@ -47,6 +48,7 @@ import {
 import { toTitleCaseRu } from "@/lib/textCase";
 import { RENTAL_AGREEMENT_TEXT } from "@/lib/rentalAgreement";
 import { ScooterCoverflow } from "./ScooterCoverflow";
+import { PowerTypeGlyph } from "@/components/PowerTypeBadge";
 import { EquipmentCoverflow } from "./EquipmentCoverflow";
 import { WishSummaryBar } from "./WishSummaryBar";
 import { DatePicker, InlineRangeCalendar } from "@/components/ui/date-picker";
@@ -95,7 +97,27 @@ type StepId =
   | "agreement"
   | "confirm";
 
-function getSteps(isForeigner: boolean): StepId[] {
+/**
+ * Анкета покупателя (31.08) — открывается по ссылке «#/apply?p=sale».
+ * Отличия от арендной: не спрашиваем модель, экипировку и срок аренды,
+ * не просим водительские права — при покупке они не нужны. Остаётся
+ * паспорт, его фото и селфи для подтверждения личности.
+ */
+export type ApplicationPurpose = "rent" | "sale";
+
+function readPurpose(): ApplicationPurpose {
+  if (typeof window === "undefined") return "rent";
+  const hash = window.location.hash;
+  const qs = hash.includes("?") ? hash.slice(hash.indexOf("?") + 1) : "";
+  const p = new URLSearchParams(qs).get("p");
+  return p === "sale" ? "sale" : "rent";
+}
+
+/** Режим задан адресом страницы и в рантайме не меняется — под-компоненты
+ *  читают его отсюда, чтобы не тащить проп через десяток шагов. */
+const IS_SALE = readPurpose() === "sale";
+
+function getSteps(isForeigner: boolean, purpose: ApplicationPurpose): StepId[] {
   const all: StepId[] = [
     "contact",
     "passport",
@@ -111,7 +133,20 @@ function getSteps(isForeigner: boolean): StepId[] {
     "agreement",
     "confirm",
   ];
-  return isForeigner ? all.filter((s) => s !== "photo_passport_reg") : all;
+  const SALE_SKIP: StepId[] = [
+    "wish_model",
+    "wish_equipment",
+    "wish_period",
+    "photo_license",
+    // «Инструктаж при передаче скутера» — правила проката, к покупке
+    // отношения не имеют.
+    "agreement",
+  ];
+  const byPurpose =
+    purpose === "sale" ? all.filter((x) => !SALE_SKIP.includes(x)) : all;
+  return isForeigner
+    ? byPurpose.filter((x) => x !== "photo_passport_reg")
+    : byPurpose;
 }
 
 type ClientSourceChoice = "avito" | "repeat" | "ref" | "maps" | "other";
@@ -305,7 +340,12 @@ export function ApplicationForm() {
     setWishBarTouched(false);
   }, [step]);
 
-  const steps = useMemo(() => getSteps(form.isForeigner), [form.isForeigner]);
+  const purpose = useMemo(readPurpose, []);
+  const isSale = purpose === "sale";
+  const steps = useMemo(
+    () => getSteps(form.isForeigner, purpose),
+    [form.isForeigner, purpose],
+  );
   const totalSteps = steps.length;
   const currentStepId: StepId = steps[Math.min(step - 1, totalSteps - 1)];
 
@@ -365,7 +405,7 @@ export function ApplicationForm() {
   }, [currentStepId]);
 
   const ensureDraft = async (): Promise<{ id: number; tok: string }> => {
-    const fields = fieldsFromState(form);
+    const fields = { ...fieldsFromState(form), purpose };
     if (appId && token) {
       try {
         await applicationApi.patch(appId, token, fields);
@@ -413,13 +453,13 @@ export function ApplicationForm() {
 
   const canSubmit =
     form.agreedPdn &&
-    agreedRules &&
+    (isSale || agreedRules) &&
     canNextContact &&
     canNextPassport &&
     canNextAddress &&
     canNextSource &&
     uploaded.has("passport_main") &&
-    uploaded.has("license") &&
+    (isSale || uploaded.has("license")) &&
     uploaded.has("selfie") &&
     (form.isForeigner || uploaded.has("passport_reg"));
 
@@ -830,7 +870,9 @@ export function ApplicationForm() {
             {currentStepId === "confirm" && (
               <button
                 type="button"
-                onClick={() => setShowCashReminder(true)}
+                onClick={() =>
+                  isSale ? void submit() : setShowCashReminder(true)
+                }
                 disabled={busy || !canSubmit}
                 className="inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-[14px] font-semibold text-white disabled:opacity-50"
               >
@@ -907,8 +949,8 @@ function CashReminderModal({
         className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-[28px]">
-          💵
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <Banknote size={28} strokeWidth={2.2} />
         </div>
         <h2 className="mt-4 text-[20px] font-bold text-slate-900">
           Старт аренды — наличными
@@ -976,7 +1018,8 @@ function Step1({
     <div className="space-y-4">
       <h1 className="text-[22px] font-bold text-slate-900">Контактные данные</h1>
       <p className="text-[14px] text-slate-600">
-        Эти данные нужны менеджеру, чтобы связаться с вами и оформить аренду.
+        Эти данные нужны менеджеру, чтобы связаться с вами и оформить{" "}
+        {IS_SALE ? "покупку" : "аренду"}.
       </p>
 
       <div>
@@ -1288,6 +1331,32 @@ const PHOTO_STEP_META: Record<
   },
 };
 
+/**
+ * Человеческие названия недостающих полей (правка 01.09). Сервер отвечает
+ * кодами вида «file:license» — клиенту такое показывать нельзя, он не
+ * поймёт, куда возвращаться.
+ */
+const MISSING_LABEL: Record<string, string> = {
+  name: "ФИО",
+  phone: "телефон",
+  birthDate: "дата рождения",
+  liveAddress: "адрес проживания",
+  passportRaw: "данные документа",
+  passportSeries: "серия паспорта",
+  passportNumber: "номер паспорта",
+  passportIssuedOn: "дата выдачи паспорта",
+  passportIssuer: "кем выдан паспорт",
+  passportRegistration: "адрес регистрации",
+  "file:passport_main": "фото главного разворота паспорта",
+  "file:passport_reg": "фото страницы с пропиской",
+  "file:selfie": "селфи",
+  "file:license": "фото водительского удостоверения",
+};
+
+function missingLabel(code: string): string {
+  return MISSING_LABEL[code] ?? code;
+}
+
 function PhotoStep({
   kind,
   applicationId,
@@ -1344,7 +1413,7 @@ function SourceStep({
       </h1>
       <p className="text-[14px] text-slate-600">
         Это нужно нам, чтобы понимать, какая реклама работает. Выбор не
-        влияет на оформление аренды.
+        влияет на оформление {IS_SALE ? "покупки" : "аренды"}.
       </p>
 
       <div className="grid gap-2">
@@ -1606,8 +1675,8 @@ function Confirm({
 
       {missingFields.length > 0 && (
         <div className="rounded-xl bg-red-50 p-3 text-[13px] text-red-700">
-          Не заполнены поля: {missingFields.join(", ")}. Вернитесь назад и
-          проверьте.
+          Не хватает: {missingFields.map(missingLabel).join(", ")}. Вернитесь
+          назад и проверьте.
         </div>
       )}
 
@@ -1620,12 +1689,15 @@ function Confirm({
         />
         <span className="text-[13px] text-slate-700">
           Я согласен(а) на обработку моих персональных данных Халк Байк в целях
-          оформления договора аренды транспортного средства.
+          оформления договора{" "}
+          {IS_SALE ? "купли-продажи" : "аренды"} транспортного средства.
         </span>
       </label>
 
       {/* R2.7: соглашение принимается на отдельном шаге «Инструктаж» (до
-          подтверждения). Здесь — только статус, read-only. */}
+          подтверждения). Здесь — только статус, read-only.
+          При покупке шага «Инструктаж» нет — это правила проката. */}
+      {!IS_SALE && (
       <div
         className={`flex items-start gap-3 rounded-xl border p-3 ${
           agreedRules
@@ -1646,6 +1718,7 @@ function Confirm({
             : "Вернитесь на шаг «Инструктаж» и примите правила — без этого заявку не отправить."}
         </span>
       </div>
+      )}
     </div>
   );
 }
@@ -1675,7 +1748,8 @@ function SuccessScreen() {
         </h1>
         <p className="mt-3 text-[14px] text-slate-600">
           Менеджер Халк Байк свяжется с вами по указанному телефону, чтобы
-          согласовать время приезда и оформить аренду.
+          согласовать время приезда и оформить{" "}
+          {IS_SALE ? "покупку" : "аренду"}.
         </p>
         <div className="mt-8 rounded-xl bg-white p-4 text-[13px] text-slate-700 shadow-sm">
           Эту страницу можно закрыть.
@@ -1881,12 +1955,73 @@ function WishModelStep({
   models: RentalModel[];
   loading: boolean;
 }) {
+  // Пункт 12: выбор «бензин / электро» перед моделью — показываем,
+  // только если в парке есть оба типа техники.
+  const hasElectric = models.some((m) => m.isElectric);
+  const hasPetrol = models.some((m) => !m.isElectric);
+  const showTypePick = hasElectric && hasPetrol;
+  const [fuelType, setFuelType] = useState<"petrol" | "electric">(() => {
+    const cur = models.find((m) => m.name === form.wantModel);
+    return cur?.isElectric ? "electric" : "petrol";
+  });
+  const shownModels = showTypePick
+    ? models.filter((m) => (m.isElectric ?? false) === (fuelType === "electric"))
+    : models;
+  const pickType = (t: "petrol" | "electric") => {
+    setFuelType(t);
+    // выбранная модель другого типа — сбрасываем выбор
+    const cur = models.find((m) => m.name === form.wantModel);
+    if (cur && (cur.isElectric ?? false) !== (t === "electric")) {
+      setField("wantModel", "");
+    }
+  };
   return (
     <div className="space-y-4">
       <h1 className="text-[22px] font-bold text-slate-900">Какой скутер?</h1>
       <p className="text-[14px] text-slate-600">
         Необязательно — можно пропустить, менеджер подберёт при звонке.
       </p>
+
+      {showTypePick && (
+        <div className="grid grid-cols-2 gap-3">
+          {(
+            [
+              ["petrol", "Бензиновый", "Обычный скутер"],
+              ["electric", "Электро", "На аккумуляторе"],
+            ] as const
+          ).map(([t, title, hint]) => {
+            const active = fuelType === t;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => pickType(t)}
+                className={
+                  "flex items-center gap-3 rounded-2xl border-2 px-4 py-3.5 text-left transition-all " +
+                  (active
+                    ? "border-slate-900 bg-slate-900 text-white shadow-lg"
+                    : "border-slate-200 bg-white text-slate-800 hover:border-slate-400")
+                }
+              >
+                <PowerTypeGlyph electric={t === "electric"} active={active} />
+                <span className="min-w-0">
+                  <span className="block text-[15px] font-bold leading-tight">
+                    {title}
+                  </span>
+                  <span
+                    className={
+                      "block text-[12px] leading-tight " +
+                      (active ? "text-white/60" : "text-slate-500")
+                    }
+                  >
+                    {hint}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center gap-3 overflow-hidden">
@@ -1903,7 +2038,7 @@ function WishModelStep({
         </div>
       ) : (
         <ScooterCoverflow
-          models={models}
+          models={shownModels}
           value={form.wantModel}
           onSelect={(name) => setField("wantModel", name)}
         />
