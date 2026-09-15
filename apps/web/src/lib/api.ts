@@ -57,6 +57,17 @@ async function request<T>(
     // Открываем гейт (окно ключа / запрос директору) и повторяем запрос
     // с полученным подтверждением. Один повтор, чтобы не зациклиться.
     const b = body as { error?: string; action?: string } | null;
+    // 15.09: вход сброшен (обновление, «Выйти на всех устройствах», новый
+    // пароль, отключённый аккаунт) — сообщаем приложению, оно покажет вход.
+    // Для самого /me не шлём: его ошибку приложение и так видит, иначе цикл.
+    if (
+      res.status === 401 &&
+      (b?.error === "session_revoked" || b?.error === "user_deactivated") &&
+      !path.startsWith("/api/auth/me") &&
+      typeof window !== "undefined"
+    ) {
+      window.dispatchEvent(new CustomEvent("hulk:session-ended"));
+    }
     if (
       res.status === 428 &&
       b?.error === "director_key_required" &&

@@ -6,7 +6,6 @@ import {
   Crown,
   LogOut,
   ReceiptText,
-  Settings,
   ShieldCheck,
   UserCog,
   UserPlus,
@@ -120,11 +119,6 @@ export function Topbar() {
         onClick={() => setDayReportOpen(true)}
       >
         <ReceiptText size={18} />
-      </IconBtn>
-
-      <IconBtn aria-label="Настройки — скоро" title="Настройки — скоро" disabled>
-        <Settings size={18} />
-        <SoonDot />
       </IconBtn>
 
       {/* Пункт 1: висящие подтверждения ключа директора (виден при запросах). */}
@@ -426,15 +420,6 @@ function ChangelogPopover({
   );
 }
 
-/** Точка-индикатор "скоро" в углу круглой кнопки. */
-function SoonDot() {
-  return (
-    <span
-      className="absolute rounded-full border-2 border-surface bg-muted-2/70"
-      style={{ top: 6, right: 6, height: 8, width: 8 }}
-    />
-  );
-}
 
 /** Сегодня — на русском. Пример: "Сегодня, чт 23 апр". */
 function formatTodayRu(): string {

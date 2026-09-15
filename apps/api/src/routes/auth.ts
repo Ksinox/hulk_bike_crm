@@ -38,6 +38,7 @@ export async function authRoutes(app: FastifyInstance) {
           login: users.login,
           role: users.role,
           avatarColor: users.avatarColor,
+          position: users.position,
         })
         .from(users)
         .where(

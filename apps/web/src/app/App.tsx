@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ApiError } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
+import { authKeys } from "@/lib/api/auth";
 import { Sidebar } from "./Sidebar";
 import { Dashboard } from "@/pages/dashboard/Dashboard";
 import { Clients } from "@/pages/clients/Clients";
@@ -53,7 +56,21 @@ import { DirectorKeyGateProvider } from "@/components/DirectorKeyGate";
 
 export function App() {
   const isMobile = useIsMobile();
-  const { data: me, isLoading, isError } = useMe();
+  const { data: me, isLoading, isError, error: meError } = useMe();
+  // 15.09: почему показываем вход — чтобы человек не гадал, куда делась сессия.
+  const loginNotice = (() => {
+    const b = meError instanceof ApiError ? (meError.body as { error?: string; reason?: string } | null) : null;
+    if (b?.error === "session_revoked") return b.reason === "update" ? "update" : "revoked";
+    if (b?.error === "user_deactivated") return "deactivated";
+    return null;
+  })();
+  useEffect(() => {
+    const onEnded = () => {
+      void queryClient.invalidateQueries({ queryKey: authKeys.me });
+    };
+    window.addEventListener("hulk:session-ended", onEnded);
+    return () => window.removeEventListener("hulk:session-ended", onEnded);
+  }, []);
   // v0.4.1: подгружаем глобальные настройки на старте — внутри хука
   // billing_period_start_day прокидывается в lib/billingPeriod (легаси
   // быстрый путь).
@@ -106,7 +123,7 @@ export function App() {
   }
   // Нет сессии → экран входа
   if (isError || !me) {
-    return <Login />;
+    return <Login notice={loginNotice} />;
   }
 
   // Экран на второй монитор (06.09): отдельное окно без сайдбара и шапки —

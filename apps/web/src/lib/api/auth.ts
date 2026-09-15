@@ -27,6 +27,8 @@ export type LoginTile = {
   login: string;
   role: AuthRole;
   avatarColor: string;
+  /** Должность словами (15.09) — на плитке входа вместо технической роли. */
+  position?: string | null;
 };
 
 export const authKeys = {

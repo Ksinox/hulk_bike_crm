@@ -109,6 +109,12 @@ export async function requireAuth(
   } catch {
     return reply.code(401).send({ error: "unauthorized" });
   }
+  // 15.09: выход обновления = выход на всех устройствах. Токены, выданные
+  // до личных аккаунтов, номера сессии не несут — их не принимаем. Все
+  // входят заново, уже под своими логинами и с новым паролем директора.
+  if (typeof req.user.sv !== "number") {
+    return reply.code(401).send({ error: "session_revoked", reason: "update" });
+  }
   const u = await loadAuthUser(req.user.userId);
   if (!u || !u.active) {
     return reply.code(401).send({ error: "user_deactivated" });
