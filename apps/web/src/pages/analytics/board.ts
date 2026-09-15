@@ -11,7 +11,12 @@ import { api } from "@/lib/api";
 
 /** Старые три размера — только чтобы прочитать доску, сохранённую до канваса. */
 export type TileSize = "s" | "m" | "l";
-export type BoardPeriod = "today" | "week" | "month" | "year";
+/**
+ * Период доски. billing — текущий расчётный период CRM (15.09, заказчик:
+ * «отображать по умолчанию по текущему расчётному периоду»), границы — из
+ * якорей периода (lib/billingPeriod), как в «Выручке».
+ */
+export type BoardPeriod = "today" | "week" | "month" | "billing" | "year";
 
 export type BoardTile = {
   /** Идентификатор показателя из каталога (metrics.ts). */
@@ -53,6 +58,7 @@ export const PERIOD_LABEL: Record<BoardPeriod, string> = {
   today: "Сегодня",
   week: "Неделя",
   month: "Месяц",
+  billing: "Расчётный период",
   year: "Год",
 };
 

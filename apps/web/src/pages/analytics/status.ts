@@ -1,4 +1,5 @@
 import type { BoardPeriod } from "./board";
+import { currentBillingPeriod } from "@/lib/billingPeriod";
 
 /**
  * Статус показателя относительно плана (07.09, пятая правка заказчика).
@@ -68,6 +69,11 @@ export function periodProgress(period: BoardPeriod, now = new Date()): number {
     const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const passed = now.getDate() - 1 + (now.getHours() + 1) / 24;
     return clamp01(passed / days);
+  }
+  if (period === "billing") {
+    const bp = currentBillingPeriod(now);
+    const span = bp.end.getTime() - bp.start.getTime();
+    return clamp01((now.getTime() - bp.start.getTime()) / span);
   }
   const start = new Date(now.getFullYear(), 0, 1).getTime();
   const end = new Date(now.getFullYear() + 1, 0, 1).getTime();

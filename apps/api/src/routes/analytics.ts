@@ -30,13 +30,13 @@ const TileSchema = z.object({
   /** Ручной план (для количественных показателей). null — плана нет. */
   plan: z.number().min(0).nullable().optional(),
   /** Свой период плитки; null — берётся общий период доски. */
-  period: z.enum(["today", "week", "month", "year"]).nullable().optional(),
+  period: z.enum(["today", "week", "month", "billing", "year"]).nullable().optional(),
 });
 
 const BoardSchema = z.object({
   tiles: z.array(TileSchema).max(40),
   /** Общий период доски. */
-  period: z.enum(["today", "week", "month", "year"]).default("week"),
+  period: z.enum(["today", "week", "month", "billing", "year"]).default("week"),
   /** Заголовок на экране-стене. */
   title: z.string().max(80).optional(),
 });

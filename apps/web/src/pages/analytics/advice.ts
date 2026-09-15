@@ -1,6 +1,7 @@
 import type { Board, BoardPeriod } from "./board";
 import { METRIC_BY_ID, type MetricValue } from "./metrics";
 import { GOOD_FROM_PCT, planState } from "./status";
+import { currentBillingPeriod } from "@/lib/billingPeriod";
 
 /**
  * Советы на «Обзоре» (07.09, задание заказчика: «в дальнейшем аналитика
@@ -28,6 +29,11 @@ function daysLeft(period: BoardPeriod, now = new Date()): number {
   if (period === "month") {
     const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     return Math.max(1, days - now.getDate() + 1);
+  }
+  if (period === "billing") {
+    // end эксклюзивен: сегодняшний день считается оставшимся.
+    const bp = currentBillingPeriod(now);
+    return Math.max(1, Math.ceil((bp.end.getTime() - now.getTime()) / 86_400_000));
   }
   const end = new Date(now.getFullYear() + 1, 0, 1).getTime();
   return Math.max(1, Math.round((end - now.getTime()) / 86_400_000));

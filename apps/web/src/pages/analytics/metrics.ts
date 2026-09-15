@@ -8,6 +8,7 @@ import { useSaleDeals } from "@/lib/api/sales";
 import { useBuyoutDeals } from "@/lib/api/buyout";
 import { usePartnerInfo } from "@/lib/partner";
 import { useRentals } from "@/pages/rentals/rentalsStore";
+import { currentBillingPeriod } from "@/lib/billingPeriod";
 import { useArchivedRentals } from "@/pages/rentals/rentalsStore";
 import { useDashboardMetrics } from "@/pages/dashboard/useDashboardMetrics";
 import type { BoardPeriod } from "./board";
@@ -293,6 +294,10 @@ export function periodRange(period: BoardPeriod, now = new Date()): Range {
       to: end,
       label: now.toLocaleDateString("ru-RU", { month: "long" }),
     };
+  }
+  if (period === "billing") {
+    const bp = currentBillingPeriod(now);
+    return { from: bp.start, to: end, label: bp.label };
   }
   return {
     from: new Date(now.getFullYear(), 0, 1),

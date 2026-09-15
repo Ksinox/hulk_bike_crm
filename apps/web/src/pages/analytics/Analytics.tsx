@@ -54,7 +54,10 @@ import { useTileDrag } from "./useTileDrag";
  * ровно высоту окна, блоки делят её между собой, кегли считаются от блока.
  */
 
-const PERIODS: BoardPeriod[] = ["today", "week", "month", "year"];
+const PERIODS: BoardPeriod[] = ["today", "week", "month", "billing", "year"];
+
+/** Канал к окну второго монитора: оно показывает период, выбранный здесь. */
+export const WALL_PERIOD_CHANNEL = "hulk-analytics-wall-period";
 type Section = "overview" | "setup";
 
 export function Analytics() {
@@ -176,8 +179,17 @@ export function Analytics() {
     }
   };
 
+  // 15.09: второй монитор показывает период, выбранный на этом экране, — и
+  // переключается следом, если его поменять при открытой стене.
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel(WALL_PERIOD_CHANNEL);
+    ch.postMessage({ period: board.period });
+    return () => ch.close();
+  }, [board.period]);
+
   const openWall = () => {
-    const url = `${window.location.pathname}?screen=analytics-wall`;
+    const url = `${window.location.pathname}?screen=analytics-wall&period=${board.period}`;
     const win = window.open(url, "hulk-analytics-wall");
     win?.focus?.();
     if (!win)
@@ -247,6 +259,18 @@ export function Analytics() {
           </div>
           {!isMobile && (
             <span className="hidden text-[12.5px] text-muted lg:inline">{range.label}</span>
+          )}
+          {/* 15.09: выбранный период можно запомнить — доска и второй монитор
+              будут открываться с ним. */}
+          {!editing && canEdit && draft && draft.period !== serverBoard.period && (
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={save.isPending}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-ink px-4 text-[12.5px] font-bold text-white disabled:opacity-40"
+            >
+              <Check size={14} /> Сделать по умолчанию
+            </button>
           )}
           {editing ? (
             <>
