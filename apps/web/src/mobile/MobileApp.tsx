@@ -37,6 +37,7 @@ import { Buyout } from "@/pages/buyout/Buyout";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
 import { DayReportDialog } from "@/components/DayReport";
 import { TABLET_COLUMN } from "./tablet";
+import { useNewSections } from "@/release/ReleaseTour";
 
 /**
  * Корень мобильного слоя. Полностью отдельная оболочка: верхняя панель,
@@ -119,6 +120,7 @@ export function MobileApp({
         {fab && (
           <button
             type="button"
+            data-tour="fab"
             onClick={fab.onClick}
             // Правый край кнопки — по краю колонки контента (960px, см.
             // mobile/tablet.ts), а не экрана.
@@ -270,6 +272,8 @@ function MobileTabBar({
   onMore: () => void;
   moreActive: boolean;
 }) {
+  const isNewSection = useNewSections();
+  const moreHasNew = buildMoreItems(true).some((i) => isNewSection(i.id));
   return (
     <nav className="shrink-0 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)]">
       <div className="mx-auto flex h-[60px] max-w-md items-stretch justify-around px-1">
@@ -283,12 +287,16 @@ function MobileTabBar({
         ))}
         <button
           type="button"
+          data-tour="tab-more"
           onClick={onMore}
           className={cn(
-            "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl",
+            "relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl",
             moreActive ? "text-blue-600" : "text-muted",
           )}
         >
+          {moreHasNew && (
+            <span className="absolute right-[calc(50%-18px)] top-2 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-surface" />
+          )}
           <MoreIcon size={22} strokeWidth={moreActive ? 2.4 : 2} />
           <span className="text-[10px] font-semibold">Ещё</span>
         </button>
@@ -337,6 +345,7 @@ function MoreSheet({
 }) {
   const logoutMut = useLogout();
   const { handleProps, sheetStyle } = useSheetDrag(onClose);
+  const isNewSection = useNewSections();
   const handleLogout = async () => {
     try {
       await logoutMut.mutateAsync();
@@ -364,9 +373,10 @@ function MoreSheet({
               <button
                 key={item.id}
                 type="button"
+                data-tour={`nav-${item.id}`}
                 onClick={() => onSelect(item.id)}
                 className={cn(
-                  "flex flex-col items-center gap-1.5 rounded-2xl px-1 py-3 text-center transition-colors",
+                  "relative flex flex-col items-center gap-1.5 rounded-2xl px-1 py-3 text-center transition-colors",
                   active ? "bg-blue-50 text-blue-600" : "text-ink hover:bg-surface-soft",
                 )}
               >
@@ -374,6 +384,9 @@ function MoreSheet({
                 <span className="text-[11px] font-semibold leading-tight">
                   {item.label}
                 </span>
+                {isNewSection(item.id) && (
+                  <span className="rt-new-dot absolute right-1 top-1">новое</span>
+                )}
               </button>
             );
           })}

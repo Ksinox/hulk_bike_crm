@@ -7,6 +7,7 @@ import {
   UserCog,
   type LucideIcon,
 } from "lucide-react";
+import { ReleaseViewsPanel } from "@/release/ReleaseViewsPanel";
 import { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { useApiUsers, type ApiStaffUser } from "@/lib/api/users";
@@ -90,6 +91,8 @@ export function MobileStaff() {
       >
         <Plus size={18} /> Новый сотрудник
       </button>
+      {/* 15.09: кто посмотрел обновление. */}
+      <ReleaseViewsPanel compact />
       {sorted.map((u) => (
         <StaffRow key={u.id} user={u} onOpen={() => setEditUser(u)} />
       ))}

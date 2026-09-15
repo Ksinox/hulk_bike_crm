@@ -221,6 +221,9 @@ async function bootstrap() {
     await protectedApp.register(remindersRoutes, { prefix: "/api/reminders" });
     const { analyticsRoutes } = await import("./routes/analytics.js");
     await protectedApp.register(analyticsRoutes, { prefix: "/api/analytics" });
+    // 15.09: показ обновления сотрудникам и «кто посмотрел».
+    const { releaseRoutes } = await import("./routes/releases.js");
+    await protectedApp.register(releaseRoutes, { prefix: "/api/releases" });
 
     const { serviceOrderRoutes } = await import("./routes/service-orders.js");
     await protectedApp.register(serviceOrderRoutes, {

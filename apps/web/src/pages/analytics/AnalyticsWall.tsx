@@ -10,6 +10,16 @@ import { METRIC_BY_ID, periodRange, useMetricAllowed, useMetricValues } from "./
 import { AnalyticsTile } from "./AnalyticsTile";
 import { PlanSummaryTile } from "./PlanSummaryTile";
 import { useFitLayout } from "./useFitLayout";
+import { WALL_PERIOD_CHANNEL } from "./Analytics";
+
+const WALL_PERIODS: BoardPeriod[] = ["today", "week", "month", "billing", "year"];
+
+/** Период из адреса окна (?period=billing), иначе — сохранённый у доски. */
+function periodFromUrl(): BoardPeriod | null {
+  if (typeof window === "undefined") return null;
+  const p = new URLSearchParams(window.location.search).get("period");
+  return p && (WALL_PERIODS as string[]).includes(p) ? (p as BoardPeriod) : null;
+}
 
 /**
  * Экран на второй монитор (07.09, вторая правка заказчика).
@@ -22,7 +32,23 @@ import { useFitLayout } from "./useFitLayout";
  */
 export function AnalyticsWall() {
   const boardQ = useAnalyticsBoard();
-  const board = boardQ.data?.board ?? DEFAULT_BOARD;
+  const savedBoard = boardQ.data?.board ?? DEFAULT_BOARD;
+  // 15.09: период, выбранный в «Аналитике», — из адреса окна и вживую по
+  // каналу, если его переключили при открытой стене.
+  const [livePeriod, setLivePeriod] = useState<BoardPeriod | null>(periodFromUrl);
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel(WALL_PERIOD_CHANNEL);
+    ch.onmessage = (e: MessageEvent<{ period?: string }>) => {
+      const p = e.data?.period;
+      if (p && (WALL_PERIODS as string[]).includes(p)) setLivePeriod(p as BoardPeriod);
+    };
+    return () => ch.close();
+  }, []);
+  const board = useMemo(
+    () => (livePeriod ? { ...savedBoard, period: livePeriod } : savedBoard),
+    [savedBoard, livePeriod],
+  );
   const [now, setNow] = useState(() => new Date());
   const [full, setFull] = useState(false);
   // Часы в шапке + мягкое обновление цифр.

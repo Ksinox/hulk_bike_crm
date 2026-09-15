@@ -51,6 +51,7 @@ import { NewApplicationDetector } from "@/pages/clients/NewApplicationDetector";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileApp } from "@/mobile/MobileApp";
+import { ReleaseTour } from "@/release/ReleaseTour";
 import { RentalCalculator } from "@/pages/calculator/RentalCalculator";
 import { DirectorKeyGateProvider } from "@/components/DirectorKeyGate";
 
@@ -171,6 +172,8 @@ export function App() {
     return (
       <DashboardDrawerProvider>
         <MobileApp route={route} onSelect={onSelect} />
+        {/* 15.09: показ обновления — титул, карточки, подсказки на месте. */}
+        <ReleaseTour route={route} onSelect={onSelect} isMobile />
         {updateToastNode}
         <NewApplicationDetector />
         <RentalCalculator />
@@ -186,6 +189,7 @@ export function App() {
   return (
     <DashboardDrawerProvider>
       <AppShell route={route} onSelect={onSelect} />
+      <ReleaseTour route={route} onSelect={onSelect} isMobile={false} />
       {updateToastNode}
       <NewApplicationDetector />
       <RentalCalculator />

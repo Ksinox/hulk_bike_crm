@@ -107,6 +107,13 @@ try {
   // Профиль браузера чистый на каждый прогон → NewApplicationDetector
   // всплывал бы модалкой «Новая заявка» поверх любого сценария. Помечаем
   // все заявки «просмотренными» (id 1..200) до загрузки приложения.
+  // Показ обновления (15.09) закрыл бы любой кадр титулом и карточками.
+  // SHOT_TOUR=1 — снимать сам показ.
+  if (process.env.SHOT_TOUR !== "1") {
+    await page.evaluateOnNewDocument(() => {
+      localStorage.setItem("hulk-release-tour-skip", "1");
+    });
+  }
   await page.evaluateOnNewDocument(() => {
     const now = new Date().toISOString();
     const arr = Array.from({ length: 200 }, (_, i) => ({

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useNewSections } from "@/release/ReleaseTour";
 import { BrandLogo } from "@/components/BrandLogo";
 import {
   BarChart3,
@@ -115,6 +116,8 @@ export function Sidebar({
   const { data: me } = useMe();
   const canManageStaff = me?.role === "creator" || me?.role === "director";
   const mainItems = buildMainItems(canManageStaff);
+  // 15.09: метка «новое» у новых разделов релиза (7 дней или до первого захода).
+  const isNewSection = useNewSections();
   const { unreadCount: changelogUnread } = useUnreadChangelog();
   // Считаем «новые» заявки (status='new'). polling уже включен в хуке.
   // Правка 31.08: счётчик показываем на разделе, где с заявкой работают —
@@ -266,6 +269,7 @@ export function Sidebar({
               onEnter={handleEnter}
               onLeave={handleLeave}
               onSelect={onSelect}
+              isNew={isNewSection(item.id)}
               badgeCount={
                 item.id === "whats-new"
                   ? changelogUnread
@@ -288,6 +292,7 @@ export function Sidebar({
             <button
               ref={moreBtnRef}
               type="button"
+              data-tour="nav-more"
               onMouseEnter={openMore}
               onFocus={openMore}
               onClick={() => (moreOpen ? setMoreOpen(false) : openMore())}
@@ -307,6 +312,9 @@ export function Sidebar({
                   ) && (
                     <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red ring-2 ring-surface" />
                   )}
+                {!expanded && hiddenItems.some((i) => isNewSection(i.id)) && (
+                  <span className="absolute -bottom-1 -right-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-surface" />
+                )}
               </span>
               <span
                 className={cn(
@@ -383,6 +391,7 @@ export function Sidebar({
               <button
                 key={item.id}
                 type="button"
+                data-tour={`nav-${item.id}`}
                 disabled={disabled}
                 onClick={() => {
                   if (disabled) return;
@@ -409,6 +418,9 @@ export function Sidebar({
                   <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red px-1.5 text-[10px] font-bold text-white">
                     {badge}
                   </span>
+                )}
+                {!disabled && badge === 0 && isNewSection(item.id) && (
+                  <span className="rt-new-dot ml-auto">новое</span>
                 )}
               </button>
             );
@@ -445,6 +457,7 @@ function NavRow({
   onLeave,
   onSelect,
   badgeCount = 0,
+  isNew = false,
 }: {
   item: NavItem;
   active: boolean;
@@ -453,6 +466,8 @@ function NavRow({
   onLeave: () => void;
   onSelect: (id: RouteId) => void;
   badgeCount?: number;
+  /** 15.09: новый раздел релиза — метка «новое». */
+  isNew?: boolean;
 }) {
   const Icon = item.icon;
   const isLogout = item.id === "logout";
@@ -464,6 +479,7 @@ function NavRow({
   return (
     <button
       type="button"
+      data-tour={`nav-${item.id}`}
       disabled={disabled}
       onMouseEnter={(e) => onEnter(e, tooltipLabel)}
       onMouseLeave={onLeave}
@@ -484,6 +500,9 @@ function NavRow({
         {showBadge && !expanded && (
           <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red ring-2 ring-surface" />
         )}
+        {isNew && !active && !showBadge && !expanded && (
+          <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-surface" />
+        )}
       </span>
       <span
         className={cn(
@@ -502,6 +521,9 @@ function NavRow({
           <span className="ml-auto rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
             скоро
           </span>
+        )}
+        {isNew && !showBadge && !disabled && (
+          <span className="rt-new-dot ml-auto">новое</span>
         )}
         {showBadge && !disabled && (
           <span
