@@ -343,7 +343,6 @@ export function SwapScooterDialog({
           <ScooterName
             name={rental.scooter}
             number={currentScooter?.rentalSlot ?? undefined}
-            exNumber={currentScooter?.exRentalSlot ?? undefined}
             size="sm"
             className="font-semibold text-ink"
           />
@@ -358,7 +357,6 @@ export function SwapScooterDialog({
               <ScooterName
                 name={newScooter.name}
                 number={newScooter.rentalSlot ?? undefined}
-                exNumber={newScooter.exRentalSlot ?? undefined}
                 size="sm"
               />
             ) : (
@@ -381,7 +379,6 @@ export function SwapScooterDialog({
                     <ScooterName
                       name={rental.scooter}
                       number={currentScooter?.rentalSlot ?? undefined}
-                      exNumber={currentScooter?.exRentalSlot ?? undefined}
                       size="lg"
                     />
                   </div>
@@ -545,7 +542,6 @@ export function SwapScooterDialog({
                       <ScooterName
                         name={rental.scooter}
                         number={currentScooter?.rentalSlot ?? undefined}
-                        exNumber={currentScooter?.exRentalSlot ?? undefined}
                         size="sm"
                       />
                     </div>
@@ -562,7 +558,6 @@ export function SwapScooterDialog({
                         <ScooterName
                           name={newScooter.name}
                           number={newScooter.rentalSlot ?? undefined}
-                          exNumber={newScooter.exRentalSlot ?? undefined}
                           size="sm"
                         />
                       ) : (
@@ -672,7 +667,6 @@ export function SwapScooterDialog({
                 <ScooterName
                   name={rental.scooter}
                   number={currentScooter?.rentalSlot ?? undefined}
-                  exNumber={currentScooter?.exRentalSlot ?? undefined}
                   size="lg"
                 />
               </div>
@@ -715,7 +709,6 @@ export function SwapScooterDialog({
                     <ScooterName
                       name={newScooter.name}
                       number={newScooter.rentalSlot ?? undefined}
-                      exNumber={newScooter.exRentalSlot ?? undefined}
                       size="lg"
                     />
                   </div>

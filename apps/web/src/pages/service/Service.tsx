@@ -332,7 +332,6 @@ function ActiveRepairCard({ job }: { job: ApiRepairJob }) {
                   <ScooterName
                     name={job.scooter.name}
                     number={scooter?.rentalSlot}
-                    exNumber={scooter?.exRentalSlot}
                     size="lg"
                   />
                 ) : (
@@ -716,7 +715,6 @@ function JournalRow({ job }: { job: ApiRepairJob }) {
                 <ScooterName
                   name={job.scooter.name}
                   number={scooter?.rentalSlot}
-                  exNumber={scooter?.exRentalSlot}
                 />
               ) : (
                 `#${job.scooterId}`

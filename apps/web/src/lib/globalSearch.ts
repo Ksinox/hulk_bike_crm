@@ -1,6 +1,7 @@
 import type { ApiClient, ApiRental, ApiScooter } from "@/lib/api/types";
 import type { ApiApplication } from "@/lib/api/clientApplications";
 import type { SaleDeal, SaleManager } from "@/lib/api/sales";
+import { matchScooterNumber, parseScooterNumberQuery } from "@/lib/search";
 
 /**
  * Движок глобального поиска (переписан 31.08 по фидбэку).
@@ -157,15 +158,23 @@ export function searchEverything(
   }
 
   // ── Техника ──
+  // 15.09: «5», «05», «№5», «айма 01», «бывший 80» — номер скутера.
+  const numberQ = parseScooterNumberQuery(q.raw);
   for (const s of src.scooters) {
     if (s.archivedAt || s.deletedAt) continue;
     const model = src.modelName?.(s.modelId) ?? MODEL_LABELS[s.model] ?? s.model;
+    const byNumber = numberQ ? matchScooterNumber(s, numberQ, model) : null;
+    // Короткое число — номер скутера, а не кусочек VIN/рамы/двигателя.
+    const shortNumber = q.isNumeric && q.digits.length <= 3;
+    const longId = (v: string | null | undefined) => (shortNumber ? 999 : idRank(v, q));
     const hit = best([
-      [idRank(s.vin, q), `VIN ${s.vin ?? ""}`],
-      [idRank(s.frameNumber, q), `рама ${s.frameNumber ?? ""}`],
-      [idRank(s.engineNo, q), `двигатель ${s.engineNo ?? ""}`],
-      [idRank(s.uid, q), `ID ${s.uid ?? ""}`],
-      [idRank(s.rentalSlot, q), `номер в аренде ${s.rentalSlot ?? ""}`],
+      [byNumber === "current" ? 0 : 999, `номер ${numberQ?.number ?? ""}`],
+      [byNumber === "name" ? 4 : 999, `в названии ${s.name}`],
+      [byNumber === "former" ? 6 : 999, `бывший номер ${numberQ?.number ?? ""}`],
+      [longId(s.vin), `VIN ${s.vin ?? ""}`],
+      [longId(s.frameNumber), `рама ${s.frameNumber ?? ""}`],
+      [longId(s.engineNo), `двигатель ${s.engineNo ?? ""}`],
+      [longId(s.uid), `ID ${s.uid ?? ""}`],
       [idRank(s.id, q), `ID записи ${s.id}`],
       [textRank(s.name, q), s.name],
       [textRank(model, q), model],
@@ -176,7 +185,12 @@ export function searchEverything(
     out.push({
       kind: "scooter",
       id: s.id,
-      title: `${model}${s.rentalSlot != null ? ` №${s.rentalSlot}` : ""}`,
+      title:
+        s.rentalSlot != null
+          ? `${model} №${s.rentalSlot}`
+          : s.exRentalSlot != null
+            ? `${model} · бывший №${s.exRentalSlot}`
+            : model,
       subtitle: s.vin ? `VIN ${s.vin}` : "VIN не указан",
       matched: hit.matched,
       rank: hit.rank,

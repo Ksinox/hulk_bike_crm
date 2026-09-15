@@ -176,7 +176,6 @@ export function ParkTileHoverCard({
               <ScooterName
                 name={scooter.name}
                 number={scooter.rentalSlot}
-                exNumber={scooter.exRentalSlot}
                 className="font-display text-[16px] font-extrabold leading-tight text-ink"
               />
               {/* v0.4.12: если по скутеру есть active/overdue/returning

@@ -211,7 +211,6 @@ export function ScooterEditForm({
               <ScooterName
                 name={scooter.name}
                 number={scooter.rentalSlot}
-                exNumber={scooter.exRentalSlot}
               />
             </div>
           </div>

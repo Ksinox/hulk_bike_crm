@@ -783,7 +783,6 @@ export function DamageReportDialog({
               <ScooterName
                 name={rental.scooter}
                 number={scooter?.rentalSlot ?? undefined}
-                exNumber={scooter?.exRentalSlot ?? undefined}
                 size="sm"
               />
               {modelName ? ` · ${modelName}` : ""} · {clientName}
@@ -1202,7 +1201,6 @@ export function DamageReportDialog({
               <ScooterName
                 name={rental.scooter}
                 number={scooter?.rentalSlot ?? undefined}
-                exNumber={scooter?.exRentalSlot ?? undefined}
                 size="sm"
               />
               {modelName ? ` · ${modelName}` : ""} · {clientName}

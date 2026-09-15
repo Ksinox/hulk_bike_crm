@@ -25,7 +25,7 @@ import { useRepairJobs } from "@/lib/api/repair-jobs";
 import { useCan } from "@/lib/permissions";
 import { useRole } from "@/lib/role";
 import { MODEL_LABEL } from "@/lib/mock/rentals";
-import { ScooterName, scooterModelName } from "@/components/ScooterName";
+import { ExNumberTag, ScooterName, scooterModelName } from "@/components/ScooterName";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { STATUS_LABEL as RENTAL_STATUS_LABEL } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
@@ -256,7 +256,6 @@ export function MobileScooterCard({
           <ScooterName
             name={scooter.name}
             number={scooter.rentalSlot}
-            exNumber={scooter.exRentalSlot}
           />
         </h1>
         <button
@@ -331,11 +330,15 @@ export function MobileScooterCard({
                 <ScooterName
                   name={scooter.name}
                   number={scooter.rentalSlot}
-                  exNumber={scooter.exRentalSlot}
                   size="lg"
                 />
               </div>
               <div className="text-[12px] text-muted">{MODEL_LABEL[scooter.model]}</div>
+              <ExNumberTag
+                number={scooter.exRentalSlot}
+                current={scooter.rentalSlot}
+                className="mt-1"
+              />
             </div>
             <span
               className={cn(

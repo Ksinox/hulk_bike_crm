@@ -25,7 +25,7 @@ import { useActivityTimeline } from "@/lib/api/activity";
 import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
-import { ScooterName } from "@/components/ScooterName";
+import { ExNumberTag, ScooterName } from "@/components/ScooterName";
 
 const STATUS_LABEL: Record<string, string> = {
   ready: "Не распределён",
@@ -129,10 +129,10 @@ export function ScooterQuickView({
               <ScooterName
                 name={scooter.name}
                 number={scooter.rentalSlot}
-                exNumber={scooter.exRentalSlot}
                 size="lg"
               />
             </h2>
+            <ExNumberTag number={scooter.exRentalSlot} current={scooter.rentalSlot} />
             <span className="text-[13px] text-muted">
               · {MODEL_LABEL[scooter.model]}
             </span>
