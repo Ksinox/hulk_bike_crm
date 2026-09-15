@@ -724,7 +724,6 @@ export function NewRentalModal({
                     <ScooterName
                       name={scooterName}
                       number={selectedScooter?.rentalSlot ?? undefined}
-                      exNumber={selectedScooter?.exRentalSlot ?? undefined}
                       size="sm"
                     />
                   </div>
@@ -826,7 +825,6 @@ export function NewRentalModal({
                         <ScooterName
                           name={s.name}
                           number={s.rentalSlot}
-                          exNumber={s.exRentalSlot}
                           size="sm"
                         />
                       </span>
@@ -1218,7 +1216,6 @@ export function NewRentalModal({
                 clientName={client?.name ?? "—"}
                 scooterName={scooterName}
                 scooterNumber={selectedScooter?.rentalSlot ?? undefined}
-                scooterExNumber={selectedScooter?.exRentalSlot ?? undefined}
                 model={MODEL_LABEL[model]}
                 period={`${start} ${startTime} → ${endPlanned} ${startTime}`}
                 days={days}
@@ -1655,7 +1652,6 @@ function MobileScooterPicker({
                 <ScooterName
                   name={s.name}
                   number={s.rentalSlot}
-                  exNumber={s.exRentalSlot}
                   className="text-[15px] font-bold text-ink"
                 />
               </span>
@@ -1672,7 +1668,6 @@ function OrderSummary({
   clientName,
   scooterName,
   scooterNumber,
-  scooterExNumber,
   model,
   period,
   days,
@@ -1686,7 +1681,6 @@ function OrderSummary({
   scooterName: string | null;
   /** Арендный номер выбранного скутера — для круглого бейджа. */
   scooterNumber?: number;
-  scooterExNumber?: number;
   model: string;
   period: string;
   days: number;
@@ -1711,7 +1705,6 @@ function OrderSummary({
                 <ScooterName
                   name={scooterName}
                   number={scooterNumber}
-                  exNumber={scooterExNumber}
                   size="sm"
                 />
                 <span>· {model}</span>

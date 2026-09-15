@@ -59,6 +59,85 @@ export function matchScooterName(name: string | undefined, q: Query): boolean {
   return name.toLowerCase().includes(q.text);
 }
 
+/**
+ * Модель, как её называют вслух: «айма 01», «джог 5». Ключ — то, что есть
+ * в названии скутера латиницей.
+ */
+const MODEL_ALIASES: Array<[RegExp, string]> = [
+  [/^(айма|аима|aima)$/, "aima"],
+  [/^(джог|жог|jog)$/, "jog"],
+  [/^(гир|гиар|gear)$/, "gear"],
+  [/^(дио|dio)$/, "dio"],
+  [/^(танк|tank)$/, "tank"],
+  [/^(вино|vino)$/, "vino"],
+  [/^(ау01|ay01)$/, "ay01"],
+];
+
+export type ScooterNumberQuery = {
+  number: number;
+  /** Модель из запроса латиницей («aima»), если её назвали. */
+  model: string | null;
+  /** «бывший 80» — искать только бывший номер. */
+  former: boolean;
+};
+
+/**
+ * Запрос по номеру скутера (15.09): «5», «05», «№5», «#5», «номер 5»,
+ * «айма 01», «jog5», «бывший 80». Номер — до трёх цифр, иначе это VIN,
+ * рама или телефон. null — в запросе не номер.
+ */
+export function parseScooterNumberQuery(raw: string): ScooterNumberQuery | null {
+  let s = raw.toLowerCase().replace(/ё/g, "е").trim();
+  if (!s) return null;
+  let former = false;
+  const fm = s.match(/^бывш\S*\s*/);
+  if (fm) {
+    former = true;
+    s = s.slice(fm[0].length);
+  }
+  s = s.replace(/(^|\s)(номер|ном\.?)(\s|$)/g, " ").trim();
+  const m = s.match(/^(?:([a-zа-я][a-zа-я0-9]*?)\s*)?[№#]?\s*0*(\d{1,3})$/);
+  if (!m) return null;
+  const number = Number(m[2]);
+  if (!Number.isFinite(number) || (number === 0 && !/0/.test(m[2]))) return null;
+  let model: string | null = null;
+  if (m[1]) {
+    const word = m[1];
+    model = MODEL_ALIASES.find(([re]) => re.test(word))?.[1] ?? word;
+  }
+  return { number, model, former };
+}
+
+/**
+ * Совпал ли скутер с запросом по номеру:
+ *   "current" — действующий номер;
+ *   "former"  — бывший номер (техника вне аренды);
+ *   "name"    — номер из названия («aima #01» при действующем №68): вслух
+ *               скутер называют так, как написано на нём.
+ */
+export function matchScooterNumber(
+  s: {
+    name?: string | null;
+    rentalSlot?: number | null;
+    exRentalSlot?: number | null;
+  },
+  q: ScooterNumberQuery,
+  modelLabel?: string,
+): "current" | "former" | "name" | null {
+  if (q.model) {
+    const hay = `${s.name ?? ""} ${modelLabel ?? ""}`.toLowerCase();
+    if (!hay.includes(q.model)) return null;
+  }
+  if (!q.former && s.rentalSlot != null && s.rentalSlot === q.number) return "current";
+  if (s.rentalSlot == null && s.exRentalSlot != null && s.exRentalSlot === q.number) {
+    return "former";
+  }
+  if (q.former) return null;
+  const inName = s.name ? extractScooterNumber(s.name) : null;
+  if (inName != null && Number(inName) === q.number) return "name";
+  return null;
+}
+
 /** Телефон ищется только когда в запросе ≥4 цифр подряд. Иначе false. */
 export function matchPhone(phone: string | undefined, q: Query): boolean {
   if (!phone || q.digits.length < 4) return false;

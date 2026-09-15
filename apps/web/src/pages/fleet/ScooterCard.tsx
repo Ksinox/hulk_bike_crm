@@ -60,6 +60,7 @@ import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast } from "@/lib/toast";
 import {
   ScooterName,
+  ExNumberTag,
   ScooterNumberBadge,
   scooterModelName,
 } from "@/components/ScooterName";
@@ -478,7 +479,6 @@ export function ScooterCard({
           <ScooterName
             name={scooter.name}
             number={scooter.rentalSlot}
-            exNumber={scooter.exRentalSlot}
             size={drawerChrome ? "md" : "lg"}
           />
         </h1>
@@ -515,12 +515,12 @@ export function ScooterCard({
             <Handshake size={13} /> Партнёрская
           </span>
         )}
-        {/* Пункт 16: ярлык «был в аренде» у техники вне арендного парка. */}
-        {scooter.rentalSlot == null && scooter.exRentalSlot != null && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-[12px] font-bold text-amber-800">
-            Был в аренде
-          </span>
-        )}
+        {/* Пункт 16 + 15.09: бывший номер — отдельной пометкой, не у названия. */}
+        <ExNumberTag
+          number={scooter.exRentalSlot}
+          current={scooter.rentalSlot}
+          size={drawerChrome ? "sm" : "md"}
+        />
         {/* В дровере распорку не ставим: кнопки идут подряд компактным
             рядом сразу за бейджами, а не разлетаются по краям. */}
         {!drawerChrome && <div className="flex-1" />}
@@ -952,7 +952,14 @@ export function ScooterCard({
                   </span>
                   {rentalSummary.numbers.length > 0 ? (
                     rentalSummary.numbers.map((n) => (
-                      <ScooterNumberBadge key={n} number={n} size="sm" tone="muted" />
+                      // История номеров — текстом, не чёрным кружком: кружок
+                      // значит действующий номер (15.09).
+                      <span
+                        key={n}
+                        className="inline-flex h-5 items-center rounded-full border border-border bg-surface px-1.5 text-[11px] font-bold tabular-nums text-muted"
+                      >
+                        №{n}
+                      </span>
                     ))
                   ) : (
                     <span className="text-[11px] text-muted-2">не присваивались</span>

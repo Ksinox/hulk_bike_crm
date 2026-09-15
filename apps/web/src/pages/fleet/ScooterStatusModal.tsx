@@ -109,7 +109,6 @@ export function ScooterStatusModal({
               <ScooterName
                 name={scooter.name}
                 number={scooter.rentalSlot}
-                exNumber={scooter.exRentalSlot}
               />
             </div>
           </div>

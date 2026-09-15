@@ -47,9 +47,11 @@ import {
   matchScooterName,
   matchText,
   normalizeQuery,
+  parseScooterNumberQuery,
+  matchScooterNumber,
 } from "@/lib/search";
 import { useRentals } from "@/pages/rentals/rentalsStore";
-import { ScooterName } from "@/components/ScooterName";
+import { ExNumberTag, ScooterName } from "@/components/ScooterName";
 import { ScooterCard } from "./ScooterCard";
 import { AddScooterModal } from "./AddScooterModal";
 
@@ -314,6 +316,7 @@ export function Fleet({
 
   const filtered = useMemo(() => {
     const q = normalizeQuery(query);
+    const numberQ = parseScooterNumberQuery(query);
     return modeRows
       .filter((r) => {
         // Проданная техника не показывается в парке аренды — её физически
@@ -339,21 +342,35 @@ export function Fleet({
           if (!byId && !byEnum) return false;
         }
         if (q.text) {
-          // Пункт 18: ищем и по номеру двигателя, раме, ID (4 цифры рамы)
-          // и месту в аренде — «по любым цифрам в данных скутера».
+          // Пункт 18: ищем и по номеру двигателя, раме, ID (4 цифры рамы).
+          // 15.09: номер скутера — «5», «05», «№5», «айма 01», «бывший 80».
+          // Короткое число — это номер: кусочек «1» есть почти в любом VIN,
+          // и нужный скутер тонул среди чужих.
+          const shortNumber = q.isNumeric && q.digits.length <= 3;
           const ok =
-            matchScooterName(r.scooter.name, q) ||
-            matchText(r.scooter.vin ?? undefined, q) ||
-            matchText(r.scooter.engineNo ?? undefined, q) ||
-            matchText(r.scooter.frameNumber ?? undefined, q) ||
-            matchText(r.scooter.uid ?? undefined, q) ||
-            (r.scooter.rentalSlot != null &&
-              String(r.scooter.rentalSlot) === q.text);
+            (numberQ != null &&
+              matchScooterNumber(r.scooter, numberQ, MODEL_LABEL[r.scooter.model]) != null) ||
+            (!shortNumber &&
+              (matchScooterName(r.scooter.name, q) ||
+                matchText(r.scooter.vin ?? undefined, q) ||
+                matchText(r.scooter.engineNo ?? undefined, q) ||
+                matchText(r.scooter.frameNumber ?? undefined, q) ||
+                matchText(r.scooter.uid ?? undefined, q)));
           if (!ok) return false;
         }
         return true;
       })
       .sort((a, b) => {
+        // Ищут номер — сначала действующий, потом бывший.
+        if (numberQ) {
+          const order = { current: 0, name: 1, former: 2 } as const;
+          const rank = (x: typeof a) => {
+            const hit = matchScooterNumber(x.scooter, numberQ, MODEL_LABEL[x.scooter.model]);
+            return hit ? order[hit] : 3;
+          };
+          const d = rank(a) - rank(b);
+          if (d !== 0) return d;
+        }
         if (sortBy === "mileage") {
           const diff =
             sortDir === "desc"
@@ -424,7 +441,9 @@ export function Fleet({
       <div className="flex min-w-0 items-start gap-4">
       <div className="flex min-w-0 flex-1 flex-col gap-4">
       {/* =========== Поиск + фильтр моделей + добавить =========== */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* relative z-20: окно фильтра моделей живёт внутри блока с transform
+          и без своего слоя рисовалось ПОД карточкой списка (15.09). */}
+      <div className="relative z-20 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[240px] flex-1">
           <Search
             size={16}
@@ -436,7 +455,7 @@ export function Fleet({
             onChange={(e) => {
               setQuery(e.target.value);
             }}
-            placeholder="Имя, VIN, № двигателя, рама, ID…"
+            placeholder="Номер, модель, VIN, № двигателя, рама, ID…"
             className="h-9 w-full rounded-full bg-surface pl-9 pr-12 text-[13px] text-ink shadow-card-sm outline-none placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
           />
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -689,7 +708,6 @@ function FleetRow({
           <ScooterName
             name={scooter.name}
             number={scooter.rentalSlot}
-            exNumber={scooter.exRentalSlot}
             className="text-[14px] font-bold text-ink"
           />
           <div className="truncate text-[11px] uppercase tracking-wider text-muted-2">
@@ -701,7 +719,7 @@ function FleetRow({
       {/* status (+ «был в аренде» — заказчик 06.09, п.5: метка нужна в списке) */}
       <div className="flex flex-col items-start gap-1 whitespace-nowrap">
         <StatusPill status={status} />
-        {wasRented && <ExRentalPill />}
+        {wasRented && <ExNumberTag number={scooter.exRentalSlot} />}
       </div>
 
       {/* client */}
@@ -813,7 +831,6 @@ function FleetTile({
           <ScooterName
             name={scooter.name}
             number={scooter.rentalSlot}
-            exNumber={scooter.exRentalSlot}
             className="text-[14px] font-bold text-ink"
           />
           <div className="truncate text-[10px] uppercase tracking-wider text-muted-2">
@@ -823,7 +840,7 @@ function FleetTile({
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <StatusPill status={status} />
-        {wasRented && <ExRentalPill />}
+        {wasRented && <ExNumberTag number={scooter.exRentalSlot} />}
         {oilState && <OilBadge state={oilState} />}
       </div>
       <div className="flex items-center justify-between gap-2 text-[11px]">
@@ -885,15 +902,6 @@ function ScooterAvatar({ model }: { model: ScooterModel }) {
         />
       </svg>
     </div>
-  );
-}
-
-/** Заказчик 06.09 (п.5): «был в аренде» видно в общем списке, не только в карточке. */
-function ExRentalPill() {
-  return (
-    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
-      Был в аренде
-    </span>
   );
 }
 

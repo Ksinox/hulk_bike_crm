@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useCan } from "@/lib/permissions";
 import { Handshake, Plus } from "lucide-react";
 import { ElectricMark } from "@/components/PowerTypeBadge";
-import { ScooterName } from "@/components/ScooterName";
+import { ExNumberTag, ScooterName } from "@/components/ScooterName";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
@@ -231,8 +231,11 @@ export function PartnerFleet({
                   <ScooterName
                     name={it.scooter.name}
                     number={it.scooter.rentalSlot}
-                    exNumber={it.scooter.exRentalSlot}
                     size="sm"
+                  />
+                  <ExNumberTag
+                    number={it.scooter.exRentalSlot}
+                    current={it.scooter.rentalSlot}
                   />
                   {it.isElectric && <ElectricMark size="sm" />}
                   <span className="truncate text-[11px] font-normal text-muted-2">

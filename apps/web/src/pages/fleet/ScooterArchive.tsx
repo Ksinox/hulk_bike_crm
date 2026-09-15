@@ -9,7 +9,7 @@ import {
 } from "@/lib/api/scooters";
 import type { ApiScooter } from "@/lib/api/types";
 import { confirmDialog } from "@/lib/toast";
-import { ScooterName } from "@/components/ScooterName";
+import { ExNumberTag, ScooterName } from "@/components/ScooterName";
 
 export function ScooterArchive() {
   const { data: items = [], isLoading } = useApiScootersArchived();
@@ -97,8 +97,8 @@ function ArchiveRow({
           <ScooterName
             name={s.name}
             number={s.rentalSlot}
-            exNumber={s.exRentalSlot}
           />
+          <ExNumberTag number={s.exRentalSlot} current={s.rentalSlot} />
         </div>
         {s.archivedReason && (
           <div className="mt-0.5 truncate text-[12px] font-medium text-ink-2">

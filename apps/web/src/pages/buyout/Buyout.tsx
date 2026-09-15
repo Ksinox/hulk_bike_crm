@@ -14,7 +14,7 @@ import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import type { ApiScooter } from "@/lib/api/types";
 import { availableForBuyout } from "@/lib/buyoutStock";
-import { ScooterName } from "@/components/ScooterName";
+import { ExNumberTag, ScooterName } from "@/components/ScooterName";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { cn } from "@/lib/utils";
@@ -380,12 +380,12 @@ function AvailableStock({
                   onClick={() => onOpenScooter(s.id)}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <div className="truncate text-[13.5px] font-bold text-ink">
+                  <div className="flex min-w-0 items-center gap-2 text-[13.5px] font-bold text-ink">
                     <ScooterName
                       name={s.name}
                       number={s.rentalSlot}
-                      exNumber={s.exRentalSlot}
                     />
+                    <ExNumberTag number={s.exRentalSlot} current={s.rentalSlot} />
                   </div>
                   <div className="truncate text-[12px] text-muted">
                     {modelName(s.modelId) ?? "—"} · VIN {s.vin || "—"} ·{" "}

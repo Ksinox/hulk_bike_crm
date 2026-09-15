@@ -18,10 +18,16 @@ import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
 import { MobileScooterCard } from "../cards/MobileScooterCard";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
-import { ScooterName } from "@/components/ScooterName";
+import { ExNumberTag, ScooterName } from "@/components/ScooterName";
 import { usePageFab } from "../fab";
 import type { ApiScooter, ScooterModel } from "@/lib/api/types";
-import { matchId, matchScooterName, normalizeQuery } from "@/lib/search";
+import {
+  matchId,
+  matchScooterName,
+  matchScooterNumber,
+  normalizeQuery,
+  parseScooterNumberQuery,
+} from "@/lib/search";
 import { cn } from "@/lib/utils";
 import {
   MobileChips,
@@ -164,10 +170,13 @@ export function MobileScooters() {
       if (filter === "sale") return st === "for_sale";
       return st === filter;
     };
+    const numberQ = parseScooterNumberQuery(search);
     const matchSearch = (s: ApiScooter): boolean => {
       if (!search.trim()) return true;
       const q = normalizeQuery(search);
       return (
+        // 15.09: номер скутера — «5», «05», «№5», «айма 01», «бывший 80».
+        (numberQ != null && matchScooterNumber(s, numberQ, MODEL_LABEL[s.model]) != null) ||
         matchScooterName(s.name, q) ||
         matchId(s.id, q) ||
         matchScooterName(s.vin ?? undefined, q)
@@ -175,7 +184,18 @@ export function MobileScooters() {
     };
     return (filter === "gone" ? goneList : live)
       .filter((s) => (filter === "gone" ? true : matchStatus(s)) && matchSearch(s))
-      .sort((a, b) => a.name.localeCompare(b.name, "ru", { numeric: true }));
+      .sort((a, b) => {
+        if (numberQ) {
+          const order = { current: 0, name: 1, former: 2 } as const;
+          const rank = (x: ApiScooter) => {
+            const hit = matchScooterNumber(x, numberQ, MODEL_LABEL[x.model]);
+            return hit ? order[hit] : 3;
+          };
+          const d = rank(a) - rank(b);
+          if (d !== 0) return d;
+        }
+        return a.name.localeCompare(b.name, "ru", { numeric: true });
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, goneList, filter, search, rentedSet]);
 
@@ -408,7 +428,6 @@ function ScooterTile({
             <ScooterName
               name={scooter.name}
               number={scooter.rentalSlot ?? undefined}
-              exNumber={scooter.exRentalSlot ?? undefined}
             />
           </div>
           <div className="truncate text-[12px] text-muted">
@@ -423,12 +442,8 @@ function ScooterTile({
           <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold", meta.cls)}>
             {meta.label}
           </span>
-          {/* Заказчик 06.09 (п.5): «был в аренде» — в списке, не только в карточке. */}
-          {scooter.rentalSlot == null && scooter.exRentalSlot != null && (
-            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-              был в аренде
-            </span>
-          )}
+          {/* Заказчик 06.09 (п.5) + 15.09: бывший номер отдельной пометкой. */}
+          <ExNumberTag number={scooter.exRentalSlot} current={scooter.rentalSlot} />
           {oilState && (
             <span
               className={cn(

@@ -10,6 +10,10 @@ import { cn } from "@/lib/utils";
  * показываем кружком — глазом сразу видно, на каком номере скутер.
  *
  * Ушёл из аренды (продажа/выкуп) — номер освобождается, кружка нет.
+ *
+ * 15.09 (заказчик): бывший номер кружком рядом с названием путали с
+ * действующим. Его показывает отдельная пометка `ExNumberTag` — в колонке
+ * статуса, в шапке карточки, но не у самого названия.
  */
 
 /** «Jog #03» → «Jog». Имя без решётки возвращаем как есть. */
@@ -20,26 +24,16 @@ export function scooterModelName(name: string | null | undefined): string {
 export function ScooterNumberBadge({
   number,
   size = "md",
-  tone = "ink",
 }: {
   number: number | null | undefined;
   size?: "sm" | "md" | "lg";
-  /** ink — обычный, muted — бывший номер (техника уже не в аренде). */
-  tone?: "ink" | "muted";
 }) {
   if (number == null) return null;
   return (
     <span
-      title={
-        tone === "muted"
-          ? `Был закреплён номер ${number}`
-          : `Номер в арендном парке: ${number}`
-      }
+      title={`Номер в арендном парке: ${number}`}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full font-bold tabular-nums",
-        tone === "ink"
-          ? "bg-ink text-white"
-          : "border border-border bg-surface text-muted",
+        "inline-flex shrink-0 items-center justify-center rounded-full bg-ink font-bold tabular-nums text-white",
         size === "lg"
           ? "h-7 min-w-7 px-1.5 text-[13px]"
           : size === "sm"
@@ -52,32 +46,55 @@ export function ScooterNumberBadge({
   );
 }
 
-/** Модель + номер: «Jog ⑤». */
+/** Модель + действующий номер: «Jog ⑤». Бывший номер — `ExNumberTag`. */
 export function ScooterName({
   name,
   number,
-  exNumber,
   size = "md",
   className,
 }: {
   name: string | null | undefined;
   /** Действующий арендный номер. */
   number?: number | null;
-  /** Бывший номер — показываем приглушённым, если техника вне аренды. */
-  exNumber?: number | null;
   size?: "sm" | "md" | "lg";
   className?: string;
 }) {
   const model = scooterModelName(name);
-  const showEx = number == null && exNumber != null;
   return (
     <span className={cn("inline-flex items-center gap-1.5", className)}>
       <span>{model}</span>
-      <ScooterNumberBadge
-        number={number ?? exNumber ?? null}
-        size={size}
-        tone={showEx ? "muted" : "ink"}
-      />
+      <ScooterNumberBadge number={number ?? null} size={size} />
+    </span>
+  );
+}
+
+/**
+ * Пометка «Бывший №80» — техника вне аренды, номер был закреплён раньше.
+ * Текстом и другим цветом, отдельно от названия: не спутать с действующим.
+ * Показывается, только если действующего номера нет.
+ */
+export function ExNumberTag({
+  number,
+  current,
+  size = "sm",
+  className,
+}: {
+  number: number | null | undefined;
+  current?: number | null;
+  size?: "sm" | "md";
+  className?: string;
+}) {
+  if (number == null || current != null) return null;
+  return (
+    <span
+      title="Номер, закреплённый за техникой, пока она была в арендном парке"
+      className={cn(
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-amber-100 font-bold uppercase tracking-wider text-amber-800",
+        size === "md" ? "px-3 py-1 text-[12px]" : "px-2 py-0.5 text-[10px]",
+        className,
+      )}
+    >
+      Бывший №{number}
     </span>
   );
 }

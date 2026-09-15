@@ -710,7 +710,6 @@ function InvestorDetails({
               <ScooterName
                 name={s.name}
                 number={s.rentalSlot ?? undefined}
-                exNumber={s.exRentalSlot ?? undefined}
                 className="font-bold text-ink"
               />
               <span className="text-[12px] text-muted-2">ID {s.uid ?? "—"}</span>

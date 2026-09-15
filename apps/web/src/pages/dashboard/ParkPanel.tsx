@@ -489,7 +489,6 @@ function ReassignDialog({
           <ScooterName
             name={scooter.name}
             number={scooter.rentalSlot}
-            exNumber={scooter.exRentalSlot}
             className="text-[15px] font-bold text-ink"
           />
         </div>
