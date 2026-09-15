@@ -147,6 +147,9 @@ export function Analytics() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+  // Планшет в телефонном слое (15.09): места хватает, поэтому кнопки шапки
+  // переносятся на вторую строку, а не уезжают в прокрутку за край.
+  const tabletLayer = isMobile && win.w >= 768;
   const wallBox = useMemo(() => {
     // На телефоне окно вертикальное, а второй монитор — горизонтальный.
     // Считать миниатюру по форме телефона было бы враньём, поэтому там
@@ -202,7 +205,7 @@ export function Analytics() {
       <header
         className={cn(
           "flex shrink-0 items-center gap-3",
-          isMobile ? "flex-nowrap overflow-x-auto pb-1" : "flex-wrap",
+          isMobile && !tabletLayer ? "flex-nowrap overflow-x-auto pb-1" : "flex-wrap",
         )}
       >
         {!isMobile && (
@@ -224,7 +227,7 @@ export function Analytics() {
         <div
           className={cn(
             "flex items-center gap-2",
-            isMobile ? "shrink-0" : "ml-auto flex-wrap",
+            isMobile && !tabletLayer ? "shrink-0" : "ml-auto flex-wrap",
           )}
         >
           <div className="flex shrink-0 gap-1 rounded-full bg-surface p-1 shadow-card-sm">
@@ -286,7 +289,7 @@ export function Analytics() {
           periodOf={periodOf}
           compact={flow}
           // Планшет (с 15.09 — телефонный слой) и узкое окно: две колонки.
-          columns={isTablet || (isMobile && win.w >= 768) ? 2 : 1}
+          columns={isTablet || tabletLayer ? 2 : 1}
         />
       ) : (
         <div className={cn("flex min-h-0 flex-1 gap-3", flow ? "flex-col" : "flex-row")}>
