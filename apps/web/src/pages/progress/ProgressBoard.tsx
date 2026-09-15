@@ -56,6 +56,12 @@ const STATUS_META: Record<
   ProgressStatus,
   { label: string; pill: string; dot: string; ring: string }
 > = {
+  live: {
+    label: "В работе",
+    pill: "bg-green-soft text-green-ink",
+    dot: "bg-green-ink",
+    ring: "ring-green-soft",
+  },
   accepted: {
     label: "Принято",
     pill: "bg-green-soft text-green-ink",
@@ -69,7 +75,7 @@ const STATUS_META: Record<
     ring: "ring-blue-100",
   },
   in_progress: {
-    label: "В работе",
+    label: "В разработке",
     pill: "bg-amber-100 text-amber-800",
     dot: "bg-amber-500",
     ring: "ring-amber-100",
@@ -166,9 +172,12 @@ export function ProgressBoard() {
                 </>
               ) : (
                 <>
-                  {s.total} {pluralRu(s.total, "пункт", "пункта", "пунктов")} в
-                  работе. Каждый проходит проверку на тестовом окружении и
-                  переносится в рабочую систему только после согласования.
+                  <b className="text-white/85">
+                    {s.live} {pluralRu(s.live, "пункт", "пункта", "пунктов")}
+                  </b>{" "}
+                  {pluralRu(s.live, "уже работает", "уже работают", "уже работают")} в
+                  CRM. Новые пункты сначала проходят проверку на тестовой
+                  версии и переносятся в рабочую систему после согласования.
                 </>
               )}
             </p>
@@ -180,12 +189,16 @@ export function ProgressBoard() {
 
       {/* ─────────────── СТАТИСТИКА ─────────────── */}
       <div
-        className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-border sm:grid-cols-4"
+        className={cn(
+          "mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-border",
+          s.accepted > 0 ? "sm:grid-cols-5" : "sm:grid-cols-4",
+        )}
         style={{ animation: "wnFadeUp .5s ease-out both", animationDelay: "80ms" }}
       >
-        <Stat value={s.accepted} label="Принято" tone="green" />
+        <Stat value={s.live} label="В работе" tone="green" />
+        {s.accepted > 0 && <Stat value={s.accepted} label="Принято" tone="green" />}
         <Stat value={s.done} label="На проверке" tone="blue" />
-        <Stat value={s.inProgress} label="В работе" tone="amber" />
+        <Stat value={s.inProgress} label="В разработке" tone="amber" />
         <Stat value={s.planned} label="Запланировано" tone="muted" />
       </div>
 
@@ -237,7 +250,7 @@ export function ProgressBoard() {
         {progressGroups.map((g, gi) => {
           const items = progressItems.filter((i) => i.group === g.key);
           if (items.length === 0) return null;
-          const acc = items.filter((i) => i.status === "accepted").length;
+          const acc = items.filter((i) => i.status === "accepted" || i.status === "live").length;
           return (
             <section
               key={g.key}
