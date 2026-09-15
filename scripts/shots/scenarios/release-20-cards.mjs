@@ -79,13 +79,16 @@ export async function run(page, ctx) {
   await ctx.sleep(1600);
   await save("d-search");
 
-  // экран входа — без сессии
+  // экран входа — без сессии (для карточки его снимает release-20-login.mjs)
+  if (process.env.REL_ONLY === "desktop") return;
   const cookies = await page.cookies(ctx.base.replace("crm-", "api-"));
   await page.deleteCookie(...cookies);
   await page.goto(ctx.base + "/", { waitUntil: "domcontentloaded" });
   await ctx.sleep(4500);
   await save("d-login");
   await page.setCookie(...cookies);
+
+  if (process.env.REL_ONLY === "desktop") return;
 
   /* ---------------- телефон ---------------- */
   await page.setUserAgent(PHONE_UA);

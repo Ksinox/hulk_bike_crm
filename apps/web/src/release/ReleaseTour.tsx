@@ -584,21 +584,77 @@ function CardsScreen({
   );
 }
 
+/**
+ * «Было / стало» с ползунком. Как в концепте: сразу после открытия линия сама
+ * проходит влево и вправо — человек видит, что сравнение двигается. Плюс
+ * ручка на линии и подпись «потяните», пока её не тронули.
+ */
 function BeforeAfter({ before, after, pos, title }: { before: string; after: string; pos: string; title: string }) {
   const [v, setV] = useState(50);
+  const [touched, setTouched] = useState(false);
+  const touchedRef = useRef(false);
+
+  useEffect(() => {
+    if (reduceMotion()) return;
+    const frames: Array<[number, number]> = [[0, 50], [650, 22], [1300, 76], [1850, 50]];
+    let raf = 0;
+    let t0 = 0;
+    const tick = (now: number) => {
+      if (touchedRef.current) return;
+      if (!t0) t0 = now;
+      const t = now - t0;
+      let val = 50;
+      for (let i = 1; i < frames.length; i++) {
+        const [ta, va] = frames[i - 1]!;
+        const [tb, vb] = frames[i]!;
+        if (t <= tb) {
+          const k = (t - ta) / (tb - ta);
+          val = va + (vb - va) * (0.5 - Math.cos(Math.PI * k) / 2);
+          break;
+        }
+        val = vb;
+      }
+      setV(val);
+      if (t < frames[frames.length - 1]![0]) raf = requestAnimationFrame(tick);
+    };
+    const start = window.setTimeout(() => {
+      raf = requestAnimationFrame(tick);
+    }, 500);
+    return () => {
+      window.clearTimeout(start);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  const grab = () => {
+    touchedRef.current = true;
+    setTouched(true);
+  };
+
   return (
     <div className="rt-ba" style={{ ["--pos" as string]: `${v}%` }}>
       <img src={after} alt={`Стало: ${title}`} style={{ objectPosition: pos }} />
       <img className="rt-ba-before" src={before} alt={`Было: ${title}`} style={{ objectPosition: pos }} />
       <div className="rt-ba-line" />
+      <div className="rt-ba-knob" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 6l-6 6 6 6M15 6l6 6-6 6" />
+        </svg>
+      </div>
+      {!touched && <span className="rt-ba-hint">Потяните, чтобы сравнить</span>}
       <span className="rt-ba-tag l">Было</span>
       <span className="rt-ba-tag r">Стало</span>
       <input
         type="range"
         min={0}
         max={100}
+        step={0.5}
         value={v}
-        onChange={(e) => setV(Number(e.target.value))}
+        onPointerDown={grab}
+        onChange={(e) => {
+          grab();
+          setV(Number(e.target.value));
+        }}
         aria-label="Сравнить: было и стало"
       />
     </div>

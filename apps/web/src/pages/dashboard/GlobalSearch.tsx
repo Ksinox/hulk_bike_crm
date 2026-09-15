@@ -182,7 +182,10 @@ export function GlobalSearch() {
       </div>
 
       {show && !full && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl bg-surface shadow-card-lg ring-1 ring-border">
+        // 15.09 (заказчик): список шире поля — строку совпадения читают
+        // прямо отсюда, на весь экран уходят только при большом числе
+        // совпадений. Поле на узкой шапке сжимается до 112px, список — нет.
+        <div className="absolute left-0 top-full z-50 mt-1.5 w-[min(560px,calc(100vw-120px))] overflow-hidden rounded-xl bg-surface shadow-card-lg ring-1 ring-border">
           {all.length === 0 ? (
             <div className="px-3.5 py-3 text-[13px] text-muted">
               Ничего не нашли по «{query}»

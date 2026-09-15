@@ -139,6 +139,18 @@
 .rt-ba-tag.l { left: .8em; }
 .rt-ba-tag.r { right: .8em; background: #6CAD2F; color: #0a1205; }
 .rt-ba input[type="range"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: ew-resize; margin: 0; }
+/* ручка на линии — видно, что сравнение тянется */
+.rt-ba-knob {
+  position: absolute; top: 50%; left: var(--pos); width: 2.6em; height: 2.6em; margin: -1.3em 0 0 -1.3em;
+  display: grid; place-items: center; border-radius: 50%; pointer-events: none;
+  background: #fff; color: #0f172a; box-shadow: 0 .4em 1.2em -.3em rgba(15,23,42,.55), 0 0 0 1px rgba(15,23,42,.12);
+}
+.rt-ba-hint {
+  position: absolute; left: var(--pos); top: calc(50% + 1.9em); transform: translateX(-50%);
+  white-space: nowrap; pointer-events: none; padding: .4em .75em; border-radius: 999px;
+  background: rgba(15,23,42,.82); color: #fff; font: 600 .78em/1 "Inter", sans-serif;
+  animation: rt-rise .4s ease-out .3s both;
+}
 
 @media (max-width: 767px) {
   .rt-sheet { width: 100vw; height: 100dvh; border-radius: 0; grid-template-columns: 1fr; grid-template-rows: 47% 53%; }

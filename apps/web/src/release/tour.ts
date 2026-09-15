@@ -104,7 +104,7 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       audience: "managers",
       devices: ["desktop", "phone"],
       img: { desktop: `${R}/d-staff.jpg`, phone: `${R}/m-staff.jpg` },
-      imgPos: { desktop: "center top", phone: "center top" },
+      imgPos: { desktop: "left top", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-staff", "nav-more"] }, text: "Раздел «Сотрудники» — в меню слева." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне — в меню «Ещё»." },
@@ -128,7 +128,7 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       audience: "all",
       devices: ["desktop", "phone"],
       img: { desktop: `${R}/d-sales.jpg`, phone: `${R}/m-sales.jpg` },
-      imgPos: { desktop: "18% top", phone: "center top" },
+      imgPos: { desktop: "left top", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-sales", "nav-more"] }, text: "Новый раздел — в меню слева, иконка кошелька." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне раздел живёт в меню «Ещё»." },
@@ -152,7 +152,7 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       audience: "all",
       devices: ["desktop", "phone"],
       img: { desktop: `${R}/d-buyout.jpg`, phone: `${R}/m-buyout.jpg` },
-      imgPos: { desktop: "18% top", phone: "center top" },
+      imgPos: { desktop: "left top", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-rassrochki", "nav-more"] }, text: "Раздел — в меню слева, иконка чека." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне — в меню «Ещё»." },
@@ -175,9 +175,11 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       ],
       audience: "all",
       devices: ["desktop", "phone"],
-      before: { desktop: "/progress/b-sv-1-service.jpg" },
-      img: { desktop: `${R}/d-service.jpg`, phone: `${R}/m-service.jpg` },
-      imgPos: { desktop: "18% top", phone: "center top" },
+      // «Было» и «стало» — одного размера окна (1600×950), иначе половинки
+      // сравнения не совпадают.
+      before: { desktop: `${R}/d-service-was.jpg` },
+      img: { desktop: `${R}/d-service-ba.jpg`, phone: `${R}/m-service.jpg` },
+      imgPos: { desktop: "left top", phone: "center top" },
       path: { phone: { anchor: { tour: ["tab-more"] }, text: "Раздел на прежнем месте — в «Ещё»." } },
       hints: {
         desktop: [
@@ -201,7 +203,7 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       audience: "all",
       devices: ["desktop", "phone"],
       img: { desktop: `${R}/d-analytics.jpg`, phone: `${R}/m-analytics.jpg` },
-      imgPos: { desktop: "18% top", phone: "center top" },
+      imgPos: { desktop: "left top", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-analytics", "nav-more"] }, text: "Раздел — в меню слева." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне — в меню «Ещё»." },
@@ -229,7 +231,7 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       audience: "all",
       devices: ["desktop"],
       img: { desktop: `${R}/d-search.jpg` },
-      imgPos: { desktop: "12% top" },
+      imgPos: { desktop: "left top" },
       hints: {
         desktop: [{ anchor: { placeholder: "Поиск: клиент" }, title: "Поиск", text: "Вбейте номер скутера, VIN или телефон — CRM покажет, где совпало." }],
       },
@@ -247,9 +249,11 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       ],
       audience: "all",
       devices: ["phone"],
+      // «Было» и «стало» — кадры одного кадрирования из «Развития» (п. 2.71),
+      // иначе половинки сравнения не совпадают.
       before: { phone: "/progress/mb-was-deals.jpg" },
-      img: { phone: `${R}/m-deals.jpg` },
-      imgPos: { phone: "center bottom" },
+      img: { phone: "/progress/mb-now-deals.jpg" },
+      imgPos: { phone: "center top" },
       hints: {
         phone: [{ anchor: { tour: ["fab"] }, title: "Сделка", text: "Продажа, выкуп и ремонт теперь заводятся и с телефона." }],
       },
