@@ -36,6 +36,7 @@ import { Analytics } from "@/pages/analytics/Analytics";
 import { Buyout } from "@/pages/buyout/Buyout";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
 import { DayReportDialog } from "@/components/DayReport";
+import { TABLET_COLUMN } from "./tablet";
 
 /**
  * Корень мобильного слоя. Полностью отдельная оболочка: верхняя панель,
@@ -100,8 +101,10 @@ export function MobileApp({
 
         <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 overscroll-contain">
           {/* key={route} + fade — плавный переход между вкладками вместо резкой
-              подмены контента. */}
-          <div key={route} className="animate-fade-in">
+              подмены контента. На планшете контент — колонкой по центру:
+              строка списка во всю ширину 1180–1366px не читается (имя у
+              левого края, сумма у правого). */}
+          <div key={route} className={cn("mx-auto w-full animate-fade-in", TABLET_COLUMN)}>
             <MobilePage route={route} onSelect={go} />
           </div>
         </main>
@@ -117,7 +120,9 @@ export function MobileApp({
           <button
             type="button"
             onClick={fab.onClick}
-            className="absolute bottom-[calc(72px+env(safe-area-inset-bottom))] right-4 z-30 flex h-14 items-center gap-2 rounded-full bg-blue-600 px-5 text-[15px] font-bold text-white shadow-card-lg active:scale-95"
+            // Правый край кнопки — по краю колонки контента (960px, см.
+            // mobile/tablet.ts), а не экрана.
+            className="absolute bottom-[calc(72px+env(safe-area-inset-bottom))] right-[max(1rem,calc((100%_-_960px)/2_+_1rem))] z-30 flex h-14 items-center gap-2 rounded-full bg-blue-600 px-5 text-[15px] font-bold text-white shadow-card-lg active:scale-95"
           >
             <Plus size={20} strokeWidth={2.5} />
             {fab.label}
@@ -225,7 +230,8 @@ function MobileTopBar({ title }: { title: string }) {
   // Пункт 7: сводка дня (Z-отчёт) — доступна в любой момент с телефона.
   const [dayReportOpen, setDayReportOpen] = useState(false);
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)]">
+    <header className="shrink-0 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)]">
+      <div className={cn("mx-auto flex h-14 w-full items-center gap-3", TABLET_COLUMN)}>
       <BrandLogo className="h-9 w-9 rounded-[10px]" />
       <h1 className="font-display text-[18px] font-bold tracking-tight text-ink">
         {title}
@@ -242,6 +248,7 @@ function MobileTopBar({ title }: { title: string }) {
         {/* Пункт 1: подтверждения ключа директора — сценарий «директор с
             телефона видит висящий запрос и подтверждает». */}
         <ApprovalsBell />
+      </div>
       </div>
       {dayReportOpen && (
         <DayReportDialog onClose={() => setDayReportOpen(false)} />
@@ -346,7 +353,7 @@ function MoreSheet({
       <div
         onClick={(e) => e.stopPropagation()}
         style={sheetStyle}
-        className="rounded-t-3xl bg-surface px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up"
+        className="mx-auto w-full max-w-[640px] rounded-t-3xl bg-surface px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up"
       >
         <SheetHandle handleProps={handleProps} />
         <div className="grid grid-cols-4 gap-2">

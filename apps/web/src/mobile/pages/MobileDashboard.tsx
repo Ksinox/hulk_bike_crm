@@ -43,6 +43,7 @@ import {
   type OverdueItem,
   type ReturnItem,
 } from "@/pages/dashboard/useDashboardMetrics";
+import { TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
 
 /**
  * Мобильный дашборд. Переиспользует тот же data-хук, что и десктоп
@@ -343,7 +344,7 @@ export function MobileDashboard({
           не задействуем: это быстрый операционный список просрочек. */}
       {overdueListOpen && (
         <div className="fixed inset-0 z-[50] flex h-[100dvh] min-h-0 flex-col bg-bg animate-slide-in-right">
-          <header className="flex items-center gap-2 border-b border-border bg-surface px-2 py-2.5">
+          <header className={cn("flex items-center gap-2 border-b border-border bg-surface px-2 py-2.5", TABLET_PAD_X_HEADER)}>
             <button
               type="button"
               onClick={() => setOverdueListOpen(false)}
@@ -363,7 +364,7 @@ export function MobileDashboard({
               </div>
             </div>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+          <div className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain p-3", TABLET_PAD_X)}>
             {m.overdue.length === 0 ? (
               <EmptyRow text="Просрочек нет — все аренды в графике" />
             ) : (

@@ -88,6 +88,7 @@ import {
 } from "./overdueAsOf";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileNumPad } from "@/mobile/MobileNumPad";
+import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 
 // v0.4.30: терминала для карт у бизнеса нет — только наличные и
 // перевод. «card» остаётся в типе PaymentMethod ради обратной
@@ -3789,7 +3790,9 @@ export function PaymentAcceptDialog({
     return (
       <>
         {actPreview}
-        <div className="fixed inset-0 z-[100] flex flex-col bg-surface animate-fade-in">
+        <div className="fixed inset-0 z-[100] flex flex-col bg-surface lg:items-center lg:bg-ink/45 lg:backdrop-blur-sm animate-fade-in">
+          {/* Планшет: мастер колонкой по центру (mobile/tablet.ts). */}
+          <div className={TABLET_WIZARD_PANEL}>
           {/* HEADER */}
           <div className="flex items-center gap-2 border-b border-border bg-surface-soft px-3 py-2.5">
             <button
@@ -4155,7 +4158,7 @@ export function PaymentAcceptDialog({
               onClick={() => setForgiveMenuOpen(false)}
             >
               <div
-                className="rounded-t-3xl bg-surface pb-[max(env(safe-area-inset-bottom),1rem)] shadow-card-lg animate-sheet-up"
+                className="mx-auto w-full max-w-[640px] rounded-t-3xl bg-surface pb-[max(env(safe-area-inset-bottom),1rem)] shadow-card-lg animate-sheet-up"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex justify-center pb-1 pt-2.5">
@@ -4285,6 +4288,7 @@ export function PaymentAcceptDialog({
               }}
             />
           )}
+          </div>
         </div>
         <ReturnDamagePicker intake={intake} />
       </>
@@ -4346,7 +4350,9 @@ export function PaymentAcceptDialog({
     return (
       <>
         {actPreview}
-        <div className="fixed inset-0 z-[100] flex flex-col bg-surface animate-fade-in">
+        <div className="fixed inset-0 z-[100] flex flex-col bg-surface lg:items-center lg:bg-ink/45 lg:backdrop-blur-sm animate-fade-in">
+          {/* Планшет: мастер колонкой по центру (mobile/tablet.ts). */}
+          <div className={TABLET_WIZARD_PANEL}>
           {/* HEADER */}
           <div className="flex items-center gap-2 border-b border-border bg-surface-soft px-3 py-2.5">
             <button
@@ -4752,7 +4758,7 @@ export function PaymentAcceptDialog({
               onClick={() => setForgiveMenuOpen(false)}
             >
               <div
-                className="rounded-t-3xl bg-surface pb-[max(env(safe-area-inset-bottom),1rem)] shadow-card-lg animate-sheet-up"
+                className="mx-auto w-full max-w-[640px] rounded-t-3xl bg-surface pb-[max(env(safe-area-inset-bottom),1rem)] shadow-card-lg animate-sheet-up"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex justify-center pb-1 pt-2.5">
@@ -4836,6 +4842,7 @@ export function PaymentAcceptDialog({
               }}
             />
           )}
+          </div>
         </div>
       </>
     );

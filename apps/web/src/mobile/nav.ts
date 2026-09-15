@@ -95,6 +95,9 @@ export function routeTitle(route: RouteId): string {
     partners: "Партнёрка",
     analytics: "Аналитика",
     settings: "Настройки",
+    sales: "Продажи",
+    rassrochki: "Выкуп",
+    progress: "Развитие",
   };
   return all[route] ?? "Халк Байк";
 }

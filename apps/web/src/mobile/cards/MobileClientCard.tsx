@@ -55,6 +55,7 @@ import {
 import { navigate } from "@/app/navigationStore";
 import { scooterModelName } from "@/components/ScooterName";
 import type { CardTab } from "@/pages/clients/ClientCard";
+import { TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
 
 function daysWord(n: number): string {
   const n10 = n % 10;
@@ -173,7 +174,7 @@ export function MobileClientCard({
   return (
     <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-bg animate-slide-in-right">
       {/* Шапка экрана: назад · «Клиент» · редактировать */}
-      <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border bg-surface px-2 pt-[env(safe-area-inset-top)]">
+      <header className={cn("flex h-14 shrink-0 items-center gap-1 border-b border-border bg-surface px-2 pt-[env(safe-area-inset-top)]", TABLET_PAD_X_HEADER)}>
         <button
           type="button"
           onClick={onBack}
@@ -195,7 +196,7 @@ export function MobileClientCard({
         </button>
       </header>
 
-      <main className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3 pb-8 overscroll-contain">
+      <main className={cn("min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3 pb-8 overscroll-contain", TABLET_PAD_X)}>
         {/* ===== Герой: аватар + имя + бейджи + телефоны ===== */}
         <section className="rounded-2xl bg-surface p-4 shadow-card-sm">
           <div className="flex items-start gap-3.5">

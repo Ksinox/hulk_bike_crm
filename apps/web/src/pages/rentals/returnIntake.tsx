@@ -18,6 +18,7 @@ import { useApiEquipment } from "@/lib/api/equipment";
 import { useApiPriceList } from "@/lib/api/price-list";
 import { fileUrl } from "@/lib/files";
 import type { DamageSeedItem } from "./DamageReportDialog";
+import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 
 /**
  * v0.9 (Этап 2): приёмка позиций при завершении аренды, вынесенная из
@@ -940,7 +941,9 @@ function DamagePicker({
   // нативную клавиатуру. Выезжает как полный экран поверх мастера закрытия.
   if (isMobile) {
     return (
-      <div className="fixed inset-0 z-[130] flex flex-col bg-surface animate-fade-in">
+      <div className="fixed inset-0 z-[130] flex flex-col bg-surface lg:items-center lg:bg-ink/45 lg:backdrop-blur-sm animate-fade-in">
+        {/* Планшет: мастер колонкой по центру (mobile/tablet.ts). */}
+        <div className={TABLET_WIZARD_PANEL}>
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-border bg-surface-soft px-3 py-2.5">
           <button
@@ -1189,6 +1192,7 @@ function DamagePicker({
             }}
           />
         )}
+        </div>
       </div>
     );
   }

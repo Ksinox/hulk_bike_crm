@@ -30,6 +30,7 @@ import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
 import { RentalCard } from "@/pages/rentals/RentalCard";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { MobileChips } from "../ui";
+import { TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
 
 /**
  * Мобильная полноэкранная сводка выручки — мобильная версия RevenueListModal.
@@ -106,7 +107,7 @@ export function MobileRevenueScreen({
   return (
     <div className="fixed inset-0 z-[60] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface-soft animate-slide-in-right">
       {/* Шапка */}
-      <div className="flex items-center gap-2 border-b border-border bg-surface px-3 py-2.5">
+      <div className={cn("flex items-center gap-2 border-b border-border bg-surface px-3 py-2.5", TABLET_PAD_X_HEADER)}>
         <button
           type="button"
           onClick={onClose}
@@ -121,7 +122,7 @@ export function MobileRevenueScreen({
       </div>
 
       {/* Контролы: период (чипсы + произвольный диапазон) + способ оплаты */}
-      <div className="flex flex-col gap-2 border-b border-border bg-surface px-3 py-2">
+      <div className={cn("flex flex-col gap-2 border-b border-border bg-surface px-3 py-2", TABLET_PAD_X)}>
         <MobileChips
           options={[
             { id: "day" as RevenuePeriod, label: "День" },
@@ -233,7 +234,7 @@ export function MobileRevenueScreen({
       </div>
 
       {/* Прокручиваемое тело: аналитика + детализация платежей */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 pb-20">
+      <div className={cn("flex-1 overflow-y-auto scrollbar-thin px-3 py-3 pb-20", TABLET_PAD_X)}>
         <RevenueDashboard
           a={a}
           periodLabel={periodLabel}

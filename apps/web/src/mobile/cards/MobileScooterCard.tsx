@@ -51,6 +51,7 @@ import { toast } from "@/lib/toast";
 import { askArchiveReason } from "@/pages/fleet/archiveReason";
 import type { Rental } from "@/lib/mock/rentals";
 import type { ApiClient } from "@/lib/api/types";
+import { TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
 
 type TabId =
   | "overview"
@@ -242,7 +243,7 @@ export function MobileScooterCard({
   return (
     <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-bg animate-slide-in-right">
       {/* Шапка */}
-      <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border bg-surface px-2 pt-[env(safe-area-inset-top)]">
+      <header className={cn("flex h-14 shrink-0 items-center gap-1 border-b border-border bg-surface px-2 pt-[env(safe-area-inset-top)]", TABLET_PAD_X_HEADER)}>
         <button
           type="button"
           onClick={onBack}
@@ -268,7 +269,7 @@ export function MobileScooterCard({
         </button>
       </header>
 
-      <main className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3 pb-8 overscroll-contain">
+      <main className={cn("min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3 pb-8 overscroll-contain", TABLET_PAD_X)}>
         {/* ===== Пилюли-табы: наверху, липкие ===== */}
         <div className="no-scrollbar sticky -top-3 z-10 -mx-3 bg-bg/95 px-3 py-1 backdrop-blur overflow-x-auto">
           <div className="flex w-max gap-1.5">

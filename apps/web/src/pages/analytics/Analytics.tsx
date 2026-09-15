@@ -285,7 +285,8 @@ export function Analytics() {
           values={values}
           periodOf={periodOf}
           compact={flow}
-          columns={isTablet ? 2 : 1}
+          // Планшет (с 15.09 — телефонный слой) и узкое окно: две колонки.
+          columns={isTablet || (isMobile && win.w >= 768) ? 2 : 1}
         />
       ) : (
         <div className={cn("flex min-h-0 flex-1 gap-3", flow ? "flex-col" : "flex-row")}>

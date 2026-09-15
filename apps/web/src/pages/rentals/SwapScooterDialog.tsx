@@ -23,6 +23,7 @@ import { SCOOTER_BASE_STATUS_OPTIONS } from "@/pages/fleet/scooterStatusOptions"
 import type { ApiScooter, ScooterBaseStatus } from "@/lib/api/types";
 import { ScooterPosterAvatar } from "./ScooterPosterAvatar";
 import { ScooterName, scooterModelName } from "@/components/ScooterName";
+import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 
 type OldStatus = ScooterBaseStatus;
 
@@ -296,10 +297,12 @@ export function SwapScooterDialog({
     return (
       <div
         className={cn(
-          "fixed inset-0 z-[120] flex flex-col bg-surface",
+          "fixed inset-0 z-[120] flex flex-col bg-surface lg:items-center lg:bg-ink/45 lg:backdrop-blur-sm",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
       >
+        {/* Планшет: мастер колонкой по центру (mobile/tablet.ts). */}
+        <div className={TABLET_WIZARD_PANEL}>
         {/* HEADER + ПРОГРЕСС */}
         <div className="border-b border-border bg-surface-soft px-4 pb-2.5 pt-3">
           <div className="flex items-center gap-2">
@@ -616,6 +619,7 @@ export function SwapScooterDialog({
               Заменить и распечатать акт
             </button>
           )}
+        </div>
         </div>
       </div>
     );

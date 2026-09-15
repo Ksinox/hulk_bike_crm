@@ -6,8 +6,8 @@ import { useEffect, useState } from "react";
  * Используется на уровне App для ветвления десктоп/мобайл-слоя:
  * на узких экранах рендерится отдельная мобильная оболочка (MobileApp),
  * десктоп-путь при этом не меняется. Брейкпоинт по умолчанию — 768px
- * (Tailwind `md`): телефоны и узкие окна получают мобильную раскладку,
- * планшеты в альбомной/десктоп — обычную.
+ * (Tailwind `md`): телефоны и узкие окна получают мобильную раскладку.
+ * Планшеты (основной указатель — палец) — тоже, при любой ширине.
  */
 /**
  * Тест-оверрайд: позволяет принудительно включить мобильную раскладку на
@@ -52,16 +52,23 @@ function computeIsMobile(breakpoint: number): boolean {
   const forced = forcedMobile();
   if (forced !== null) return forced;
   if (typeof window === "undefined") return false;
-  const w = window.innerWidth;
-  if (w < breakpoint) return true;
+  if (window.innerWidth < breakpoint) return true;
+  // 15.09: планшет получает телефонный слой при любой ширине — заказчик:
+  // «планшетная версия ближе к мобильной». На ширину и браузер не смотрим:
+  // Safari на iPad выдаёт себя за Mac, а iPad Pro в повороте шире 1300px.
+  // Признак — основной указатель палец (coarse). Компьютер с сенсорным
+  // экраном, где основной указатель мышь, остаётся на компьютерной версии.
+  return isTouchPrimary();
+}
+
+/** Основной указатель — палец: телефон или планшет (iPad, Android). */
+export function isTouchPrimary(): boolean {
+  if (typeof window === "undefined") return false;
   try {
-    const coarse =
-      window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
-    if (coarse && Math.min(w, window.innerHeight) < breakpoint) return true;
+    return window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
   } catch {
-    /* ignore */
+    return false;
   }
-  return false;
 }
 
 export function useIsMobile(breakpoint = 768): boolean {
@@ -85,12 +92,13 @@ export function useIsMobile(breakpoint = 768): boolean {
 }
 
 /**
- * Планшет и узкое окно (07.09, заказчик купил планшет).
+ * Узкое окно компьютера (07.09).
  *
  * Это НЕ мобильный слой: оболочка остаётся десктопной (сайдбар, топбар).
- * Но экран узкий и работают пальцем, поэтому плотные десктопные сетки на
- * нём разъезжаются — колонки ужимаются, заголовки обрезаются. Такие
- * экраны получают «поточную» раскладку: меньше колонок и прокрутка.
+ * Но плотные десктопные сетки в узком окне разъезжаются — колонки
+ * ужимаются, заголовки обрезаются. Такие экраны получают «поточную»
+ * раскладку: меньше колонок и прокрутка. Сам планшет с 15.09 открывает
+ * телефонный слой (см. computeIsMobile), здесь остаются узкие окна.
  *
  * Порог 1200px по ширине: ниже него «обзор» аналитики ужимал колонку до
  * ~250px, и половина строк заканчивалась многоточием.
