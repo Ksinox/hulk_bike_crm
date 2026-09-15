@@ -38,9 +38,10 @@ export type BillingPeriodCurrent = {
   transitionActive: boolean;
 };
 
-export function useBillingPeriodAnchors() {
+export function useBillingPeriodAnchors(opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: keys.anchors(),
+    enabled: opts?.enabled ?? true,
     queryFn: async () => {
       const r = await api.get<{ items: BillingAnchor[] }>(
         "/api/billing-period/anchors",

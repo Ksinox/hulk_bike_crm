@@ -26,9 +26,10 @@ const keys = {
  * правды теперь ТОЛЬКО якоря (useBillingPeriodAnchors в App.tsx). Плоское
  * billing_period_start_day осталось лишь для обратной совместимости сервера.
  */
-export function useAppSettings() {
+export function useAppSettings(opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: keys.list(),
+    enabled: opts?.enabled ?? true,
     queryFn: async () => {
       const r = await api.get<{ items: AppSetting[] }>("/api/app-settings");
       const map = new Map(r.items.map((s) => [s.key, s.value]));

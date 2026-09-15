@@ -66,6 +66,9 @@ export function App() {
   })();
   useEffect(() => {
     const onEnded = () => {
+      // Только если человек внутри CRM. На экране входа сессии и так нет:
+      // перезапрос /me пересоздавал форму и стирал набираемый пароль.
+      if (!queryClient.getQueryData(authKeys.me)) return;
       void queryClient.invalidateQueries({ queryKey: authKeys.me });
     };
     window.addEventListener("hulk:session-ended", onEnded);
@@ -74,11 +77,14 @@ export function App() {
   // v0.4.1: подгружаем глобальные настройки на старте — внутри хука
   // billing_period_start_day прокидывается в lib/billingPeriod (легаси
   // быстрый путь).
-  useAppSettings();
+  //
+  // 15.09: только после входа. На экране входа эти запросы получали 401 раз
+  // в 30 секунд и на каждый фокус окна (на телефоне — открытие клавиатуры).
+  useAppSettings({ enabled: !!me });
   // v0.7: источник правды расчётного периода — якоря (anchors). Хук грузит
   // их с сервера и прокидывает в lib/billingPeriod, перетирая плоское
   // значение app_settings. Так смена дня старта не переписывает прошлое.
-  useBillingPeriodAnchors();
+  useBillingPeriodAnchors({ enabled: !!me });
   const [webUpdate, setWebUpdate] = useState<string | null>(null);
   const [route, setRoute] = useState<RouteId>(() => loadRoute());
 
