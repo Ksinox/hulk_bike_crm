@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { BrandLogo } from "@/components/BrandLogo";
 import {
   BarChart3,
   Bike,
@@ -243,17 +244,8 @@ export function Sidebar({
           transitionTimingFunction: "cubic-bezier(0.22,1,0.36,1)",
         }}
       >
-        <div className="mb-[10px] ml-1 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[14px] bg-ink text-white">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" />
-            <path
-              d="M8 7v10M16 7v10M8 12h8"
-              stroke="#fff"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </div>
+        {/* 15.09: настоящий логотип «Халк Байк» вместо заглушки «H в круге». */}
+        <BrandLogo className="mb-[10px] ml-1 h-10 w-10 rounded-[12px] shadow-[0_2px_8px_rgba(60,110,20,0.28)]" />
 
         {/* Фикс 27.08: на низких экранах пунктов больше, чем помещается по
             высоте, а overflow-hidden их просто обрезал — нижние разделы

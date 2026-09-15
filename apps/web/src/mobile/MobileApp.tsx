@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BrandLogo } from "@/components/BrandLogo";
 import { Calculator, Plus, ReceiptText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RouteId } from "@/app/route";
@@ -225,17 +226,7 @@ function MobileTopBar({ title }: { title: string }) {
   const [dayReportOpen, setDayReportOpen] = useState(false);
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)]">
-      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px] bg-ink text-white">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" />
-          <path
-            d="M8 7v10M16 7v10M8 12h8"
-            stroke="#fff"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-        </svg>
-      </div>
+      <BrandLogo className="h-9 w-9 rounded-[10px]" />
       <h1 className="font-display text-[18px] font-bold tracking-tight text-ink">
         {title}
       </h1>
