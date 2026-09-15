@@ -16,7 +16,15 @@ export async function run(page, ctx) {
   await page.setRequestInterception(true);
   page.on("request", (req) => {
     if (req.url().includes("/api/auth/me")) {
-      req.respond({ status: 401, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ error: "session_revoked", reason: "update" }) });
+      // Запрос идёт с куками на другой домен — браузер примет ответ только
+      // с точным origin и разрешением на куки, как у настоящего API.
+      const origin = req.headers()["origin"] || new URL(ctx.base).origin;
+      req.respond({
+        status: 401,
+        contentType: "application/json",
+        headers: { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true", Vary: "Origin" },
+        body: JSON.stringify({ error: "session_revoked", reason: "update" }),
+      });
     } else req.continue();
   });
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
