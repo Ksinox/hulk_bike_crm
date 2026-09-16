@@ -84,6 +84,13 @@ export async function run(page, ctx) {
       sel,
       to,
     );
+  // Уведомления закрываем перед кадрами для слайдов — иначе они закрывают суммы.
+  const quiet = async () => {
+    await page.evaluate(() =>
+      document.querySelectorAll('[role="alert"] button[aria-label="Закрыть"]').forEach((b) => b.click()),
+    );
+    await sleep(450);
+  };
   const money = () =>
     page.evaluate(() => {
       const box = document.querySelector("[data-money-block]");
@@ -130,6 +137,7 @@ export async function run(page, ctx) {
   });
   console.log("цифры:", JSON.stringify(kpi));
   const sfx = phase === "phone" ? "-m" : phase === "tablet" ? "-t" : "";
+  await quiet();
   await S(`sv-list${sfx}`);
 
   /* ---------- 3. Новый ремонт ---------- */
@@ -264,6 +272,7 @@ export async function run(page, ctx) {
   console.log("после аванса:", await money());
   await scrollPanel("[data-service-card] .overflow-y-auto", "end");
   await sleep(300);
+  await quiet();
   await S(`sv-card-money${sfx}`);
 
   // Оплата со скидкой — только смотрим
@@ -273,6 +282,7 @@ export async function run(page, ctx) {
   await typeInto("[data-pay-sheet] input", String(Math.max(0, left - 200)));
   await sleep(300);
   console.log("оплата со скидкой:", await page.evaluate(() => document.querySelector("[data-pay-sheet]")?.innerText.replace(/\n+/g, " | ").slice(0, 300)));
+  await quiet();
   await S(`sv-settle${sfx}`);
   await click(/^Отмена$/, "[data-pay-sheet]");
   await sleep(400);
@@ -281,13 +291,15 @@ export async function run(page, ctx) {
     // Накладная
     await click(/Накладная/, "[data-service-card] header");
     await sleep(3000);
-    await S("sv-invoice");
+    await quiet();
+  await S("sv-invoice");
     await page.keyboard.press("Escape");
     await sleep(600);
   } else {
     await page.evaluate(() => document.querySelector('[data-service-card] header button[aria-label="Накладная"]')?.click());
     await sleep(3000);
-    await S(`sv-invoice${sfx}`);
+    await quiet();
+  await S(`sv-invoice${sfx}`);
     await page.keyboard.press("Escape");
     await sleep(600);
   }
@@ -295,6 +307,7 @@ export async function run(page, ctx) {
   // Отмена и возврат в работу
   await click(/^Отменить ремонт$/, "[data-service-card]");
   await sleep(600);
+  await quiet();
   await S(`sv-cancel-ask${sfx}`);
   await click(/Вернули деньги — отменить|^Отменить ремонт$/, 'div[class*="z-[1100]"]');
   await sleep(1500);
@@ -304,9 +317,11 @@ export async function run(page, ctx) {
   }));
   console.log("отменён:", JSON.stringify(canc));
   await scrollPanel("[data-service-card] .overflow-y-auto", "top");
+  await quiet();
   await S(`sv-cancelled${sfx}`);
   await click(/Вернуть в работу/, "[data-service-card]");
   await sleep(700);
+  await quiet();
   await S(`sv-reopen${sfx}`);
   await click(/Деньги у нас/);
   await sleep(1500);

@@ -196,7 +196,28 @@ export async function run(page, ctx) {
     });
     await ctx.sleep(500);
     await S("sv-card-m2");
+    // Старое окно оплаты
+    await click(/^Принять оплату/);
+    await ctx.sleep(800);
+    await S("sv-pay-m");
+    await click(/^Отмена$/);
+    await ctx.sleep(500);
+    await page.evaluate(() => {
+      const hdr = [...document.querySelectorAll("header button")].pop();
+      hdr?.click();
+    });
+    await ctx.sleep(800);
+    // Старое окно приёма
+    await click(/Новый ремонт/);
+    await ctx.sleep(900);
+    await S("sv-new-m");
+    await click(/^Отмена$/);
+    await ctx.sleep(600);
+    // Отменённый — без «Вернуть в работу»
+    await click(/ТЕСТ shotbot/);
+    await ctx.sleep(1500);
+    console.log("отменённый телефон:", JSON.stringify({ вернуть: /Вернуть в работу/.test(await text()) }));
+    await S("sv-cancelled-m");
     void ids;
-    void text;
   }
 }
