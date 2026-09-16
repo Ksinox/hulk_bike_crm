@@ -112,7 +112,11 @@ function CalculatorWindow({
   onClose: () => void;
 }) {
   const { data: allModels = [] } = useApiScooterModels();
-  const models = useMemo(() => allModels.filter((m) => m.active), [allModels]);
+  // 2.0.1: модель только для продажи в калькуляторе аренды не нужна.
+  const models = useMemo(
+    () => allModels.filter((m) => m.active && m.forRent !== false),
+    [allModels],
+  );
   const { data: equipment = [] } = useApiEquipment();
 
   const [view, setView] = useState<"calc" | "history">("calc");

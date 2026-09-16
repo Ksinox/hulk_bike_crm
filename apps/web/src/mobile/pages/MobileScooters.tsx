@@ -179,7 +179,10 @@ export function MobileScooters() {
         (numberQ != null && matchScooterNumber(s, numberQ, MODEL_LABEL[s.model]) != null) ||
         matchScooterName(s.name, q) ||
         matchId(s.id, q) ||
-        matchScooterName(s.vin ?? undefined, q)
+        matchScooterName(s.vin ?? undefined, q) ||
+        (!!s.purchaseBatch &&
+          (!q.isNumeric || q.digits.length > 3) &&
+          s.purchaseBatch.toLowerCase().includes(q.text))
       );
     };
     return (filter === "gone" ? goneList : live)

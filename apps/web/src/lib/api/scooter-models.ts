@@ -36,6 +36,12 @@ export type ApiScooterModel = {
   isElectric?: boolean;
   /** Пункт 14: партнёрская техника (выручка делится с партнёром, п. 11). */
   isPartner?: boolean;
+  /**
+   * Релиз 2.0.1: назначение модели. «Сдаём» — видна в аренде (лендинг,
+   * анкета, калькулятор), у неё есть тарифы. «Продаём» — заводится на продажу.
+   */
+  forRent?: boolean;
+  forSale?: boolean;
   /** ₽/сут на коротком прокате 1–2 дня */
   dayRate: number;
   /** ₽/сут на тарифе 3–6 дней */
@@ -64,6 +70,8 @@ export type CreateModelInput = {
   active?: boolean;
   isElectric?: boolean;
   isPartner?: boolean;
+  forRent?: boolean;
+  forSale?: boolean;
   dayRate?: number;
   shortRate?: number;
   weekRate?: number;
@@ -219,4 +227,13 @@ export function useDeleteScooterModelAvatar() {
       qc.invalidateQueries({ queryKey: scooterModelsKeys.all });
     },
   });
+}
+
+/** Модель сдаётся в аренду (старые ответы без флага — сдаётся). */
+export function modelForRent(m: Pick<ApiScooterModel, "forRent">): boolean {
+  return m.forRent !== false;
+}
+/** Модель заводится на продажу. */
+export function modelForSale(m: Pick<ApiScooterModel, "forSale">): boolean {
+  return m.forSale === true;
 }

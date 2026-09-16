@@ -36,3 +36,10 @@ export const TABLET_PAD_X_HEADER = "px-[max(0.5rem,calc((100%_-_960px)/2_+_0.25r
  */
 export const TABLET_WIZARD_PANEL =
   "flex min-h-0 w-full flex-1 flex-col bg-surface lg:max-w-[760px] lg:shadow-card-lg";
+
+/**
+ * Широкий мастер (таблица единиц при добавлении партии техники, 2.0.1):
+ * на планшете лёжа колонка шире, чтобы таблица поместилась без прокрутки.
+ */
+export const TABLET_WIZARD_PANEL_WIDE =
+  "flex min-h-0 w-full flex-1 flex-col bg-surface lg:max-w-[1120px] lg:shadow-card-lg";

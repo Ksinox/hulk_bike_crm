@@ -355,7 +355,9 @@ export function Fleet({
                 matchText(r.scooter.vin ?? undefined, q) ||
                 matchText(r.scooter.engineNo ?? undefined, q) ||
                 matchText(r.scooter.frameNumber ?? undefined, q) ||
-                matchText(r.scooter.uid ?? undefined, q)));
+                matchText(r.scooter.uid ?? undefined, q) ||
+                // 2.0.1: партию, заведённую разом, находим по её номеру.
+                matchText(r.scooter.purchaseBatch ?? undefined, q)));
           if (!ok) return false;
         }
         return true;
@@ -622,7 +624,9 @@ export function Fleet({
       )}
       </div>
 
-      {addOpen && <AddScooterModal onClose={() => setAddOpen(false)} />}
+      {addOpen && (
+        <AddScooterModal defaultCategory={mode} onClose={() => setAddOpen(false)} />
+      )}
     </Root>
   );
 }

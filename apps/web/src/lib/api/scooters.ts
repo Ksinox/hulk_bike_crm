@@ -39,6 +39,57 @@ export function useRentalSlots() {
   });
 }
 
+/** Релиз 2.0.1: партия техники одной транзакцией. */
+export type BatchUnitInput = {
+  vin?: string | null;
+  engineNo?: string | null;
+  year?: number | null;
+  color?: string | null;
+  mileage?: number;
+  rentalSlot?: number | null;
+  marketValue?: number | null;
+  salePrice?: number | null;
+  note?: string | null;
+};
+export type BatchInput = {
+  modelId: number;
+  baseStatus: ApiScooter["baseStatus"];
+  purchaseBatch?: string | null;
+  purchaseDate?: string | null;
+  purchasePrice?: number | null;
+  isPartner?: boolean;
+  investorId?: number | null;
+  enableModelPurpose?: boolean;
+  units: BatchUnitInput[];
+};
+/** Ошибка по строке партии — форма подсвечивает ячейку. */
+export type BatchRowError = { index: number; field: string; message: string };
+
+export function useAddScootersBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: BatchInput) =>
+      api.post<{ items: ApiScooter[] }>("/api/scooters/batch", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: scootersKeys.all });
+      qc.invalidateQueries({ queryKey: ["scooter-models"] });
+    },
+  });
+}
+
+/** Вся техника вместе с архивом — чтобы сразу видеть занятую раму. */
+export function useApiScootersWithArchive(enabled = true) {
+  return useQuery({
+    queryKey: [...scootersKeys.all, "with-archive"] as const,
+    queryFn: () =>
+      api
+        .get<ListResponse<ApiScooter>>("/api/scooters?includeArchived=1")
+        .then((r) => r.items),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
 export function useSetSlotsTotal() {
   const qc = useQueryClient();
   return useMutation({

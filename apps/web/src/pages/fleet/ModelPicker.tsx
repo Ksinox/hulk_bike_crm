@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
-import { Search, Tag, X } from "lucide-react";
+import { ChevronDown, Search, Tag, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import {
+  modelForRent,
+  modelForSale,
   useApiScooterModels,
   type ApiScooterModel,
 } from "@/lib/api/scooter-models";
@@ -18,6 +20,8 @@ export function ModelPicker({
   value,
   onChange,
   electricOnly = false,
+  purpose = null,
+  size = "md",
 }: {
   value: number | null;
   onChange: (modelId: number, model: ApiScooterModel) => void;
@@ -27,6 +31,14 @@ export function ModelPicker({
    * категорий, чтобы оператор не выбрал бензиновую по ошибке.
    */
   electricOnly?: boolean;
+  /**
+   * Релиз 2.0.1: под какую категорию выбираем. «rent» — только модели,
+   * которые сдаём, «sale» — которые продаём, без тарифов в плитках.
+   * Остальные модели прячутся под «Другие модели».
+   */
+  purpose?: "rent" | "sale" | null;
+  /** «lg» — крупные плитки под палец (мастер на телефоне и планшете). */
+  size?: "md" | "lg";
 }) {
   const { data: allModels = [], isLoading } = useApiScooterModels();
   const [query, setQuery] = useState("");
@@ -34,6 +46,9 @@ export function ModelPicker({
   // Правка 24.08: если в каталоге есть оба типа техники — даём отсеять
   // категорию, чтобы не искать электричку глазами среди бензиновых.
   const [power, setPower] = useState<"all" | "petrol" | "electric">("all");
+  const [showOthers, setShowOthers] = useState(false);
+  const fits = (m: ApiScooterModel) =>
+    !purpose || (purpose === "rent" ? modelForRent(m) : modelForSale(m));
 
   // Видимый список — только активные модели. Неактивная модель в БД
   // остаётся для истории, но в выборах CRM не показывается.
@@ -43,9 +58,23 @@ export function ModelPicker({
     () =>
       allModels.filter(
         (m) =>
-          (m.active || m.id === value) && (!electricOnly || m.isElectric),
+          (m.active || m.id === value) &&
+          (!electricOnly || m.isElectric) &&
+          fits(m),
       ),
-    [allModels, value, electricOnly],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allModels, value, electricOnly, purpose],
+  );
+  /** Активные модели не под эту категорию — по кнопке «Другие модели». */
+  const others = useMemo(
+    () =>
+      purpose
+        ? allModels.filter(
+            (m) => m.active && (!electricOnly || m.isElectric) && !fits(m),
+          )
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allModels, electricOnly, purpose],
   );
   const hasBothPowerTypes = useMemo(
     () =>
@@ -62,8 +91,13 @@ export function ModelPicker({
     [visible, power],
   );
 
+  // Небольшой список (продажа, партнёрка) — все модели плитками; большой —
+  // плитками только быстрый выбор, остальное через поиск.
   const quickPick = useMemo(
-    () => models.filter((m) => m.quickPick && m.active),
+    () =>
+      models.length <= 9
+        ? models
+        : models.filter((m) => m.quickPick && m.active),
     [models],
   );
 
@@ -75,7 +109,20 @@ export function ModelPicker({
       .slice(0, 8);
   }, [models, query]);
 
-  const selected = models.find((m) => m.id === value) ?? null;
+  const selected =
+    models.find((m) => m.id === value) ??
+    others.find((m) => m.id === value) ??
+    null;
+  const selectedIsOther = !!selected && !fits(selected);
+
+  const tileSub = (m: ApiScooterModel) =>
+    purpose === "sale"
+      ? modelForRent(m)
+        ? "аренда и продажа"
+        : "только продажа"
+      : `${m.shortRate} ₽/сут · 3–6 дн`;
+  const otherSub = () =>
+    purpose === "sale" ? "сейчас только аренда" : "сейчас только продажа";
 
   return (
     <div className="flex flex-col gap-2">
@@ -110,7 +157,12 @@ export function ModelPicker({
 
       {/* Быстрый выбор */}
       {quickPick.length > 0 && (
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+        <div
+          className={cn(
+            "grid grid-cols-2 sm:grid-cols-3",
+            size === "lg" ? "gap-2" : "gap-1.5",
+          )}
+        >
           {quickPick.map((m) => {
             const active = m.id === value;
             // v0.4.62: квадратные карточки в пикере — thumb-вариант.
@@ -121,7 +173,10 @@ export function ModelPicker({
                 type="button"
                 onClick={() => onChange(m.id, m)}
                 className={cn(
-                  "flex items-center gap-2 rounded-[10px] border bg-surface px-2.5 py-2 text-left transition-colors",
+                  "flex items-center gap-2 border bg-surface text-left transition-colors",
+                  size === "lg"
+                    ? "min-h-[56px] rounded-2xl px-3 py-2.5"
+                    : "rounded-[10px] px-2.5 py-2",
                   active
                     ? "border-blue-600 bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/30"
                     : "border-border text-ink-2 hover:border-blue-600/50",
@@ -150,12 +205,65 @@ export function ModelPicker({
                     )}
                   </div>
                   <div className="truncate text-[10px] text-muted-2">
-                    {m.shortRate} ₽/сут (1–3 дн)
+                    {tileSub(m)}
                   </div>
                 </div>
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Модели не под эту категорию — спрятаны, но доступны. */}
+      {others.length > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowOthers((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-full px-1 py-1 text-[12px] font-semibold text-blue-700 hover:text-blue-800"
+          >
+            <ChevronDown
+              size={14}
+              className={cn("transition-transform", showOthers && "rotate-180")}
+            />
+            {showOthers ? "Скрыть другие модели" : `Другие модели · ${others.length}`}
+          </button>
+          {showOthers && (
+            <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+              {others.map((m) => {
+                const active = m.id === value;
+                const avatar = fileUrl(m.avatarKey, { variant: "thumb" });
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => onChange(m.id, m)}
+                    className={cn(
+                      "flex items-center gap-2 border border-dashed text-left transition-colors",
+                      size === "lg"
+                        ? "min-h-[56px] rounded-2xl px-3 py-2.5"
+                        : "rounded-[10px] px-2.5 py-2",
+                      active
+                        ? "border-amber-500 bg-amber-50 text-amber-900"
+                        : "border-border bg-surface-soft/60 text-muted hover:border-amber-400",
+                    )}
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white opacity-80">
+                      {avatar ? (
+                        <img src={avatar} alt="" className="h-full w-full object-contain" />
+                      ) : (
+                        <Tag size={14} className="text-muted-2" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-semibold">{m.name}</div>
+                      <div className="truncate text-[10px] text-muted-2">{otherSub()}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -207,9 +315,11 @@ export function ModelPicker({
                   <span className="flex-1 truncate text-[13px] text-ink">
                     {m.name}
                   </span>
-                  <span className="text-[11px] text-muted-2">
-                    {m.shortRate}/{m.weekRate}/{m.monthRate} ₽
-                  </span>
+                  {purpose !== "sale" && (
+                    <span className="text-[11px] text-muted-2">
+                      {m.dayRate}/{m.shortRate}/{m.weekRate}/{m.monthRate} ₽
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -219,7 +329,11 @@ export function ModelPicker({
 
       {!isLoading && models.length === 0 && (
         <div className="rounded-[10px] bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
-          Каталог моделей пуст. Добавьте модели в «Гараж → Модели» — они здесь появятся.
+          {purpose === "sale"
+            ? "Нет моделей для продажи. Выберите из «Других моделей» или отметьте «Продаём» в «Скутеры → Модели»."
+            : purpose === "rent"
+              ? "Нет моделей для аренды. Выберите из «Других моделей» или отметьте «Сдаём в аренду» в «Скутеры → Модели»."
+              : "Каталог моделей пуст. Добавьте модели в «Скутеры → Модели» — они здесь появятся."}
         </div>
       )}
 
@@ -230,12 +344,21 @@ export function ModelPicker({
           ) : (
             <PetrolMark size="sm" withText />
           )}
-          <span>
-          Выбрано: <b className="text-ink">{selected.name}</b> · тариф 1–3 дня{" "}
-          <b className="text-ink">{selected.shortRate} ₽/сут</b>, неделя{" "}
-          <b className="text-ink">{selected.weekRate} ₽/сут</b>, месяц{" "}
-          <b className="text-ink">{selected.monthRate} ₽/сут</b>
-          </span>
+          {purpose === "sale" ? (
+            <span>
+              Выбрано: <b className="text-ink">{selected.name}</b>
+              {selectedIsOther && " · при добавлении отметим модель «Продаём»"}
+            </span>
+          ) : (
+            <span>
+              Выбрано: <b className="text-ink">{selected.name}</b> · ₽/сут:
+              1–2 дня <b className="text-ink">{selected.dayRate}</b>, 3–6 дней{" "}
+              <b className="text-ink">{selected.shortRate}</b>, 7–29 дней{" "}
+              <b className="text-ink">{selected.weekRate}</b>, 30+ дней{" "}
+              <b className="text-ink">{selected.monthRate}</b>
+              {selectedIsOther && " · при добавлении отметим модель «Сдаём в аренду»"}
+            </span>
+          )}
         </div>
       )}
     </div>
