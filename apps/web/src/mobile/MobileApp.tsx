@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Calculator, Plus, ReceiptText } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -59,6 +59,31 @@ export function MobileApp({
   const moreItems = buildMoreItems(canManageStaff);
   const [moreOpen, setMoreOpen] = useState(false);
   const [fab, setFab] = useState<PageFab | null>(null);
+  // 16.09 (заказчик): кнопка «Сделка» оставалась поверх открытого окна.
+  // Пока на странице открыто любое окно или лист — кнопку не показываем.
+  const mainRef = useRef<HTMLElement>(null);
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    let raf = 0;
+    const check = () => {
+      raf = 0;
+      const open = [...el.querySelectorAll<HTMLElement>(".fixed.inset-0, [aria-modal='true']")].some(
+        (x) => x.getClientRects().length > 0 && getComputedStyle(x).visibility !== "hidden",
+      );
+      setOverlayOpen(open);
+    };
+    const mo = new MutationObserver(() => {
+      if (!raf) raf = requestAnimationFrame(check);
+    });
+    mo.observe(el, { childList: true, subtree: true });
+    check();
+    return () => {
+      mo.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
 
   // Пока смонтирован мобильный слой — лочим прокрутку самой страницы, чтобы
   // высота dvh-корня совпадала с видимой областью и нижний таб-бар не уезжал
@@ -100,12 +125,15 @@ export function MobileApp({
       <div className="relative flex h-[100dvh] flex-col overflow-hidden bg-bg">
         <MobileTopBar title={routeTitle(route)} />
 
-        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 overscroll-contain">
+        <main
+          ref={mainRef}
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 overscroll-contain"
+        >
           {/* key={route} + fade — плавный переход между вкладками вместо резкой
               подмены контента. На планшете контент — колонкой по центру:
               строка списка во всю ширину 1180–1366px не читается (имя у
               левого края, сумма у правого). */}
-          <div key={route} className={cn("mx-auto w-full animate-fade-in", TABLET_COLUMN)}>
+          <div key={route} className={cn("mx-auto w-full animate-page-in", TABLET_COLUMN)}>
             <MobilePage route={route} onSelect={go} />
           </div>
         </main>
@@ -117,7 +145,7 @@ export function MobileApp({
           moreActive={moreOpen || isMoreRoute(route)}
         />
 
-        {fab && (
+        {fab && !overlayOpen && !moreOpen && (
           <button
             type="button"
             data-tour="fab"
