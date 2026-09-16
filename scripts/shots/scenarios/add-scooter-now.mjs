@@ -44,7 +44,10 @@ export async function run(page, ctx) {
     });
   const dismissToasts = () =>
     page.evaluate(() => {
-      document.querySelectorAll('[role="alert"] button').forEach((b) => b.click());
+      // Только крестик: у тоста после добавления есть «Отменить».
+      document
+        .querySelectorAll('[role="alert"] button')
+        .forEach((b) => !b.textContent.trim() && b.click());
     });
   const scrollBody = (y) =>
     page.evaluate((y) => {

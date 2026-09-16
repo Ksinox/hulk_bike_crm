@@ -283,7 +283,7 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
   label: "2.0.1",
   major: false,
   date: "2026-09-17",
-  subtitle: "Добавление техники: сначала категория, партия — таблицей.",
+  subtitle: "Добавление техники: сначала категория, партия — таблицей, сводка по партиям.",
   items: [
     {
       id: "add-category",
@@ -296,7 +296,7 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
       points: [
         "На продажу — без арендного номера и тарифов, сразу цена продажи",
         "В аренду — номер из свободных, видно, сколько останется",
-        "Из «Продажи» окно открывается уже с категорией «На продажу»",
+        "В «Продажи → В продаже» — кнопка «Добавить на продажу»",
       ],
       audience: "all",
       devices: ["desktop", "phone"],
@@ -339,6 +339,61 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
       before: { desktop: `${R201}/d-batch-was.jpg`, phone: `${R201}/m-batch-was.jpg` },
       img: { desktop: `${R201}/d-batch-now.jpg`, phone: `${R201}/m-batch-now.jpg` },
       imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "fewer-errors",
+      kind: "changed",
+      title: "Меньше ошибок при добавлении",
+      route: "fleet",
+      headline: "Ошиблись — «Отменить», рама не похожа на обычные — предупредим, цена — из прошлой.",
+      why:
+        "Ошибка в партии раньше означала архив для каждой единицы через ключ директора, а опечатка в раме уходила в договор.",
+      points: [
+        "«Отменить» 10 секунд после добавления — данные вернутся в черновик",
+        "Рама не похожа на обычные для модели — жёлтое предупреждение",
+        "Цена подставляется из последней по модели — поправьте, если изменилась",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R201}/d-errors-was.jpg`, phone: `${R201}/m-errors-was.jpg` },
+      img: { desktop: `${R201}/d-errors-now.jpg`, phone: `${R201}/m-errors-now.jpg` },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "batches",
+      kind: "new",
+      title: "Партии",
+      route: "fleet",
+      headline: "Как отбилась поставка: сколько продано, сколько на витрине и на какую сумму.",
+      why:
+        "Номер партии записывали, но посмотреть, как разошлась поставка, было негде — только искать единицы по номеру.",
+      points: [
+        "«Скутеры → Партии», на телефоне — кнопка «Партии»",
+        "Продано на — по сделкам, на витрине на — по ценам из карточек",
+        { text: "Директору — закуп партии и прибыль по проданным", managers: true },
+        "Нажмите на единицу — откроется её карточка",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R201}/d-batches-was.jpg`, phone: `${R201}/m-batches-was.jpg` },
+      img: { desktop: `${R201}/d-batches-now.jpg`, phone: `${R201}/m-batches-now.jpg` },
+      imgPos: { desktop: "center center", phone: "center top" },
+      hints: {
+        desktop: [
+          {
+            anchor: { text: "Партии" },
+            title: "Партии",
+            text: "Сводка по каждой поставке: продано, на витрине, суммы.",
+          },
+        ],
+        phone: [
+          {
+            anchor: { tour: ["batches-m"] },
+            title: "Партии",
+            text: "Сводка по каждой поставке — здесь.",
+          },
+        ],
+      },
     },
     {
       id: "model-purpose",

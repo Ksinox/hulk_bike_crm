@@ -67,6 +67,14 @@ export async function run(page, ctx) {
     console.log("  своя рама без предупреждения:", !/строка 1|UA06J-991901[\s\S]{0,40}Необычная/.test(t3));
     console.log("  чужая рама — предупреждение:", /Необычная рама для Gear: обычно UA06J-…/.test(t3));
     await ctx.shot("vinfmt-now-table", { jpeg: true });
+    // Насколько пометка о цене сдвинула таблицу — для ровного «было/стало».
+    const shift = await page.evaluate(() => {
+      const note = [...document.querySelectorAll("[data-wizard] div")].find((d) =>
+        /^Цена продажи подставлена/.test((d.textContent || "").trim()) && d.className.includes("rounded-xl"),
+      );
+      return note ? Math.round(note.getBoundingClientRect().height + 12) : 0;
+    });
+    console.log("  сдвиг таблицы пометкой, css px:", shift);
     // длина
     await page.focus('input[data-row="1"][data-col="vin"]');
     await page.keyboard.down("Control");

@@ -74,6 +74,21 @@ MODEL_FORM = (360, 80, 1800, 1350)
 square("models-was-2-form", MODEL_FORM, "d-models-was")
 square("models-now-2-form", MODEL_FORM, "d-models-now")
 
+# Меньше ошибок: таблица без подсказок → цена подставлена, рама под
+# подозрением. В «стало» пометка о цене сдвигает таблицу на 15 px.
+square("addsc2-was-table", (216, 300, 1450, 1040), "d-errors-was")
+square("vinfmt-now-table", (216, 315, 1450, 1055), "d-errors-now")
+
+# Партии: раньше — только поиск по номеру, теперь — сводка.
+BATCH_BOX = (110, 200, 1140, 1320)
+square("batch-was-search", BATCH_BOX, "d-batches-was")
+square("batch-now-d", BATCH_BOX, "d-batches-now")
+
+phone("errors-was-m", "m-errors-was")
+phone("errors-now-m", "m-errors-now")
+phone("batch-was-m", "m-batches-was")
+phone("batch-now-m", "m-batches-now")
+
 phone("addsc-was-m1", "m-add-was")
 phone("addsc-now-m1-category", "m-add-now")
 phone("addsc-was-m1", "m-batch-was")
