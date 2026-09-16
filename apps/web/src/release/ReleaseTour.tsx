@@ -12,7 +12,9 @@ import {
 import {
   NEW_LABEL_DAYS,
   RELEASE_TOUR,
+  RELEASE_TOURS,
   newSectionRoutes,
+  type ReleaseTourConfig,
   type TourAnchor,
   type TourDevice,
   type TourItem,
@@ -67,8 +69,12 @@ const reduceMotion = () =>
   window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 /** Карточки для человека и устройства (не больше шести). */
-export function tourCards(device: TourDevice, isManager: boolean): TourItem[] {
-  return RELEASE_TOUR.items
+export function tourCards(
+  device: TourDevice,
+  isManager: boolean,
+  cfg: ReleaseTourConfig = RELEASE_TOUR,
+): TourItem[] {
+  return cfg.items
     .filter((i) => i.devices.includes(device))
     .filter((i) =>
       i.audience === "all" ? true : i.audience === "managers" ? isManager : !isManager,
@@ -77,6 +83,8 @@ export function tourCards(device: TourDevice, isManager: boolean): TourItem[] {
 }
 
 type QueuedHint = {
+  /** Выпуск, в чей прогресс пишется «понятно». */
+  version: string;
   anchor: TourAnchor;
   title: string;
   text: string;
@@ -96,7 +104,6 @@ export function ReleaseTour({
   onSelect: (id: RouteId) => void;
   isMobile: boolean;
 }) {
-  const cfg = RELEASE_TOUR;
   const { data: me } = useMe();
   const perms = usePerms();
   const skip = tourSkipped();
@@ -104,35 +111,60 @@ export function ReleaseTour({
   const act = useReleaseAction();
   const device: TourDevice = isMobile ? "phone" : "desktop";
   const isManager = me?.role === "creator" || me?.role === "director";
-  const cards = useMemo(() => tourCards(device, isManager), [device, isManager]);
-  const view: ReleaseView | undefined = viewsQ.data?.views.find((v) => v.version === cfg.version);
+  const viewOf = useCallback(
+    (version: string): ReleaseView | undefined =>
+      viewsQ.data?.views.find((v) => v.version === version),
+    [viewsQ.data],
+  );
   const newStaff = viewsQ.data?.staffKind === "new";
-  const completed = view?.status === "completed";
+  const createdDay = (viewsQ.data?.accountCreatedAt ?? "").slice(0, 10);
+
+  // Выпуски, которые человеку ещё показать, — от старого к новому. Новому
+  // сотруднику — только вышедшие после того, как завели его аккаунт.
+  const pending = useMemo(
+    () =>
+      RELEASE_TOURS.filter((r) => {
+        if (tourCards(device, isManager, r).length === 0) return false;
+        if (newStaff && (!createdDay || r.date <= createdDay)) return false;
+        const v = viewOf(r.version);
+        return v?.status !== "completed" && (v?.postponedCount ?? 0) < MAX_POSTPONES;
+      }),
+    [device, isManager, newStaff, createdDay, viewOf],
+  );
+  // «Позже» у любого выпуска — откладывает показ целиком до следующего входа.
+  const laterNow =
+    readSession(laterKey("all")) || pending.some((r) => readSession(laterKey(r.version)));
+  const cfg: ReleaseTourConfig = pending[0] ?? RELEASE_TOUR;
+  const cards = useMemo(() => tourCards(device, isManager, cfg), [device, isManager, cfg]);
+  const view = viewOf(cfg.version);
+  const completed = pending.length === 0;
 
   const [phase, setPhase] = useState<"none" | "intro" | "cards" | "hint">("none");
   const [cardIdx, setCardIdx] = useState(0);
   const [entering, setEntering] = useState(false);
   const [queue, setQueue] = useState<QueuedHint[]>([]);
   const [qi, setQi] = useState(0);
-  const [resumeHidden, setResumeHidden] = useState(() => readSession(resumeHiddenKey(cfg.version)));
-  const started = useRef(false);
+  const [resumeHidden, setResumeHidden] = useState(() => readSession(resumeHiddenKey("all")));
+  /** Выпуск, для которого уже решали, показывать ли его сейчас. */
+  const started = useRef<string | null>(null);
 
   const record = act.mutate;
 
-  // ── Автостарт при входе ──
+  // ── Автостарт при входе; досмотрел выпуск — следом следующий ──
   useEffect(() => {
-    if (started.current || skip || !me || !viewsQ.data || cards.length === 0) return;
-    started.current = true;
-    if (newStaff || completed) return;
-    if ((view?.postponedCount ?? 0) >= MAX_POSTPONES) return;
-    if (readSession(laterKey(cfg.version))) return;
+    if (skip || !me || !viewsQ.data || completed) return;
+    if (started.current === cfg.version || phase !== "none") return;
+    started.current = cfg.version;
+    if (laterNow) return;
     const seen = Math.min(view?.cardsSeen ?? 0, cards.length - 1);
     if (cfg.major && (view?.cardsSeen ?? 0) === 0) setPhase("intro");
     else {
-      setCardIdx(seen);
+      setCardIdx(Math.max(0, seen));
+      setEntering(!reduceMotion());
       setPhase("cards");
     }
-  }, [skip, me, viewsQ.data, cards.length, newStaff, completed, view, cfg.major, cfg.version]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skip, me, viewsQ.data, completed, cfg.version, phase, laterNow]);
 
   // ── Карточка на экране — отметка «посмотрел N карточек» ──
   useEffect(() => {
@@ -144,6 +176,9 @@ export function ReleaseTour({
   }, [phase, cardIdx]);
 
   const postpone = useCallback(() => {
+    // «Позже» — до следующего входа для всех выпусков сразу: иначе следом
+    // выскочил бы показ следующей версии.
+    writeSession(laterKey("all"));
     writeSession(laterKey(cfg.version));
     record({ version: cfg.version, action: "postpone" });
     setPhase("none");
@@ -155,12 +190,13 @@ export function ReleaseTour({
   }, [cfg.version, record, cards.length]);
 
   const startHints = useCallback(
-    (item: TourItem, withPath: boolean) => {
-      const done = new Set(view?.hintsDone ?? []);
+    (item: TourItem, withPath: boolean, version: string) => {
+      const done = new Set(viewOf(version)?.hintsDone ?? []);
       const q: QueuedHint[] = [];
       const path = item.path?.[device];
       if (withPath && path && item.route && item.route !== route) {
         q.push({
+          version,
           anchor: path.anchor,
           title: `Где найти «${item.title}»`,
           text: path.text,
@@ -172,7 +208,7 @@ export function ReleaseTour({
       (item.hints?.[device] ?? []).forEach((h, i) => {
         const key = `${item.id}:${device}:${i}`;
         if (done.has(key)) return;
-        q.push({ ...h, eyebrow: `Новое · ${item.title}`, key });
+        q.push({ ...h, version, eyebrow: `Новое · ${item.title}`, key });
       });
       if (q.length === 0) return false;
       if (!q[0]!.open && item.route && item.route !== route) onSelect(item.route);
@@ -181,7 +217,7 @@ export function ReleaseTour({
       setPhase("hint");
       return true;
     },
-    [device, onSelect, route, view?.hintsDone],
+    [device, onSelect, route, viewOf],
   );
 
   // ── Первый заход в раздел: метка «новое» гаснет, подсказки на месте ──
@@ -193,23 +229,37 @@ export function ReleaseTour({
     if (skip || !viewsQ.data) return;
     if (!visitRecorded.current.has(route)) {
       visitRecorded.current.add(route);
-      const visited = new Set(view?.sectionsVisited ?? []);
-      if (!visited.has(route) && newSectionRoutes().includes(route)) {
-        record({ version: cfg.version, action: "visit", section: route });
+      for (const r of RELEASE_TOURS) {
+        const visited = new Set(viewOf(r.version)?.sectionsVisited ?? []);
+        if (!visited.has(route) && newSectionRoutes(r).includes(route)) {
+          record({ version: r.version, action: "visit", section: route });
+        }
       }
     }
     // Пока открыт титул или карточки — подсказок нет. Таймер снимается, если
     // в этот же момент открылся показ: иначе подсказка перебила бы титул.
     if (phase !== "none" || hintsTried.current.has(route)) return;
-    const item = cards.find((i) => i.route === route && i.hints?.[device]?.length);
-    if (!item) return;
-    const done = new Set(view?.hintsDone ?? []);
-    const pending = (item.hints?.[device] ?? []).some((_, i) => !done.has(`${item.id}:${device}:${i}`));
-    if (!pending) return;
+    // Подсказки на месте — из любого выпуска, у кого они ещё не закрыты.
+    let found: { item: TourItem; version: string } | null = null;
+    for (const r of RELEASE_TOURS) {
+      if (newStaff && (!createdDay || r.date <= createdDay)) continue;
+      const done = new Set(viewOf(r.version)?.hintsDone ?? []);
+      const item = tourCards(device, isManager, r).find(
+        (i) =>
+          i.route === route &&
+          (i.hints?.[device] ?? []).some((_, k) => !done.has(`${i.id}:${device}:${k}`)),
+      );
+      if (item) {
+        found = { item, version: r.version };
+        break;
+      }
+    }
+    if (!found) return;
+    const hit = found;
     const t = window.setTimeout(() => {
       if (phaseRef.current !== "none") return;
       hintsTried.current.add(route);
-      startHints(item, false);
+      startHints(hit.item, false, hit.version);
     }, 900);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -218,7 +268,7 @@ export function ReleaseTour({
   const hintOk = () => {
     const h = queue[qi];
     if (!h) return;
-    if (h.key) record({ version: cfg.version, action: "hint", hint: h.key });
+    if (h.key) record({ version: h.version, action: "hint", hint: h.key });
     if (h.open) onSelect(h.open);
     if (qi + 1 >= queue.length) {
       setQueue([]);
@@ -236,7 +286,7 @@ export function ReleaseTour({
     const nextIdx = Math.min(cardIdx + 1, cards.length - 1);
     record({ version: cfg.version, action: "card", cardsSeen: Math.max(cardIdx + 1, view?.cardsSeen ?? 0) });
     setCardIdx(nextIdx);
-    if (!startHints(item, true)) setPhase("none");
+    if (!startHints(item, true, cfg.version)) setPhase("none");
   };
 
   const resume = () => {
@@ -251,8 +301,7 @@ export function ReleaseTour({
   const showResume =
     phase === "none" &&
     !!viewsQ.data &&
-    started.current &&
-    !newStaff &&
+    started.current != null &&
     !completed &&
     !resumeHidden &&
     cards.length > 0;
@@ -280,6 +329,7 @@ export function ReleaseTour({
           total={cards.length}
           device={device}
           label={cfg.label}
+          major={cfg.major}
           perms={perms}
           entering={entering}
           onEntered={() => setEntering(false)}
@@ -310,7 +360,7 @@ export function ReleaseTour({
             className="rt-resume-close"
             onClick={(e) => {
               e.stopPropagation();
-              writeSession(resumeHiddenKey(cfg.version));
+              writeSession(resumeHiddenKey("all"));
               setResumeHidden(true);
             }}
           >
@@ -470,6 +520,7 @@ function CardsScreen({
   total,
   device,
   label,
+  major,
   perms,
   entering,
   onEntered,
@@ -483,6 +534,7 @@ function CardsScreen({
   total: number;
   device: TourDevice;
   label: string;
+  major: boolean;
   perms: Record<string, boolean>;
   entering: boolean;
   onEntered: () => void;
@@ -537,7 +589,7 @@ function CardsScreen({
               <div className="rt-top-row">
                 <span className="rt-brand">
                   <img src={logoUrl} alt="" />
-                  Халк Байк CRM <b>{label}</b>
+                  {major ? "Халк Байк CRM" : "Обновление"} <b>{label}</b>
                 </span>
                 <button type="button" className="rt-later-link" onClick={onLater}>
                   Посмотрю позже
@@ -550,10 +602,15 @@ function CardsScreen({
               </div>
             </div>
             <span className={`rt-kind ${item.kind}`}>
-              {item.kind === "new" ? "Новый раздел" : "Изменилось"}
+              {item.kind === "new" ? (item.path ? "Новый раздел" : "Новое") : "Изменилось"}
             </span>
             <h2 className="rt-card-title">{item.title}</h2>
             <p className="rt-headline">{item.headline}</p>
+            {item.why && (
+              <p className="rt-why">
+                <b>Зачем.</b> {item.why}
+              </p>
+            )}
             <ul className="rt-points">
               {points.map((p) => (
                 <li key={p}>{p}</li>
@@ -805,11 +862,15 @@ export function useNewSections(): (id: string) => boolean {
   const { data: me } = useMe();
   const q = useMyReleaseViews(!!me && !tourSkipped());
   return useMemo(() => {
-    const until = new Date(`${RELEASE_TOUR.date}T00:00:00`).getTime() + NEW_LABEL_DAYS * 86_400_000;
-    if (Date.now() > until || !q.data) return () => false;
-    const v = q.data.views.find((x) => x.version === RELEASE_TOUR.version);
-    const visited = new Set(v?.sectionsVisited ?? []);
-    const fresh = new Set(newSectionRoutes().filter((r) => !visited.has(r)));
+    if (!q.data) return () => false;
+    const fresh = new Set<RouteId>();
+    for (const r of RELEASE_TOURS) {
+      const until = new Date(`${r.date}T00:00:00`).getTime() + NEW_LABEL_DAYS * 86_400_000;
+      if (Date.now() > until) continue;
+      const v = q.data.views.find((x) => x.version === r.version);
+      const visited = new Set(v?.sectionsVisited ?? []);
+      for (const id of newSectionRoutes(r)) if (!visited.has(id)) fresh.add(id);
+    }
     return (id: string) => fresh.has(id as RouteId);
   }, [q.data]);
 }

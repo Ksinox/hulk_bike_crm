@@ -118,6 +118,8 @@
 .rt-kind.changed { background: #E6EDFD; color: #1D4ED8; }
 .rt-card-title { font: 800 2.3em/1.05 "Manrope", "Inter", sans-serif; letter-spacing: -.025em; margin: 0; }
 .rt-headline { margin: 0; font-size: 1.12em; line-height: 1.4; color: #2B3447; font-weight: 500; }
+.rt-why { margin: 0; padding: .7em .85em; border-radius: .8em; background: #F4F8EE; border: 1px solid #DCEBC8; font-size: .95em; line-height: 1.42; color: #33431F; }
+.rt-why b { color: #4d8a1c; font-weight: 800; }
 .rt-points { list-style: none; margin: .2em 0 0; padding: 0; display: grid; gap: .5em; }
 .rt-points li { position: relative; padding-left: 1.3em; font-size: .98em; line-height: 1.4; color: #3A4458; }
 .rt-points li::before { content: ""; position: absolute; left: .15em; top: .5em; width: .5em; height: .5em; border-radius: 2px; background: #2563EB; }

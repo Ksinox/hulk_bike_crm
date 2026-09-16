@@ -18,8 +18,14 @@ import type { PermissionKey } from "@/lib/permissions";
  * ответил «Новый сотрудник») прошлые обновления не показываем — сравнивать ему
  * не с чем; подсказки на месте и метки работают.
  *
- * Как собрать следующий релиз: новая версия, карточки из пунктов «Развития»,
- * якоря подсказок — `data-tour` на кнопке или текст кнопки.
+ * Как собрать следующий релиз (правило заказчика с 16.09 — для КАЖДОГО
+ * выпуска): новая запись в RELEASE_TOURS, карточка на каждое нововведение —
+ * «было / стало» (кадры одного размера, «было» снимать до правок), коротко что
+ * изменилось и `why` — зачем. Карточка должна быть понятна без пояснений.
+ * Якоря подсказок — `data-tour` на кнопке или текст кнопки.
+ *
+ * Несколько выпусков подряд показываются по очереди, от старого к новому;
+ * «Позже» откладывает все.
  */
 
 export type TourDevice = "desktop" | "phone";
@@ -43,6 +49,8 @@ export type TourItem = {
   /** Раздел CRM, к которому относится карточка (подсказки, метка «новое»). */
   route: RouteId | null;
   headline: string;
+  /** Зачем сделали — причина словами заказчика/сотрудника (с 2.0.1). */
+  why?: string;
   /** Пункт и право, без которого пункт не показываем. */
   points: Array<string | { text: string; perm: PermissionKey }>;
   audience: TourAudience;
@@ -67,7 +75,7 @@ export type ReleaseTourConfig = {
 
 const R = "/release/2.0";
 
-export const RELEASE_TOUR: ReleaseTourConfig = {
+const RELEASE_2_0: ReleaseTourConfig = {
   version: "2.0.0",
   label: "2.0",
   major: true,
@@ -261,12 +269,110 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
   ],
 };
 
+const R201 = "/release/2.0.1";
+
+/**
+ * 2.0.1 (правки заказчика 16.09): добавление техники — сначала категория,
+ * партия таблицей; модели «сдаём / продаём».
+ */
+const RELEASE_2_0_1: ReleaseTourConfig = {
+  version: "2.0.1",
+  label: "2.0.1",
+  major: false,
+  date: "2026-09-17",
+  subtitle: "Добавление техники: сначала категория, партия — таблицей.",
+  items: [
+    {
+      id: "add-category",
+      kind: "changed",
+      title: "Новая техника: сначала — куда",
+      route: "fleet",
+      headline: "Первым шагом выбираете: в аренду, на продажу, в выкуп или пока не решили.",
+      why:
+        "Раньше была одна длинная форма: скутер на продажу получал арендный номер, а форма спрашивала тарифы, которые продаже не нужны.",
+      points: [
+        "На продажу — без арендного номера и тарифов, сразу цена продажи",
+        "В аренду — номер из свободных, видно, сколько останется",
+        "Из «Продажи» окно открывается уже с категорией «На продажу»",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R201}/d-add-was.jpg`, phone: `${R201}/m-add-was.jpg` },
+      img: { desktop: `${R201}/d-add-now.jpg`, phone: `${R201}/m-add-now.jpg` },
+      imgPos: { desktop: "center center", phone: "center top" },
+      hints: {
+        desktop: [
+          {
+            anchor: { text: "Добавить скутер" },
+            title: "Новая техника",
+            text: "Сначала выберите, куда добавляете, — дальше окно спросит только нужное.",
+          },
+        ],
+        phone: [
+          {
+            anchor: { tour: ["fab"] },
+            title: "Новая техника",
+            text: "Сначала — куда добавляете: в аренду, на продажу или в выкуп.",
+          },
+        ],
+      },
+    },
+    {
+      id: "add-batch",
+      kind: "new",
+      title: "Партия за один раз",
+      route: "fleet",
+      headline: "Модель, количество и номер партии — один раз, дальше таблица на все единицы.",
+      why:
+        "Пришла поставка из пяти Jog — раньше пять раз открывали форму и заново выбирали модель, дату и цену закупа.",
+      points: [
+        "Строка «Для всех»: год, цвет, цена — подставятся в каждую единицу",
+        "Номера рам и двигателей вставляются столбцом из Excel",
+        "Повтор рамы подсвечивается сразу, до сохранения",
+        { text: "На проверке — закуп партии и разница с ценой продажи", perm: "data.profit" },
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R201}/d-batch-was.jpg`, phone: `${R201}/m-batch-was.jpg` },
+      img: { desktop: `${R201}/d-batch-now.jpg`, phone: `${R201}/m-batch-now.jpg` },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "model-purpose",
+      kind: "changed",
+      title: "Модели: сдаём или продаём",
+      route: "fleet",
+      headline: "У модели две отметки — «Сдаём в аренду» и «Продаём».",
+      why:
+        "Модель, заведённая под продажу, появлялась в аренде: на сайте, в анкете клиента и в калькуляторе — с тарифами, которых у неё нет.",
+      points: [
+        "Тарифы — только у моделей, которые сдаём",
+        "Модель только для продажи не видна клиентам в аренде",
+        "В «Модели» — фильтр «Сдаём / Продаём»",
+      ],
+      audience: "managers",
+      devices: ["desktop"],
+      before: { desktop: `${R201}/d-models-was.jpg` },
+      img: { desktop: `${R201}/d-models-now.jpg` },
+      imgPos: { desktop: "center center" },
+    },
+  ],
+};
+
+/** Все выпуски с показом — от старого к новому. */
+export const RELEASE_TOURS: ReleaseTourConfig[] = [RELEASE_2_0, RELEASE_2_0_1];
+
+/** Последний выпуск — для «кто посмотрел» и меток. */
+export const RELEASE_TOUR: ReleaseTourConfig = RELEASE_TOURS[RELEASE_TOURS.length - 1]!;
+
 /** Сколько дней держится метка «новое» у раздела. */
 export const NEW_LABEL_DAYS = 7;
 
 /** Разделы с меткой «новое»: новые разделы релиза. */
 export function newSectionRoutes(cfg: ReleaseTourConfig = RELEASE_TOUR): RouteId[] {
+  // Метка «новое» — только у НОВЫХ разделов. Новая возможность внутри
+  // старого раздела (партия в «Скутерах») метку разделу не ставит.
   return cfg.items
-    .filter((i) => i.kind === "new" && i.route && i.audience === "all")
+    .filter((i) => i.kind === "new" && i.route && i.audience === "all" && cfg.major)
     .map((i) => i.route as RouteId);
 }

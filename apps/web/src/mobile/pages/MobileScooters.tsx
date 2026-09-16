@@ -435,6 +435,8 @@ function ScooterTile({
           </div>
           <div className="truncate text-[12px] text-muted">
             {MODEL_LABEL[scooter.model]}
+            {/* 2.0.1: без арендного номера одинаковые «Jog» различает ID. */}
+            {scooter.rentalSlot == null && scooter.uid && ` · ID ${scooter.uid}`}
           </div>
         </div>
       </div>

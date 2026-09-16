@@ -1,9 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/api/auth";
 import { useReleaseViewRows, type ReleaseViewRow } from "@/lib/api/releases";
-import { RELEASE_TOUR } from "./tour";
+import { RELEASE_TOURS, type ReleaseTourConfig } from "./tour";
 import { tourCards } from "./ReleaseTour";
 
 /**
@@ -14,7 +14,11 @@ import { tourCards } from "./ReleaseTour";
 export function ReleaseViewsPanel({ compact = false }: { compact?: boolean }) {
   const { data: me } = useMe();
   const canSee = me?.role === "creator" || me?.role === "director";
-  const q = useReleaseViewRows(RELEASE_TOUR.version, canSee);
+  // Свежий выпуск первым; старые — переключателем.
+  const releases = useMemo(() => [...RELEASE_TOURS].reverse(), []);
+  const [version, setVersion] = useState(releases[0]!.version);
+  const cfg = releases.find((r) => r.version === version) ?? releases[0]!;
+  const q = useReleaseViewRows(cfg.version, canSee);
   const rows = useMemo(
     () => (q.data ?? []).filter((r) => r.role !== "creator"),
     [q.data],
@@ -30,15 +34,32 @@ export function ReleaseViewsPanel({ compact = false }: { compact?: boolean }) {
           <Sparkles size={16} />
         </span>
         <h2 className="font-display text-[16px] font-extrabold text-ink">
-          Обновление {RELEASE_TOUR.label}: кто посмотрел
+          Обновление {cfg.label}: кто посмотрел
         </h2>
+        {releases.length > 1 && (
+          <div className="inline-flex rounded-full bg-surface-soft p-0.5">
+            {releases.map((r) => (
+              <button
+                key={r.version}
+                type="button"
+                onClick={() => setVersion(r.version)}
+                className={cn(
+                  "min-h-8 rounded-full px-3 text-[12px] font-bold tabular-nums",
+                  r.version === cfg.version ? "bg-ink text-white" : "text-muted hover:text-ink",
+                )}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        )}
         <span className="ml-auto rounded-full bg-surface-soft px-2.5 py-1 text-[12px] font-bold tabular-nums text-muted">
           {done} из {rows.length}
         </span>
       </div>
       <div className={cn("mt-3 grid gap-2", !compact && "lg:grid-cols-2")}>
         {rows.map((r) => (
-          <Row key={r.userId} row={r} />
+          <Row key={r.userId} row={r} cfg={cfg} />
         ))}
       </div>
       <p className="mt-3 text-[12px] leading-snug text-muted-2">
@@ -48,9 +69,9 @@ export function ReleaseViewsPanel({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function Row({ row }: { row: ReleaseViewRow }) {
+function Row({ row, cfg }: { row: ReleaseViewRow; cfg: ReleaseTourConfig }) {
   const isManager = row.role === "director";
-  const total = tourCards("desktop", isManager).length;
+  const total = tourCards("desktop", isManager, cfg).length;
   const seen = Math.min(row.cardsSeen ?? 0, total);
   const pct = total > 0 ? Math.round((seen / total) * 100) : 0;
   const chip =

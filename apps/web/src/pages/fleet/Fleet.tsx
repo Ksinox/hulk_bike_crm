@@ -716,6 +716,10 @@ function FleetRow({
           />
           <div className="truncate text-[11px] uppercase tracking-wider text-muted-2">
             {MODEL_LABEL[scooter.model]}
+            {/* 2.0.1: без арендного номера одинаковые «Jog» различает ID. */}
+            {scooter.rentalSlot == null && scooter.uid && (
+              <span className="normal-case tracking-normal"> · ID {scooter.uid}</span>
+            )}
           </div>
         </div>
       </div>
@@ -839,6 +843,9 @@ function FleetTile({
           />
           <div className="truncate text-[10px] uppercase tracking-wider text-muted-2">
             {MODEL_LABEL[scooter.model]}
+            {scooter.rentalSlot == null && scooter.uid && (
+              <span className="normal-case tracking-normal"> · ID {scooter.uid}</span>
+            )}
           </div>
         </div>
       </div>
