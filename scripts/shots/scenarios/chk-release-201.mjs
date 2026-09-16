@@ -56,7 +56,7 @@ export async function run(page, ctx) {
     console.log("вход:", JSON.stringify(await state()), await me());
     await ctx.sleep(2500);
     await S("tour201-d-1");
-    for (let i = 2; i <= 3; i++) {
+    for (let i = 2; i <= 5; i++) {
       await click(/^Дальше$/);
       await ctx.sleep(3000);
       console.log(`карточка ${i}:`, JSON.stringify(await state()));
@@ -82,10 +82,12 @@ export async function run(page, ctx) {
     await ctx.sleep(2500);
     console.log("телефон, вход:", JSON.stringify(await state()), await me());
     await S("tour201-m-1");
-    await click(/^Дальше$/);
-    await ctx.sleep(3000);
-    console.log("телефон, 2:", JSON.stringify(await state()));
-    await S("tour201-m-2");
+    for (let i = 2; i <= 4; i++) {
+      await click(/^Дальше$/);
+      await ctx.sleep(3000);
+      console.log(`телефон, ${i}:`, JSON.stringify(await state()));
+      await S(`tour201-m-${i}`);
+    }
     console.log("позже:", await click(/^Посмотрю позже$/));
     await ctx.sleep(1000);
     console.log("телефон, отложил:", JSON.stringify(await state()), await me());
