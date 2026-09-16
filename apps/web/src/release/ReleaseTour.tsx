@@ -68,7 +68,7 @@ const reduceMotion = () =>
   typeof window !== "undefined" &&
   window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-/** Карточки для человека и устройства (не больше шести). */
+/** Карточки для человека и устройства (не больше шести, если выпуск не задал своё). */
 export function tourCards(
   device: TourDevice,
   isManager: boolean,
@@ -79,7 +79,7 @@ export function tourCards(
     .filter((i) =>
       i.audience === "all" ? true : i.audience === "managers" ? isManager : !isManager,
     )
-    .slice(0, 6);
+    .slice(0, cfg.maxCards ?? 6);
 }
 
 type QueuedHint = {

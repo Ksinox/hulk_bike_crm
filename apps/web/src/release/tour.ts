@@ -77,6 +77,11 @@ export type ReleaseTourConfig = {
   major: boolean;
   /** День выкладки: от него считаются 7 дней метки «новое». */
   date: string;
+  /**
+   * Сколько карточек показать (по умолчанию 6). 2.0.2: восемь правок
+   * заказчика, каждая — своим слайдом, чтобы показ был самодостаточным.
+   */
+  maxCards?: number;
   subtitle: string;
   items: TourItem[];
 };
@@ -459,6 +464,7 @@ const RELEASE_2_0_2: ReleaseTourConfig = {
   label: "2.0.2",
   major: false,
   date: "2026-09-17",
+  maxCards: 8,
   subtitle: "Ремонты: аванс, остаток и накладная; смешанная оплата аренды; загрузка парка без разборки.",
   items: [
     {
