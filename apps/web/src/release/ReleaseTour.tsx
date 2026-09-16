@@ -479,7 +479,9 @@ function IntroScreen({
               </button>
             </div>
             <div className="rt-meta">
-              {count} {plural(count, "перемена", "перемены", "перемен")} · около двух минут
+              {count} {plural(count, "перемена", "перемены", "перемен")} · около{" "}
+              {Math.max(2, Math.ceil((count * 20) / 60))}{" "}
+              {plural(Math.max(2, Math.ceil((count * 20) / 60)), "минуты", "минут", "минут")}
             </div>
           </div>
         </div>

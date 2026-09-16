@@ -103,7 +103,8 @@ const RELEASE_2_0: ReleaseTourConfig = {
       ],
       audience: "staff",
       devices: ["desktop", "phone"],
-      img: { desktop: `${R}/d-login.jpg`, phone: `${R}/m-login.jpg` },
+      img: { desktop: `${R}/d-login-sq.jpg`, phone: `${R}/m-login.jpg` },
+      zoom: { desktop: { after: `${R}/d-login.jpg` } },
       imgPos: { desktop: "center center", phone: "center 40%" },
     },
     {
@@ -119,8 +120,9 @@ const RELEASE_2_0: ReleaseTourConfig = {
       ],
       audience: "managers",
       devices: ["desktop", "phone"],
-      img: { desktop: `${R}/d-staff.jpg`, phone: `${R}/m-staff.jpg` },
-      imgPos: { desktop: "left top", phone: "center top" },
+      img: { desktop: `${R}/d-staff-sq.jpg`, phone: `${R}/m-staff.jpg` },
+      zoom: { desktop: { after: `${R}/d-staff.jpg` } },
+      imgPos: { desktop: "center center", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-staff", "nav-more"] }, text: "Раздел «Сотрудники» — в меню слева." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне — в меню «Ещё»." },
@@ -143,8 +145,9 @@ const RELEASE_2_0: ReleaseTourConfig = {
       ],
       audience: "all",
       devices: ["desktop", "phone"],
-      img: { desktop: `${R}/d-sales.jpg`, phone: `${R}/m-sales.jpg` },
-      imgPos: { desktop: "left top", phone: "center top" },
+      img: { desktop: `${R}/d-sales-sq.jpg`, phone: `${R}/m-sales.jpg` },
+      zoom: { desktop: { after: `${R}/d-sales.jpg` } },
+      imgPos: { desktop: "center center", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-sales", "nav-more"] }, text: "Новый раздел — в меню слева, иконка кошелька." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне раздел живёт в меню «Ещё»." },
@@ -167,8 +170,9 @@ const RELEASE_2_0: ReleaseTourConfig = {
       ],
       audience: "all",
       devices: ["desktop", "phone"],
-      img: { desktop: `${R}/d-buyout.jpg`, phone: `${R}/m-buyout.jpg` },
-      imgPos: { desktop: "left top", phone: "center top" },
+      img: { desktop: `${R}/d-buyout-sq.jpg`, phone: `${R}/m-buyout.jpg` },
+      zoom: { desktop: { after: `${R}/d-buyout.jpg` } },
+      imgPos: { desktop: "center center", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-rassrochki", "nav-more"] }, text: "Раздел — в меню слева, иконка чека." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне — в меню «Ещё»." },
@@ -193,9 +197,10 @@ const RELEASE_2_0: ReleaseTourConfig = {
       devices: ["desktop", "phone"],
       // «Было» и «стало» — одного размера окна (1600×950), иначе половинки
       // сравнения не совпадают.
-      before: { desktop: `${R}/d-service-was.jpg` },
-      img: { desktop: `${R}/d-service-ba.jpg`, phone: `${R}/m-service.jpg` },
-      imgPos: { desktop: "left top", phone: "center top" },
+      before: { desktop: `${R}/d-service-was-sq.jpg` },
+      img: { desktop: `${R}/d-service-ba-sq.jpg`, phone: `${R}/m-service.jpg` },
+      zoom: { desktop: { before: `${R}/d-service-was.jpg`, after: `${R}/d-service-ba.jpg` } },
+      imgPos: { desktop: "center center", phone: "center top" },
       path: { phone: { anchor: { tour: ["tab-more"] }, text: "Раздел на прежнем месте — в «Ещё»." } },
       hints: {
         desktop: [
@@ -218,8 +223,9 @@ const RELEASE_2_0: ReleaseTourConfig = {
       ],
       audience: "all",
       devices: ["desktop", "phone"],
-      img: { desktop: `${R}/d-analytics.jpg`, phone: `${R}/m-analytics.jpg` },
-      imgPos: { desktop: "left top", phone: "center top" },
+      img: { desktop: `${R}/d-analytics-sq.jpg`, phone: `${R}/m-analytics.jpg` },
+      zoom: { desktop: { after: `${R}/d-analytics.jpg` } },
+      imgPos: { desktop: "center center", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-analytics", "nav-more"] }, text: "Раздел — в меню слева." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне — в меню «Ещё»." },
@@ -246,8 +252,9 @@ const RELEASE_2_0: ReleaseTourConfig = {
       ],
       audience: "all",
       devices: ["desktop"],
-      img: { desktop: `${R}/d-search.jpg` },
-      imgPos: { desktop: "left top" },
+      img: { desktop: `${R}/d-search-sq.jpg` },
+      zoom: { desktop: { after: `${R}/d-search.jpg` } },
+      imgPos: { desktop: "center center" },
       hints: {
         desktop: [{ anchor: { placeholder: "Поиск: клиент" }, title: "Поиск", text: "Вбейте номер скутера, VIN или телефон — CRM покажет, где совпало." }],
       },
