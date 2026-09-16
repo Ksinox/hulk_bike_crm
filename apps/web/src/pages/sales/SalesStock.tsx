@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Package, Pencil, Search, Tag, X } from "lucide-react";
+import { Package, Pencil, Plus, Search, Tag, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useApiScooters, usePatchScooter } from "@/lib/api/scooters";
@@ -9,6 +9,11 @@ import { EmptyState, SectionCard, StatRow, StatTile } from "./SalesUI";
 import { fmt, fmtCompact } from "./salesUtils";
 import { Sensitive } from "@/components/Sensitive";
 import { useCan } from "@/lib/permissions";
+import {
+  AddScooterModal,
+  addScooterDraftKey,
+  useAddScooterReopen,
+} from "@/pages/fleet/AddScooterModal";
 
 /**
  * «В продаже» (31.08) — техника со статусом «Продаётся».
@@ -32,6 +37,9 @@ export function SalesStock({
   const { data: models = [] } = useApiScooterModels();
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<ApiScooter | null>(null);
+  // 2.0.1: технику на продажу заводят прямо отсюда — категория уже выбрана.
+  const [addOpen, setAddOpen] = useState(false);
+  useAddScooterReopen(addScooterDraftKey(false), () => setAddOpen(true));
 
   const modelById = useMemo(
     () => new Map(models.map((m) => [m.id, m] as const)),
@@ -103,6 +111,14 @@ export function SalesStock({
         title="Техника в продаже"
         hint="статус «Продаётся» в разделе «Скутеры»"
         action={
+          <>
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-emerald-600 px-3.5 text-[12.5px] font-bold text-white hover:bg-emerald-700 max-sm:h-10"
+          >
+            <Plus size={14} /> Добавить на продажу
+          </button>
           <div className="relative w-[220px] max-w-full">
             <Search
               size={14}
@@ -124,6 +140,7 @@ export function SalesStock({
               </button>
             )}
           </div>
+          </>
         }
       >
         {isLoading ? (
@@ -135,7 +152,7 @@ export function SalesStock({
             text={
               q
                 ? "Попробуйте другой запрос — ищем по модели, VIN, номеру двигателя и партии."
-                : "Чтобы техника попала сюда, переведите её в статус «Продаётся» в карточке — в разделе «Скутеры»."
+                : "Нажмите «Добавить на продажу» — новая техника сразу попадёт сюда. Уже заведённую переводят в «Продаётся» из карточки в «Скутерах»."
             }
           />
         ) : (
@@ -310,6 +327,9 @@ export function SalesStock({
 
       {editing && (
         <QuickEditDialog scooter={editing} onClose={() => setEditing(null)} />
+      )}
+      {addOpen && (
+        <AddScooterModal defaultCategory="sale" skipCategory onClose={() => setAddOpen(false)} />
       )}
     </div>
   );

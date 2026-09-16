@@ -11,7 +11,7 @@ import { useApiInvestors } from "@/lib/api/investors";
 import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import { currentBillingPeriod } from "@/lib/billingPeriod";
 import { DEFAULT_PARTNER_SHARE } from "@/lib/partner";
-import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
+import { AddScooterModal, addScooterDraftKey, useAddScooterReopen } from "@/pages/fleet/AddScooterModal";
 import { cn } from "@/lib/utils";
 
 /**
@@ -56,6 +56,7 @@ export function PartnerFleet({
   const canShares = useCan("data.partnerShares");
   const anchorsQ = useBillingPeriodAnchors();
   const [addOpen, setAddOpen] = useState(false);
+  useAddScooterReopen(addScooterDraftKey(true), () => setAddOpen(true));
 
   const period = useMemo(
     () => currentBillingPeriod(new Date()),

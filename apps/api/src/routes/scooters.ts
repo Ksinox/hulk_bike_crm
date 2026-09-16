@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, eq, ilike, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { appSettings, rentals, scooterModels, scooters, users } from "../db/schema.js";
+import { activityLog, appSettings, rentals, scooterModels, scooters, users } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
 import { requireDirectorApproval } from "./approvals.js";
@@ -110,6 +110,36 @@ function legacyModelEnum(name: string): "jog" | "gear" | "honda" | "tank" {
   if (l.includes("tank")) return "tank";
   return "jog";
 }
+/**
+ * Номер рамы для сравнения: заглавные, без пробелов, кириллица-двойник →
+ * латиница. В проде есть рама Gear с русской «А» (UА06J…) — без этого та же
+ * рама латиницей прошла бы проверку на дубль.
+ */
+const VIN_CYR = "АВЕКМНОРСТУХ";
+const VIN_LAT = "ABEKMHOPCTYX";
+function normVin(v: string): string {
+  return v
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[АВЕКМНОРСТУХ]/g, (ch) => VIN_LAT[VIN_CYR.indexOf(ch)] ?? ch);
+}
+const vinKeySql = sql`translate(upper(${scooters.vin}), ${VIN_CYR}, ${VIN_LAT})`;
+
+/** Сколько минут после добавления партию можно отменить целиком. */
+const UNDO_MINUTES = 10;
+/** Таблицы, где техника уже «пошла в работу», — тогда отменять нельзя. */
+const SCOOTER_LINKS: { table: string; column: string; label: string }[] = [
+  { table: "rentals", column: "scooter_id", label: "аренда" },
+  { table: "sale_deals", column: "scooter_id", label: "сделка продажи" },
+  { table: "buyout_deals", column: "scooter_id", label: "выкуп" },
+  { table: "scooter_documents", column: "scooter_id", label: "документы" },
+  { table: "scooter_maintenance", column: "scooter_id", label: "обслуживание" },
+  { table: "repair_jobs", column: "scooter_id", label: "ремонт" },
+  { table: "rental_incidents", column: "scooter_id", label: "инцидент" },
+  { table: "scooter_swaps", column: "new_scooter_id", label: "замена" },
+  { table: "scooter_swaps", column: "prev_scooter_id", label: "замена" },
+];
+
 function namePrefix(modelName: string): string {
   const parts = modelName.trim().split(/\s+/);
   return parts[parts.length - 1] || "Scooter";
@@ -467,7 +497,7 @@ export async function scootersRoutes(app: FastifyInstance) {
     const body = parsed.data;
     const units = body.units.map((u) => ({
       ...u,
-      vin: u.vin ? u.vin.toUpperCase() : null,
+      vin: u.vin ? normVin(u.vin) || null : null,
       engineNo: u.engineNo || null,
       color: u.color || null,
       note: u.note || null,
@@ -533,10 +563,10 @@ export async function scootersRoutes(app: FastifyInstance) {
           deletedAt: scooters.deletedAt,
         })
         .from(scooters)
-        .where(inArray(scooters.vin, vins));
+        .where(inArray(vinKeySql, vins));
       for (const d of dups) {
         units.forEach((u, i) => {
-          if (u.vin !== d.vin) return;
+          if (u.vin !== normVin(d.vin ?? "")) return;
           const where = d.deletedAt
             ? " (удалена, ждёт очистки)"
             : d.archivedAt
@@ -769,6 +799,103 @@ export async function scootersRoutes(app: FastifyInstance) {
       });
     }
     return reply.code(201).send({ items: result.rows });
+  });
+
+  /**
+   * POST /api/scooters/batch/undo — «Отменить» в тосте после добавления
+   * партии (2.0.1). Узкое окно: только своя техника, не старше 10 минут и
+   * без аренд, сделок, документов и ремонтов. Иначе — архив из карточки
+   * с ключом директора, как раньше.
+   */
+  app.post("/batch/undo", async (req, reply) => {
+    const parsed = z
+      .object({ ids: z.array(z.number().int().positive()).min(1).max(50) })
+      .strict()
+      .safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
+    }
+    const ids = [...new Set(parsed.data.ids)];
+    const userId = req.user!.userId;
+
+    const rows = await db
+      .select({
+        id: scooters.id,
+        name: scooters.name,
+        slot: scooters.rentalSlot,
+        batch: scooters.purchaseBatch,
+        createdAt: scooters.createdAt,
+        archivedAt: scooters.archivedAt,
+        deletedAt: scooters.deletedAt,
+      })
+      .from(scooters)
+      .where(inArray(scooters.id, ids));
+    if (rows.length !== ids.length || rows.some((r) => r.archivedAt || r.deletedAt)) {
+      return reply.code(409).send({
+        error: "undo_gone",
+        message: "Часть техники уже в архиве или удалена — отменить добавление нельзя.",
+      });
+    }
+    const oldest = Math.min(...rows.map((r) => new Date(r.createdAt).getTime()));
+    if (Date.now() - oldest > UNDO_MINUTES * 60_000) {
+      return reply.code(409).send({
+        error: "undo_expired",
+        message: `Отменить можно в течение ${UNDO_MINUTES} минут после добавления. Уберите технику в архив из карточки.`,
+      });
+    }
+    const mine = await db
+      .select({ id: activityLog.entityId })
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.entity, "scooter"),
+          eq(activityLog.action, "created"),
+          eq(activityLog.userId, userId),
+          inArray(activityLog.entityId, ids),
+        ),
+      );
+    const mineSet = new Set(mine.map((m) => m.id));
+    if (ids.some((id) => !mineSet.has(id))) {
+      return reply.code(403).send({
+        error: "undo_not_owner",
+        message: "Отменить добавление может только тот, кто добавил технику.",
+      });
+    }
+    const idList = sql.join(ids.map((id) => sql`${id}`), sql`, `);
+    const busy = new Set<string>();
+    for (const l of SCOOTER_LINKS) {
+      const res = await db.execute(
+        sql`select 1 from ${sql.identifier(l.table)} where ${sql.identifier(l.column)} in (${idList}) limit 1`,
+      );
+      if ((res as unknown as unknown[]).length > 0) busy.add(l.label);
+    }
+    if (busy.size) {
+      return reply.code(409).send({
+        error: "undo_linked",
+        message: `С техникой уже работали (${[...busy].join(", ")}) — отменить добавление нельзя.`,
+      });
+    }
+
+    await db.delete(scooters).where(inArray(scooters.id, ids));
+
+    const n = rows.length;
+    for (const r of rows.sort((a, b) => a.id - b.id)) {
+      await logActivity(req, {
+        entity: "scooter",
+        entityId: r.id,
+        action: "creation_undone",
+        summary: [
+          `Отменено добавление «${scooterLabel(r.name, r.slot)}»`,
+          r.batch ? `партия «${r.batch}»` : null,
+          n > 1 ? `вся партия — ${n} шт.` : null,
+          r.slot != null ? `номер ${r.slot} снова свободен` : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        meta: { batch: r.batch ?? null, batchSize: n },
+      });
+    }
+    return { deleted: n };
   });
 
   app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {

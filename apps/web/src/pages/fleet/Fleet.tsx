@@ -53,7 +53,7 @@ import {
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { ExNumberTag, ScooterName } from "@/components/ScooterName";
 import { ScooterCard } from "./ScooterCard";
-import { AddScooterModal } from "./AddScooterModal";
+import { AddScooterModal, addScooterDraftKey, useAddScooterReopen } from "./AddScooterModal";
 
 /** «Сегодня» по демо-таймлайну */
 const TODAY = new Date();
@@ -172,6 +172,8 @@ export function Fleet({
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // «Отменить» после добавления — окно открывается снова с тем же черновиком.
+  useAddScooterReopen(addScooterDraftKey(false), () => setAddOpen(true));
   const [backTo, setBackTo] = useState<BackTarget | null>(null);
 
   // v0.8.22: режим «Список/Плитки» (пер-пользователь, морфинг как в Арендах).

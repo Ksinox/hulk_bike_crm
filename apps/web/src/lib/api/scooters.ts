@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCan } from "@/lib/permissions";
 import { api } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
 import type { ApiScooter, ListResponse } from "./types";
 
 export const scootersKeys = {
@@ -75,6 +76,16 @@ export function useAddScootersBatch() {
       qc.invalidateQueries({ queryKey: ["scooter-models"] });
     },
   });
+}
+
+/**
+ * «Отменить» после добавления партии — только свою и в первые 10 минут.
+ * Обычная функция, не хук: к нажатию «Отменить» окно уже закрыто.
+ */
+export async function undoScootersBatch(ids: number[]): Promise<number> {
+  const res = await api.post<{ deleted: number }>("/api/scooters/batch/undo", { ids });
+  await queryClient.invalidateQueries({ queryKey: scootersKeys.all });
+  return res.deleted;
 }
 
 /** Вся техника вместе с архивом — чтобы сразу видеть занятую раму. */

@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { useReloadRestoredState } from "@/lib/usePersistedState";
-import { ShoppingBag, Bike, ScrollText, Printer } from "lucide-react";
+import { ShoppingBag, Bike, ScrollText, Printer, Layers } from "lucide-react";
 import { StaticDocPreview } from "@/components/StaticDocPreview";
 import { useInventorySheet } from "@/pages/fleet/useInventorySheet";
 import { ScooterJournal } from "@/pages/fleet/ScooterJournal";
+import { BatchesPanel } from "@/pages/fleet/BatchesPanel";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -14,7 +15,7 @@ import {
   type ScooterDisplayStatus,
 } from "@/lib/mock/fleet";
 import { Droplet } from "lucide-react";
-import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
+import { AddScooterModal, addScooterDraftKey, useAddScooterReopen } from "@/pages/fleet/AddScooterModal";
 import { MobileScooterCard } from "../cards/MobileScooterCard";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
@@ -93,6 +94,8 @@ export function MobileScooters() {
   const [filter, setFilter] = useState<Filter>("all");
   /** Журнал техники — тот же, что на компьютере (паритет, 06.09). */
   const [journalOpen, setJournalOpen] = useState(false);
+  /** «Партии» — та же сводка, что на компьютере (2.0.1). */
+  const [batchesOpen, setBatchesOpen] = useState(false);
   /** «Ревизия парка» — тот же печатный лист, что на компьютере (06.09, п.2). */
   const [revisionOpen, setRevisionOpen] = useState(false);
   const revision = useInventorySheet();
@@ -102,6 +105,7 @@ export function MobileScooters() {
     null,
   );
   const [newOpen, setNewOpen] = useState(false);
+  useAddScooterReopen(addScooterDraftKey(false), () => setNewOpen(true));
   // Прячем «+ Скутер» внутри карточки (drill-in) И пока открыта форма создания.
   usePageFab("Скутер", () => setNewOpen(true), openId != null || newOpen);
   // FleetScooter[] для полноэкранной карточки (та же, что на десктопе).
@@ -244,6 +248,15 @@ export function MobileScooters() {
         </div>
         <button
           type="button"
+          onClick={() => setBatchesOpen(true)}
+          data-tour="batches-m"
+          className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3 text-[13px] font-semibold text-ink shadow-card-sm"
+          title="Сводка по партиям техники"
+        >
+          <Layers size={15} /> Партии
+        </button>
+        <button
+          type="button"
           onClick={() => setJournalOpen(true)}
           className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3 text-[13px] font-semibold text-ink shadow-card-sm"
           title="Журнал действий с техникой"
@@ -272,6 +285,16 @@ export function MobileScooters() {
 
       <MobileSheet open={journalOpen} onClose={() => setJournalOpen(false)} title="Журнал техники">
         <ScooterJournal />
+      </MobileSheet>
+
+      <MobileSheet open={batchesOpen} onClose={() => setBatchesOpen(false)} title="Партии">
+        <BatchesPanel
+          touch
+          onOpenScooter={(s) => {
+            setBatchesOpen(false);
+            setOpenId(s.id);
+          }}
+        />
       </MobileSheet>
 
       {filtered.length === 0 ? (

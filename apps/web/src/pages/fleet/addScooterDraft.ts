@@ -58,6 +58,8 @@ export type Draft = {
   common: CommonValues;
   rows: UnitRow[];
   savedAt: number;
+  /** Цена, подставленная из последней по модели, — пока её не меняли. */
+  pricePrefill?: number | null;
 };
 
 export const MAX_UNITS = 50;
@@ -163,6 +165,89 @@ export type RowIssue = { field: keyof UnitRow; message: string; blocking: boolea
 
 export type FleetVinInfo = { label: string; where: "" | "archive" };
 
+/**
+ * Какие рамы обычно у модели (из техники в базе, включая архив): начало до
+ * дефиса и длина. Рама у каждого скутера своя, поэтому это только
+ * предупреждение — сохранять оно не мешает.
+ */
+export type VinProfile = {
+  modelName: string;
+  prefixes: string[];
+  /** Обычная длина — если так у большинства рам модели. */
+  length: number | null;
+};
+
+export function vinPrefix(vin: string): string {
+  const v = normalizeVin(vin);
+  const dash = v.indexOf("-");
+  return dash > 0 ? v.slice(0, dash) : v.slice(0, 5);
+}
+
+export function buildVinProfile(modelName: string, vins: (string | null | undefined)[]): VinProfile | null {
+  const list = vins.map((v) => normalizeVin(v ?? "")).filter((v) => v.length >= 5);
+  // Мало данных — не придумываем правило.
+  if (list.length < 3) return null;
+  const byPrefix = new Map<string, number>();
+  const byLen = new Map<number, number>();
+  for (const v of list) {
+    const pfx = vinPrefix(v);
+    byPrefix.set(pfx, (byPrefix.get(pfx) ?? 0) + 1);
+    byLen.set(v.length, (byLen.get(v.length) ?? 0) + 1);
+  }
+  const prefixes = [...byPrefix.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const [topLen, topCount] = [...byLen.entries()].sort((a, b) => b[1] - a[1])[0]!;
+  return {
+    modelName,
+    prefixes,
+    length: topCount / list.length >= 0.7 ? topLen : null,
+  };
+}
+
+/** Предупреждение о необычной раме или null. */
+export function vinFormatWarning(vin: string, profile: VinProfile | null): string | null {
+  if (!profile || !vin) return null;
+  const v = normalizeVin(vin);
+  const pfx = vinPrefix(v);
+  const known = profile.prefixes.slice(0, 4).map((x) => `${x}-…`).join(", ");
+  if (!profile.prefixes.includes(pfx)) {
+    return `Необычная рама для ${profile.modelName}: обычно ${known}`;
+  }
+  if (profile.length && v.length !== profile.length) {
+    return `У ${profile.modelName} в раме обычно ${profile.length} ${plural(profile.length, ["знак", "знака", "знаков"])}, здесь ${v.length}`;
+  }
+  return null;
+}
+
+/**
+ * Последняя цена модели: для продажи — цена продажи из карточки, для
+ * остального — рыночная стоимость (идёт в договор).
+ */
+export function lastModelPrice(
+  scooters: Pick<ApiScooter, "modelId" | "salePrice" | "marketValue" | "updatedAt" | "createdAt">[],
+  modelId: number,
+  category: Category,
+): number | null {
+  const field = category === "sale" ? "salePrice" : "marketValue";
+  const hit = scooters
+    .filter((s) => s.modelId === modelId && (s[field] ?? 0) > 0)
+    .sort((a, b) => (b.updatedAt ?? b.createdAt ?? "").localeCompare(a.updatedAt ?? a.createdAt ?? ""))[0];
+  return hit ? (hit[field] as number) : null;
+}
+
+/**
+ * «Отменить» после добавления: черновик кладётся обратно, а открытый раздел
+ * снова открывает окно — поправить и добавить заново.
+ */
+const REOPEN_EVENT = "hulk:add-scooter-reopen";
+export const ADD_SCOOTER_REOPEN_EVENT = REOPEN_EVENT;
+export function requestAddScooterReopen(draftKey: string) {
+  window.dispatchEvent(new CustomEvent(REOPEN_EVENT, { detail: { draftKey } }));
+}
+/** Ключ черновика окна: у «Скутеров» и «Продаж» общий, у партнёрки — свой. */
+export function addScooterDraftKey(partner: boolean, investorId?: number): string {
+  return `add-scooter:${partner ? `partner-${investorId ?? "any"}` : "fleet"}`;
+}
+
 export function validateRows(opts: {
   rows: UnitRow[];
   common: CommonValues;
@@ -170,8 +255,9 @@ export function validateRows(opts: {
   holds: boolean;
   freeSlots: number[];
   slotsTotal: number;
+  vinProfile?: VinProfile | null;
 }): Map<string, RowIssue[]> {
-  const { rows, common, fleetVins, holds, freeSlots, slotsTotal } = opts;
+  const { rows, common, fleetVins, holds, freeSlots, slotsTotal, vinProfile = null } = opts;
   const out = new Map<string, RowIssue[]>();
   const add = (key: string, issue: RowIssue) => {
     const list = out.get(key) ?? [];
@@ -200,7 +286,10 @@ export function validateRows(opts: {
           });
         }
       }
-      if (v.vin.length < 5) {
+      const fmt = vinFormatWarning(v.vin, vinProfile);
+      if (fmt) {
+        add(r.key, { field: "vin", message: fmt, blocking: false });
+      } else if (!vinProfile && v.vin.length < 5) {
         add(r.key, { field: "vin", message: "Слишком короткий номер рамы", blocking: false });
       }
     } else {

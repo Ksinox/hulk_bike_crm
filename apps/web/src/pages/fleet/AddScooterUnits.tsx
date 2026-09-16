@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ChevronRight, ClipboardPaste, Hash, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronRight, ClipboardPaste, Hash, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SuggestInput } from "@/components/SuggestInput";
 import {
@@ -108,6 +108,8 @@ type EditorProps = {
   touch: boolean;
   /** Цвета, которые уже вписывали, — подсказки в поле «Цвет». */
   colorSuggestions: string[];
+  /** Цена «для всех» подставлена из последней по модели (пока не меняли). */
+  pricePrefill?: { value: number; modelName: string } | null;
 };
 
 /**
@@ -155,6 +157,18 @@ export function UnitsEditor(p: EditorProps) {
           <ClipboardPaste size={14} /> Вставить списком
         </button>
       </div>
+
+      {p.pricePrefill && (
+        <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-[12.5px] text-blue-900">
+          <Sparkles size={14} className="mt-0.5 shrink-0 text-blue-600" />
+          <span>
+            {p.category === "sale" ? "Цена продажи" : "Рыночная стоимость"} подставлена из
+            последней по {p.pricePrefill.modelName}:{" "}
+            <b>{p.pricePrefill.value.toLocaleString("ru-RU")} ₽</b>. Изменилась — поправьте в
+            {p.tableMode ? " строке «Для всех»" : " «Одинаковое для всех»"}.
+          </span>
+        </div>
+      )}
 
       {blocking > 0 && (
         <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] font-semibold text-red-700">
@@ -365,11 +379,15 @@ function UnitsTable(
                               : "border-border",
                         )}
                       />
-                      {iss?.blocking && (
+                      {iss?.blocking ? (
                         <div className="mt-0.5 text-[10.5px] font-semibold leading-tight text-red-600">
                           {iss.message}
                         </div>
-                      )}
+                      ) : iss && c.key === "vin" && r.vin ? (
+                        <div className="mt-0.5 text-[10.5px] font-semibold leading-tight text-amber-700">
+                          {iss.message}
+                        </div>
+                      ) : null}
                     </td>
                   );
                 })}

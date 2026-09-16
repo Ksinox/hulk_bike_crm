@@ -115,6 +115,8 @@ function eventVisual(
     return { icon: CheckCircle2, tone: "ink" };
   if (action.includes("archived") || action.includes("deleted"))
     return { icon: X, tone: "ink" };
+  // 2.0.1: «Отменить» сразу после добавления партии.
+  if (action === "creation_undone") return { icon: RotateCcw, tone: "amber" };
   return { icon: Pencil, tone: "ink" };
 }
 

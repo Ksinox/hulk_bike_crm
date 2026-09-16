@@ -32,6 +32,7 @@ import { useApiInvestors } from "@/lib/api/investors";
 import {
   useAddScootersBatch,
   useApiScootersWithArchive,
+  undoScootersBatch,
   useRentalSlots,
   useSetSlotsTotal,
   type BatchInput,
@@ -42,20 +43,26 @@ import { scooterModelName } from "@/components/ScooterName";
 import { rankSuggestions } from "@/components/SuggestInput";
 import { TABLET_WIZARD_PANEL, TABLET_WIZARD_PANEL_WIDE } from "@/mobile/tablet";
 import {
+  ADD_SCOOTER_REOPEN_EVENT,
   MAX_UNITS,
+  addScooterDraftKey,
   assignSlots,
+  buildVinProfile,
   draftHasData,
   emptyDraft,
   fmtMoney,
   formatRanges,
   holdsSlot,
+  lastModelPrice,
   newRow,
   plural,
+  requestAddScooterReopen,
   resizeRows,
   resolveRow,
   rowHasData,
   statusOf,
   validateRows,
+  vinFormatWarning,
   type Category,
   type Draft,
   type FleetVinInfo,
@@ -135,6 +142,23 @@ const CATEGORY_TITLE: Record<Category, string> = {
   unassigned: "Пока не решили",
 };
 
+/**
+ * Раздел, где есть кнопка «Добавить», снова открывает окно после «Отменить»
+ * в тосте — черновик уже лежит на месте.
+ */
+export function useAddScooterReopen(draftKey: string, open: () => void) {
+  const cb = useRef(open);
+  cb.current = open;
+  useEffect(() => {
+    const on = (e: Event) => {
+      if ((e as CustomEvent<{ draftKey: string }>).detail?.draftKey === draftKey) cb.current();
+    };
+    window.addEventListener(ADD_SCOOTER_REOPEN_EVENT, on);
+    return () => window.removeEventListener(ADD_SCOOTER_REOPEN_EVENT, on);
+  }, [draftKey]);
+}
+export { addScooterDraftKey };
+
 function useElementWidth<T extends HTMLElement>() {
   const ref = useRef<T>(null);
   const [width, setWidth] = useState(0);
@@ -154,6 +178,7 @@ export function AddScooterModal({
   partner = false,
   defaultInvestorId,
   defaultCategory,
+  skipCategory = false,
 }: {
   onClose: () => void;
   /**
@@ -166,6 +191,11 @@ export function AddScooterModal({
   defaultInvestorId?: number;
   /** Открыли из режима «Продажа»/«Аренда» — категория выбрана заранее. */
   defaultCategory?: Category;
+  /**
+   * Категория уже решена самим местом (кнопка «Добавить на продажу» в
+   * «Продажах») — сразу шаг «Модель и партия».
+   */
+  skipCategory?: boolean;
 }) {
   const isMobile = useIsMobile();
   const touch = isMobile;
@@ -173,15 +203,17 @@ export function AddScooterModal({
   const canProfit = useCan("data.profit");
   const showPurchase = role === "director" && canProfit;
 
-  const [draft, setDraft, clearDraft] = usePersistedFormState<Draft>(
-    `add-scooter:${partner ? `partner-${defaultInvestorId ?? "any"}` : "fleet"}`,
-    () => {
-      const d = emptyDraft(defaultCategory ?? (partner ? "rental" : null));
-      if (defaultInvestorId != null) d.investorId = defaultInvestorId;
-      return d;
-    },
-    { storage: "local", version: 1 },
-  );
+  const draftKey = addScooterDraftKey(partner, defaultInvestorId);
+  const freshDraft = () => {
+    const d = emptyDraft(defaultCategory ?? (partner ? "rental" : null));
+    if (defaultInvestorId != null) d.investorId = defaultInvestorId;
+    if (skipCategory && defaultCategory) d.step = 1;
+    return d;
+  };
+  const [draft, setDraft, clearDraft] = usePersistedFormState<Draft>(draftKey, freshDraft, {
+    storage: "local",
+    version: 1,
+  });
   const [restoredAt, setRestoredAt] = useState<number | null>(() =>
     draftHasData(draft) ? draft.savedAt : null,
   );
@@ -248,6 +280,18 @@ export function AddScooterModal({
     [fleet, common.color, rows],
   );
 
+  // Какие рамы обычно у этой модели — по технике в базе (2.0.1).
+  const vinProfile = useMemo(
+    () =>
+      model
+        ? buildVinProfile(
+            model.name,
+            fleet.filter((s) => s.modelId === model.id).map((s) => s.vin),
+          )
+        : null,
+    [model, fleet],
+  );
+
   const localIssues = useMemo(
     () =>
       validateRows({
@@ -257,8 +301,9 @@ export function AddScooterModal({
         holds,
         freeSlots,
         slotsTotal,
+        vinProfile,
       }),
-    [rows, common, fleetVins, holds, freeSlots, slotsTotal],
+    [rows, common, fleetVins, holds, freeSlots, slotsTotal, vinProfile],
   );
   const issues = useMemo(() => {
     const m = new Map(localIssues);
@@ -282,6 +327,9 @@ export function AddScooterModal({
   const purchaseNum = draft.purchasePrice ? Number(draft.purchasePrice) : null;
   const resolved = useMemo(() => rows.map((r) => resolveRow(r, common)), [rows, common]);
   const withoutVin = resolved.filter((r) => !r.vin).length;
+  const oddVinRows = resolved
+    .map((r, i) => (r.vin && vinFormatWarning(r.vin, vinProfile) ? i + 1 : null))
+    .filter((x): x is number => x != null);
   const priced = resolved.filter((r) => r.price !== "");
   const priceSum = priced.reduce((s, r) => s + Number(r.price), 0);
 
@@ -318,6 +366,22 @@ export function AddScooterModal({
 
   const goStep = (s: Draft["step"]) => {
     setSubmitError(null);
+    if (s === 2 && model && category) {
+      // Цена «для всех» — последняя по модели, пока её не вписали сами.
+      const untouched =
+        common.price === "" ||
+        (draft.pricePrefill != null && common.price === String(draft.pricePrefill));
+      if (untouched) {
+        const last = lastModelPrice(fleet, model.id, category);
+        patch({
+          step: s,
+          common: { ...common, price: last != null ? String(last) : "" },
+          pricePrefill: last,
+        });
+        requestAnimationFrame(() => bodyRef.current?.scrollTo({ top: 0 }));
+        return;
+      }
+    }
     patch({ step: s });
     requestAnimationFrame(() => bodyRef.current?.scrollTo({ top: 0 }));
   };
@@ -428,9 +492,7 @@ export function AddScooterModal({
       danger: true,
     });
     if (!ok) return;
-    const d = emptyDraft(defaultCategory ?? (partner ? "rental" : null));
-    if (defaultInvestorId != null) d.investorId = defaultInvestorId;
-    setDraft(d);
+    setDraft(freshDraft());
     setServerIssues({});
     setRestoredAt(null);
     setOtherModelOk(false);
@@ -464,21 +526,45 @@ export function AddScooterModal({
         };
       }),
     };
+    // Снимок черновика — вернуть его, если нажмут «Отменить».
+    const snapshot: Draft = { ...draft, step: 2, savedAt: Date.now() };
     try {
       const res = await addBatch.mutateAsync(body);
       const items = res.items;
       const n = items.length;
       const slots = items.map((s) => s.rentalSlot).filter((x): x is number => x != null);
-      toast.success(
-        `Добавлено: ${n} ${plural(n, ["единица", "единицы", "единиц"])} · ${model.name}`,
-        [
-          slots.length ? `Номера ${formatRanges(slots)}` : null,
-          category === "sale" ? "Уже в «Продажи → Склад»" : null,
-          body.purchaseBatch ? `партия «${body.purchaseBatch}»` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ") || undefined,
-      );
+      const what = `${n} ${plural(n, ["единица", "единицы", "единиц"])} · ${model.name}`;
+      toast.action({
+        title: `Добавлено: ${what}`,
+        message:
+          [
+            slots.length ? `Номера ${formatRanges(slots)}` : null,
+            category === "sale" ? "Уже в «Продажи → В продаже»" : null,
+            body.purchaseBatch ? `партия «${body.purchaseBatch}»` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined,
+        actionLabel: "Отменить",
+        onAction: async () => {
+          try {
+            await undoScootersBatch(items.map((s) => s.id));
+            try {
+              localStorage.setItem(`hulk-draft:${draftKey}:v1`, JSON.stringify(snapshot));
+            } catch {
+              /* хранилище недоступно — данные придётся ввести заново */
+            }
+            toast.success(
+              "Добавление отменено",
+              slots.length
+                ? `Номера ${formatRanges(slots)} снова свободны. Данные — в черновике, поправьте и добавьте снова.`
+                : "Данные — в черновике, поправьте и добавьте снова.",
+            );
+            requestAddScooterReopen(draftKey);
+          } catch (e) {
+            toast.error("Не удалось отменить", (e as Error).message);
+          }
+        },
+      });
       clearDraft();
       requestClose();
     } catch (e) {
@@ -558,6 +644,7 @@ export function AddScooterModal({
               modelId: keepModel ? d.modelId : null,
               common: priceMeaningChanged ? { ...d.common, price: "" } : d.common,
               rows: priceMeaningChanged ? d.rows.map((r) => ({ ...r, price: "" })) : d.rows,
+              pricePrefill: priceMeaningChanged ? null : d.pricePrefill,
               savedAt: Date.now(),
             }));
             setOtherModelOk(false);
@@ -756,6 +843,11 @@ export function AddScooterModal({
           tableMode={tableMode}
           touch={touch}
           colorSuggestions={colorSuggestions}
+          pricePrefill={
+            draft.pricePrefill != null && common.price === String(draft.pricePrefill)
+              ? { value: draft.pricePrefill, modelName: model?.name ?? "" }
+              : null
+          }
         />
       )}
 
@@ -779,6 +871,7 @@ export function AddScooterModal({
           leftAfter={leftAfter}
           slotsTotal={slotsTotal}
           withoutVin={withoutVin}
+          oddVinRows={oddVinRows}
           pricedCount={priced.length}
           priceSum={priceSum}
           enablesPurpose={!modelFits ? (purpose === "rent" ? "Сдаём в аренду" : "Продаём") : null}
@@ -1297,6 +1390,7 @@ function ReviewStep({
   leftAfter,
   slotsTotal,
   withoutVin,
+  oddVinRows,
   pricedCount,
   priceSum,
   enablesPurpose,
@@ -1316,6 +1410,7 @@ function ReviewStep({
   leftAfter: number | null;
   slotsTotal: number;
   withoutVin: number;
+  oddVinRows: number[];
   pricedCount: number;
   priceSum: number;
   enablesPurpose: string | null;
@@ -1412,12 +1507,20 @@ function ReviewStep({
         ))}
       </dl>
 
-      {(withoutVin > 0 || enablesPurpose) && (
+      {(withoutVin > 0 || enablesPurpose || oddVinRows.length > 0) && (
         <div className="flex flex-col gap-1.5">
           {enablesPurpose && (
             <div className="flex items-start gap-2 rounded-xl bg-blue-50 px-3 py-2 text-[12.5px] text-blue-800">
               <Check size={14} className="mt-0.5 shrink-0" />
               Модель «{model.name}» отметим: «{enablesPurpose}».
+            </div>
+          )}
+          {oddVinRows.length > 0 && (
+            <div className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              Рама не похожа на обычные для {model.name} —{" "}
+              {oddVinRows.length === 1 ? `строка ${oddVinRows[0]}` : `строки ${oddVinRows.join(", ")}`}.
+              Проверьте номер: он пойдёт в договоры и акты.
             </div>
           )}
           {withoutVin > 0 && (

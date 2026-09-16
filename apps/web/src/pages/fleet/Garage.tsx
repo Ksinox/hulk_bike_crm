@@ -4,6 +4,7 @@ import {
   HandCoins,
   HelpCircle,
   Key,
+  Layers,
   Package,
   ScrollText,
   Tag, Printer } from "lucide-react";
@@ -16,6 +17,9 @@ import { ScooterArchive } from "./ScooterArchive";
 import { ScooterJournal } from "./ScooterJournal";
 import { StaticDocPreview } from "@/components/StaticDocPreview";
 import { useInventorySheet } from "./useInventorySheet";
+import { BatchesPanel } from "./BatchesPanel";
+import { navigate } from "@/app/navigationStore";
+import type { ApiScooter } from "@/lib/api/types";
 
 /**
  * «Скутеры» — контейнер рабочих режимов (правки 2.0, п.10).
@@ -30,7 +34,7 @@ import { useInventorySheet } from "./useInventorySheet";
  */
 
 export type FleetMode = "rental" | "sale" | "buyout" | "unassigned";
-type GarageTab = FleetMode | "models" | "equipment" | "archive" | "journal";
+type GarageTab = FleetMode | "batches" | "models" | "equipment" | "archive" | "journal";
 
 const MODES: { id: FleetMode; label: string; icon: typeof Key }[] = [
   { id: "rental", label: "Аренда", icon: Key },
@@ -40,12 +44,21 @@ const MODES: { id: FleetMode; label: string; icon: typeof Key }[] = [
 ];
 
 const SETTINGS: { id: GarageTab; label: string; icon: typeof Tag }[] = [
+  // 2.0.1: сводка по партиям — как отбилась поставка.
+  { id: "batches", label: "Партии", icon: Layers },
   { id: "models", label: "Модели", icon: Tag },
   { id: "equipment", label: "Экипировка", icon: Package },
   { id: "archive", label: "Архив", icon: Archive },
   // Правка 31.08: журнал техники — все действия со скутерами в одном окне.
   { id: "journal", label: "Журнал", icon: ScrollText },
 ];
+
+function modeOfStatus(status: ApiScooter["baseStatus"]): FleetMode {
+  if (status === "for_sale" || status === "sold") return "sale";
+  if (status === "buyout") return "buyout";
+  if (status === "ready") return "unassigned";
+  return "rental";
+}
 
 export function Garage() {
   /** Печатная «Ревизия парка» (заказчик 06.09, п.2). */
@@ -150,6 +163,15 @@ export function Garage() {
       )}
 
       {isMode(tab) && <Fleet embedded mode={tab} />}
+      {tab === "batches" && (
+        <BatchesPanel
+          onOpenScooter={(s: ApiScooter) => {
+            // Карточку открывает режим, где эта техника живёт.
+            navigate({ route: "fleet", scooterId: s.id });
+            changeTab(modeOfStatus(s.baseStatus));
+          }}
+        />
+      )}
       {tab === "models" && <ModelsCatalog />}
       {tab === "equipment" && <EquipmentCatalog />}
       {tab === "archive" && <ScooterArchive />}
