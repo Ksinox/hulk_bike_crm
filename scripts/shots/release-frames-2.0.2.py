@@ -16,12 +16,15 @@ SRC = ROOT / "apps/web/public/progress"
 OUT = ROOT / "apps/web/public/release/2.0.2"
 OUT.mkdir(parents=True, exist_ok=True)
 SIDE = 1350
+# Слайд обрезает квадрат по краям (object-fit: cover): на 1440 — по бокам,
+# на 1366 — сверху и снизу. Область кладём с полями, чтобы край не срезался.
+INNER = 1190
 
 
-def square(name: str, box: tuple[int, int, int, int], out: str) -> None:
+def square(name: str, box: tuple[int, int, int, int], out: str, region=None) -> None:
     im = Image.open(SRC / f"{name}.jpg").convert("RGB")
-    region = im.crop(box)
-    k = min(SIDE / region.width, SIDE / region.height)
+    region = region or im.crop(box)
+    k = min(INNER / region.width, INNER / region.height)
     fg = region.resize((round(region.width * k), round(region.height * k)), Image.LANCZOS)
     kb = max(SIDE / im.width, SIDE / im.height)
     bg = im.resize((round(im.width * kb), round(im.height * kb)), Image.LANCZOS)
@@ -32,6 +35,21 @@ def square(name: str, box: tuple[int, int, int, int], out: str) -> None:
     bg.paste(fg, ((SIDE - fg.width) // 2, (SIDE - fg.height) // 2))
     bg.save(OUT / f"{out}.jpg", quality=84, optimize=True)
     print(out, bg.size, "область", region.size)
+
+
+def stacked(name: str, parts: list[tuple[int, int, int, int]]) -> Image.Image:
+    """Куски кадра одной колонкой — широкий ряд плиток в два ряда, чтобы
+    суммы читались на слайде."""
+    im = Image.open(SRC / f"{name}.jpg").convert("RGB")
+    crops = [im.crop(b) for b in parts]
+    w = max(c.width for c in crops)
+    h = sum(c.height for c in crops)
+    out = Image.new("RGB", (w, h), im.getpixel((parts[0][0] + 2, parts[0][1] + 2)))
+    y = 0
+    for c in crops:
+        out.paste(c, (0, y))
+        y += c.height
+    return out
 
 
 def pair(was: str, now: str, box, out: str, box_now=None) -> None:
@@ -55,7 +73,11 @@ INVOICE = (240, 16, 1200, 862)  # предпросмотр накладной
 
 pair("v202-sv-new-was", "v202-sv-form-top-now", FORM, "d-repair-form")
 pair("v202-sv-card-was", "v202-sv-card-money-now", DRAWER, "d-repair-advance")
-pair("v202-sv-list-was", "v202-sv-list-now", LIST, "d-repair-revenue")
+# Выручка: заголовок и период, плитки 1–2, плитки 3–4 (строки списка по
+# ширине не влезают — их видно в «Крупно»).
+REV_PARTS = [(86, 20, 752, 180), (86, 190, 752, 298), (760, 190, 1426, 298)]
+square("v202-sv-list-was", (0, 0, 1, 1), "d-repair-revenue-was", stacked("v202-sv-list-was", REV_PARTS))
+square("v202-sv-list-now", (0, 0, 1, 1), "d-repair-revenue-now", stacked("v202-sv-list-now", REV_PARTS))
 pair("v202-sv-card-was", "v202-sv-invoice-now", DRAWER, "d-repair-invoice", INVOICE)
 pair("v202-sv-card-was", "v202-sv-edit-now", DRAWER, "d-repair-client")
 pair("v202-sv-cancelled-was", "v202-sv-cancelled-now", DRAWER, "d-repair-reopen")

@@ -488,7 +488,7 @@ const RELEASE_2_0_2: ReleaseTourConfig = {
         desktop: { before: `${P}/v202-sv-new-was.jpg`, after: `${P}/v202-sv-form-now.jpg` },
         phone: { before: `${P}/v202-sv-new-m-was.jpg`, after: `${P}/v202-sv-form-m-now.jpg` },
       },
-      imgPos: { desktop: "center center", phone: "center 70%" },
+      imgPos: { desktop: "center center", phone: "center bottom" },
       hints: {
         desktop: [
           {
