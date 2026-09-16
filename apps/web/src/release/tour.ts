@@ -61,6 +61,11 @@ export type TourItem = {
   img: Partial<Record<TourDevice, string>>;
   before?: Partial<Record<TourDevice, string>>;
   imgPos?: Partial<Record<TourDevice, string>>;
+  /**
+   * «Крупно» (16.09): полные скриншоты того же места — во весь экран, чтобы
+   * рассмотреть весь блок. Без них — те же кадры, что в слайде.
+   */
+  zoom?: Partial<Record<TourDevice, { before?: string; after: string }>>;
   /** «Где найти» — первая подсказка по кнопке «Показать где» у нового раздела. */
   path?: Partial<Record<TourDevice, { anchor: TourAnchor; text: string }>>;
   hints?: Partial<Record<TourDevice, TourHint[]>>;
@@ -273,6 +278,8 @@ const RELEASE_2_0: ReleaseTourConfig = {
 };
 
 const R201 = "/release/2.0.1";
+/** Полные скриншоты «Развития» — для «Крупно». */
+const P = "/progress";
 
 /**
  * 2.0.1 (правки заказчика 16.09): добавление техники — сначала категория,
@@ -302,6 +309,10 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
       devices: ["desktop", "phone"],
       before: { desktop: `${R201}/d-add-was.jpg`, phone: `${R201}/m-add-was.jpg` },
       img: { desktop: `${R201}/d-add-now.jpg`, phone: `${R201}/m-add-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/addsc-was-3-sale-number.jpg`, after: `${P}/addsc-now-1-category.jpg` },
+        phone: { before: `${P}/addsc-was-m1.jpg`, after: `${P}/addsc-now-m1-category.jpg` },
+      },
       imgPos: { desktop: "center center", phone: "center top" },
       hints: {
         desktop: [
@@ -338,6 +349,10 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
       devices: ["desktop", "phone"],
       before: { desktop: `${R201}/d-batch-was.jpg`, phone: `${R201}/m-batch-was.jpg` },
       img: { desktop: `${R201}/d-batch-now.jpg`, phone: `${R201}/m-batch-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/addsc-was-1-top.jpg`, after: `${P}/addsc-now-3-table.jpg` },
+        phone: { before: `${P}/addsc-was-m1.jpg`, after: `${P}/addsc-now-m3-cards.jpg` },
+      },
       imgPos: { desktop: "center center", phone: "center top" },
     },
     {
@@ -358,6 +373,10 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
       devices: ["desktop", "phone"],
       before: { desktop: `${R201}/d-errors-was.jpg`, phone: `${R201}/m-errors-was.jpg` },
       img: { desktop: `${R201}/d-errors-now.jpg`, phone: `${R201}/m-errors-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/addsc2-was-table.jpg`, after: `${P}/vinfmt-now-table.jpg` },
+        phone: { before: `${P}/errors-was-m.jpg`, after: `${P}/errors-now-m.jpg` },
+      },
       imgPos: { desktop: "center center", phone: "center top" },
     },
     {
@@ -378,6 +397,10 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
       devices: ["desktop", "phone"],
       before: { desktop: `${R201}/d-batches-was.jpg`, phone: `${R201}/m-batches-was.jpg` },
       img: { desktop: `${R201}/d-batches-now.jpg`, phone: `${R201}/m-batches-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/batch-was-search.jpg`, after: `${P}/batch-now-d.jpg` },
+        phone: { before: `${P}/batch-was-m.jpg`, after: `${P}/batch-now-m.jpg` },
+      },
       imgPos: { desktop: "center center", phone: "center top" },
       hints: {
         desktop: [
@@ -413,6 +436,9 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
       devices: ["desktop"],
       before: { desktop: `${R201}/d-models-was.jpg` },
       img: { desktop: `${R201}/d-models-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/models-was-2-form.jpg`, after: `${P}/models-now-2-form.jpg` },
+      },
       imgPos: { desktop: "center center" },
     },
   ],

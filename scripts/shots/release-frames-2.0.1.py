@@ -53,33 +53,59 @@ def offset(name: str, box: tuple[int, int, int, int], at_x: int, out: str) -> No
     print(out, bg.size)
 
 
+def modal_box(name: str, pad: int = 24) -> tuple[int, int, int, int]:
+    """Белое окно поверх затемнённой страницы: строки и столбцы, где больше
+    трети точек почти белые."""
+    im = Image.open(SRC / f"{name}.jpg").convert("L")
+    small = im.resize((im.width // 4, im.height // 4))
+    w, h = small.size
+    px = small.load()
+    rows = [y for y in range(h) if sum(1 for x in range(w) if px[x, y] >= 246) > w * 0.3]
+    y0, y1 = rows[0], rows[-1]
+    cols = [x for x in range(w) if sum(1 for y in range(y0, y1 + 1) if px[x, y] >= 246) > (y1 - y0) * 0.5]
+    x0, x1 = cols[0], cols[-1]
+    return (
+        max(0, x0 * 4 - pad),
+        max(0, y0 * 4 - pad),
+        min(im.width, (x1 + 1) * 4 + pad),
+        min(im.height, (y1 + 1) * 4 + pad),
+    )
+
+
+def union(*boxes: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    return (
+        min(b[0] for b in boxes),
+        min(b[1] for b in boxes),
+        max(b[2] for b in boxes),
+        max(b[3] for b in boxes),
+    )
+
+
+def pair(was: str, now: str, out: str, shift_now: int = 0) -> None:
+    """«Было» и «стало» — окно целиком, одна и та же область у обоих кадров."""
+    box = union(modal_box(was), modal_box(now))
+    print(out, "окно", box)
+    square(was, box, f"{out}-was")
+    square(now, (box[0], box[1] + shift_now, box[2], box[3] + shift_now), f"{out}-now")
+
+
 def phone(name: str, out: str) -> None:
     im = Image.open(SRC / f"{name}.jpg").convert("RGB")
     im.save(OUT / f"{out}.jpg", quality=84, optimize=True)
     print(out, im.size)
 
 
-# Категория: старая форма и первый шаг мастера — оба окна по центру кадра.
-CENTER = (405, 0, 1755, 1350)
-square("addsc-was-3-sale-number", CENTER, "d-add-was")
-square("addsc-now-1-category", CENTER, "d-add-now")
-
-# Партия: одна форма → таблица на все единицы (окно шире — вписываем).
-square("addsc-was-1-top", CENTER, "d-batch-was")
-# Номер строки и рамы — сразу справа от линии, дальше двигатель, год, цвет.
-offset("addsc-now-3-table", (216, 300, 1080, 1040), 600, "d-batch-now")
-
-# Модели: форма с тарифами → «Продаём» без тарифов.
+# 16.09 (заказчик: «кадр сдвинут вбок, весь блок не рассмотреть»): окна —
+# целиком, одной областью для «было» и «стало»; читать мелкое — «Крупно».
+pair("addsc-was-3-sale-number", "addsc-now-1-category", "d-add")
+pair("addsc-was-1-top", "addsc-now-3-table", "d-batch")
+# В «стало» пометка о цене сдвигает таблицу на 15 px — выравниваем строки.
+pair("addsc2-was-table", "vinfmt-now-table", "d-errors", shift_now=15)
 MODEL_FORM = (360, 80, 1800, 1350)
 square("models-was-2-form", MODEL_FORM, "d-models-was")
 square("models-now-2-form", MODEL_FORM, "d-models-now")
 
-# Меньше ошибок: таблица без подсказок → цена подставлена, рама под
-# подозрением. В «стало» пометка о цене сдвигает таблицу на 15 px.
-square("addsc2-was-table", (216, 300, 1450, 1040), "d-errors-was")
-square("vinfmt-now-table", (216, 315, 1450, 1055), "d-errors-now")
-
-# Партии: раньше — только поиск по номеру, теперь — сводка.
+# Партии — не окно, а страница: первая карточка целиком.
 BATCH_BOX = (110, 200, 1140, 1320)
 square("batch-was-search", BATCH_BOX, "d-batches-was")
 square("batch-now-d", BATCH_BOX, "d-batches-now")
