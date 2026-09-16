@@ -124,6 +124,26 @@ function normVin(v: string): string {
     .replace(/[АВЕКМНОРСТУХ]/g, (ch) => VIN_LAT[VIN_CYR.indexOf(ch)] ?? ch);
 }
 const vinKeySql = sql`translate(upper(${scooters.vin}), ${VIN_CYR}, ${VIN_LAT})`;
+const HAS_CYRILLIC = /[А-Яа-яЁё]/;
+/**
+ * Рама и номер рамы в запросе на создание/правку — латиницей (16.09):
+ * двойники заменяем, прочие русские буквы — ошибка.
+ */
+function latinVinFields<T extends { vin?: string | null; frameNumber?: string | null }>(
+  data: T,
+): { ok: true; data: T } | { ok: false; message: string } {
+  const out = { ...data };
+  for (const k of ["vin", "frameNumber"] as const) {
+    const v = out[k];
+    if (typeof v !== "string") continue;
+    const fixed = normVin(v);
+    if (HAS_CYRILLIC.test(fixed)) {
+      return { ok: false, message: "Номер рамы пишется только латиницей." };
+    }
+    (out as Record<string, unknown>)[k] = fixed || null;
+  }
+  return { ok: true, data: out };
+}
 
 /** Сколько минут после добавления партию можно отменить целиком. */
 const UNDO_MINUTES = 10;
@@ -393,10 +413,13 @@ export async function scootersRoutes(app: FastifyInstance) {
   });
 
   app.post("/", async (req, reply) => {
-    const parsed = CreateScooterBody.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
+    const parsed0 = CreateScooterBody.safeParse(req.body);
+    if (!parsed0.success) {
+      return reply.code(400).send({ error: "validation", issues: parsed0.error.issues });
     }
+    const latin = latinVinFields(parsed0.data);
+    if (!latin.ok) return reply.code(400).send({ error: "vin_not_latin", message: latin.message });
+    const parsed = { ...parsed0, data: latin.data };
     // Запрет дубля VIN: если VIN указан, нельзя создать ещё один НЕархивный
     // скутер с тем же VIN. Пустой VIN (его может не быть) не проверяем.
     const newVin = parsed.data.vin?.trim();
@@ -538,6 +561,11 @@ export async function scootersRoutes(app: FastifyInstance) {
         : `Исправьте строки: ${[...new Set(errs.map((e) => e.index + 1))].join(", ")} — они подсвечены.`;
     const rowErrors: RowError[] = [];
 
+    units.forEach((u, i) => {
+      if (u.vin && HAS_CYRILLIC.test(u.vin)) {
+        rowErrors.push({ index: i, field: "vin", message: "Рама пишется только латиницей." });
+      }
+    });
     // Рама: без дублей внутри партии и с уже заведённой техникой. В базе
     // номер рамы уникален и среди архива — говорим об этом прямо.
     const vins = units.map((u) => u.vin).filter((v): v is string => !!v);
@@ -902,10 +930,13 @@ export async function scootersRoutes(app: FastifyInstance) {
   app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
-    const parsed = PatchScooterBody.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
+    const parsed0 = PatchScooterBody.safeParse(req.body);
+    if (!parsed0.success) {
+      return reply.code(400).send({ error: "validation", issues: parsed0.error.issues });
     }
+    const latin = latinVinFields(parsed0.data);
+    if (!latin.ok) return reply.code(400).send({ error: "vin_not_latin", message: latin.message });
+    const parsed = { ...parsed0, data: latin.data };
     const [before] = await db.select().from(scooters).where(eq(scooters.id, id));
     if (!before) return reply.code(404).send({ error: "not found" });
 

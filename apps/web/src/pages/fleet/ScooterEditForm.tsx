@@ -10,6 +10,7 @@ import { useRole } from "@/lib/role";
 import { useCan } from "@/lib/permissions";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { SuggestInput } from "@/components/SuggestInput";
+import { LatinInput } from "@/components/LatinInput";
 import { useScooterColorSuggestions } from "@/lib/scooterColors";
 import { useIsMobile } from "@/lib/useIsMobile";
 import {
@@ -302,10 +303,10 @@ export function ScooterEditForm({
                 </span>
               }
             >
-              <input
+              <LatinInput
                 type="text"
                 value={frameNumber}
-                onChange={(e) => setFrameNumber(e.target.value.toUpperCase())}
+                onValueChange={(v) => setFrameNumber(v.toUpperCase())}
                 placeholder="SA36J-605232"
                 className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600"
               />

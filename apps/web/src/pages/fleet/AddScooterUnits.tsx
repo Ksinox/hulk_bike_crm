@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ChevronRight, ClipboardPaste, Hash, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SuggestInput } from "@/components/SuggestInput";
+import { LatinInput, toLatin } from "@/components/LatinInput";
 import {
   MAX_UNITS,
   digitsOnly,
@@ -52,7 +53,8 @@ export function columnsFor(category: Category): ColDef[] {
 }
 
 function cleanValue(col: ColDef, raw: string): string {
-  if (col.key === "vin") return normalizeVin(raw);
+  // Рама — только латиница (16.09): двойники → латиница, прочие русские — прочь.
+  if (col.key === "vin") return normalizeVin(toLatin(raw).value);
   if (col.key === "engineNo") return raw.toUpperCase().slice(0, 50);
   if (col.key === "year") return digitsOnly(raw, 4);
   if (col.numeric) return digitsOnly(raw, 9);
@@ -121,8 +123,11 @@ type CellProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "on
   onValueChange: (v: string) => void;
   suggestions?: string[];
   touch: boolean;
+  /** Рама: пишем латиницей при любой раскладке. */
+  latin?: boolean;
 };
-function CellInput({ suggestions, touch, onValueChange, ...rest }: CellProps) {
+function CellInput({ suggestions, touch, latin, onValueChange, ...rest }: CellProps) {
+  if (latin) return <LatinInput {...rest} onValueChange={onValueChange} />;
   if (suggestions) {
     return <SuggestInput {...rest} touch={touch} suggestions={suggestions} onValueChange={onValueChange} />;
   }
@@ -355,6 +360,7 @@ function UnitsTable(
                         data-row={i}
                         data-col={c.key}
                         touch={p.touch}
+                        latin={c.key === "vin"}
                         suggestions={c.key === "color" ? p.colorSuggestions : undefined}
                         value={r[c.key]}
                         onValueChange={(v) => p.onRowChange(r.key, { [c.key]: cleanValue(c, v) })}
@@ -676,6 +682,7 @@ function CardField({
       <CellInput
         data-unit-field
         touch
+        latin={col.key === "vin"}
         suggestions={suggestions}
         value={value}
         autoFocus={expanded}
