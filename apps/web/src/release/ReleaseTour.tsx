@@ -335,6 +335,7 @@ export function ReleaseTour({
           label={cfg.label}
           major={cfg.major}
           perms={perms}
+          isManager={isManager}
           entering={entering}
           onEntered={() => setEntering(false)}
           onNext={() => (cardIdx >= cards.length - 1 ? finishCards() : setCardIdx(cardIdx + 1))}
@@ -526,6 +527,7 @@ function CardsScreen({
   label,
   major,
   perms,
+  isManager,
   entering,
   onEntered,
   onNext,
@@ -540,6 +542,7 @@ function CardsScreen({
   label: string;
   major: boolean;
   perms: Record<string, boolean>;
+  isManager: boolean;
   entering: boolean;
   onEntered: () => void;
   onNext: () => void;
@@ -552,7 +555,13 @@ function CardsScreen({
   const before = item.before?.[device];
   const pos = item.imgPos?.[device] ?? "center top";
   const points = item.points
-    .map((p) => (typeof p === "string" ? p : perms[p.perm] ? p.text : null))
+    .map((p) =>
+      typeof p === "string"
+        ? p
+        : (p.perm && !perms[p.perm]) || (p.managers && !isManager)
+          ? null
+          : p.text,
+    )
     .filter((p): p is string => !!p);
 
   useEffect(() => {

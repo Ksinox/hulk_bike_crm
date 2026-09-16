@@ -51,8 +51,11 @@ export type TourItem = {
   headline: string;
   /** Зачем сделали — причина словами заказчика/сотрудника (с 2.0.1). */
   why?: string;
-  /** Пункт и право, без которого пункт не показываем. */
-  points: Array<string | { text: string; perm: PermissionKey }>;
+  /**
+   * Пункт; с `perm` — только при этом праве, с `managers` — только директору
+   * (закуп и прибыль при добавлении техники видит только он).
+   */
+  points: Array<string | { text: string; perm?: PermissionKey; managers?: boolean }>;
   audience: TourAudience;
   devices: TourDevice[];
   img: Partial<Record<TourDevice, string>>;
@@ -329,7 +332,7 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
         "Строка «Для всех»: год, цвет, цена — подставятся в каждую единицу",
         "Номера рам и двигателей вставляются столбцом из Excel",
         "Повтор рамы подсвечивается сразу, до сохранения",
-        { text: "На проверке — закуп партии и разница с ценой продажи", perm: "data.profit" },
+        { text: "Директору на проверке — закуп партии и прибыль", managers: true },
       ],
       audience: "all",
       devices: ["desktop", "phone"],
