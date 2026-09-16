@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ClipboardPaste, Hash, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronRight, ClipboardPaste, Hash, Plus, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   MAX_UNITS,
@@ -119,7 +119,9 @@ export function UnitsEditor(p: EditorProps) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1 text-[12.5px] text-muted">
           {p.tableMode
-            ? "Строка «Для всех» подставляется в пустые ячейки. Можно вставить столбцы из Excel — встаньте в ячейку и нажмите Ctrl+V."
+            ? p.touch
+              ? "Строка «Для всех» подставляется в пустые ячейки. Столбцы из Excel вставляются в ячейку сразу на несколько строк."
+              : "Строка «Для всех» подставляется в пустые ячейки. Можно вставить столбцы из Excel — встаньте в ячейку и нажмите Ctrl+V."
             : "Одинаковое для всех заполните один раз — в карточках останется только своё."}
         </div>
         <button
@@ -459,11 +461,15 @@ function UnitsCards(
           </span>
         </button>
         {commonOpen && (
-          <div className="grid grid-cols-2 gap-2.5 px-4 pb-4">
+          <div className="grid grid-cols-2 gap-2.5 px-4 pb-4 sm:grid-cols-3">
             {commonCols.map((c) => (
               <label
                 key={c.key}
-                className={cn("flex flex-col gap-1", (c.key === "note" || c.key === "price") && "col-span-2")}
+                className={cn(
+                  "flex flex-col gap-1",
+                  c.key === "note" && "col-span-2",
+                  c.key === "price" && "col-span-2 sm:col-span-1",
+                )}
               >
                 <span className="text-[12px] font-semibold text-blue-900/80">{c.label}</span>
                 <input
@@ -530,24 +536,32 @@ function UnitsCards(
                         : "border-border bg-surface-soft/50",
                   )}
                 >
-                  <Hash size={15} className="text-muted-2" />
-                  <span className="text-[13px] font-semibold text-muted">Арендный номер</span>
-                  <span className="flex-1" />
+                  <Hash size={15} className="shrink-0 text-muted-2" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-muted">
+                    Арендный номер
+                  </span>
                   {slot != null ? (
-                    <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-ink px-2 text-[13px] font-bold tabular-nums text-white">
+                    <span className="inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full bg-ink px-2 text-[13px] font-bold tabular-nums text-white">
                       {slot}
                     </span>
                   ) : (
-                    <span className="text-[12px] font-semibold text-amber-800">номеров не хватает</span>
+                    <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[12px] font-bold text-amber-800">
+                      нет
+                    </span>
                   )}
-                  <span className="text-[11px] font-semibold text-blue-700">
-                    {r.slot != null ? "свой" : "авто"} · изменить
+                  <span className="shrink-0 text-[11px] font-semibold text-muted-2">
+                    {r.slot != null ? "свой" : "авто"}
                   </span>
+                  <ChevronRight size={16} className="shrink-0 text-muted-2" />
                 </button>
               )}
-              {slotIssue?.blocking && (
+              {slotIssue?.blocking ? (
                 <div className="-mt-1.5 mb-2 text-[12px] font-semibold text-red-600">{slotIssue.message}</div>
-              )}
+              ) : slot == null ? (
+                <div className="-mt-1.5 mb-2 text-[12px] font-semibold text-amber-800">
+                  Свободные номера закончились — добавьте номера на шаге «Модель и партия»
+                </div>
+              ) : null}
 
               <div className="grid grid-cols-2 gap-2.5">
                 {p.cols.map((c) => {
@@ -627,7 +641,7 @@ function CardField({
         enterKeyHint="next"
         placeholder={inherited || col.placeholder}
         className={cn(
-          "h-12 w-full rounded-xl border bg-white px-3 text-[15px] text-ink outline-none placeholder:text-muted-2/70 focus:border-blue-600",
+          "h-12 w-full rounded-xl border bg-white px-3 text-[15px] text-ink outline-none placeholder:text-muted-2/50 focus:border-blue-600",
           col.mono && "font-mono text-[14.5px] tracking-wide",
           col.numeric && "tabular-nums",
           issue?.blocking ? "border-red-400 bg-red-50" : "border-border",

@@ -80,6 +80,8 @@ import { PasteListDialog, UnitsEditor, applyGrid, columnsFor, type ColKey } from
  */
 
 const STEPS = ["Категория", "Модель и партия", "Единицы", "Проверка"] as const;
+/** Для строки шагов на компьютере — коротко, чтобы не обрезалось. */
+const STEPS_SHORT = ["Категория", "Модель", "Единицы", "Проверка"] as const;
 
 const CATEGORY_CARDS: {
   id: Category;
@@ -776,13 +778,26 @@ export function AddScooterModal({
         />
       )}
 
-      {submitError && (
-        <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-[13px] font-semibold text-red-700">
-          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-          <span>{submitError}</span>
-        </div>
-      )}
     </>
+  );
+
+  // Ошибка сервера — у кнопок, а не внизу длинного списка, где её не видно.
+  const errorBar = submitError && (
+    <div
+      role="alert"
+      className="mb-2.5 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-semibold text-red-700"
+    >
+      <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+      <span className="min-w-0 flex-1">{submitError}</span>
+      <button
+        type="button"
+        onClick={() => setSubmitError(null)}
+        aria-label="Скрыть"
+        className="-my-1 -mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full hover:bg-red-100"
+      >
+        <X size={14} />
+      </button>
+    </div>
   );
 
   const nextLabel =
@@ -823,6 +838,7 @@ export function AddScooterModal({
   if (isMobile) {
     return (
       <div
+        data-wizard="add-scooter"
         className={cn(
           "fixed inset-0 z-[130] flex flex-col bg-surface lg:items-center lg:bg-ink/45 lg:backdrop-blur-sm",
           closing ? "animate-modal-out" : "animate-modal-in",
@@ -868,6 +884,7 @@ export function AddScooterModal({
             className="border-t border-border bg-white px-4 pt-2.5"
             style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
           >
+            {errorBar}
             {!stepValid[step] && stepHint[step] && (
               <div className="mb-2 text-center text-[12.5px] font-semibold text-muted">
                 {stepHint[step]}
@@ -903,6 +920,7 @@ export function AddScooterModal({
   // ============ Компьютер — окно по центру ============
   return (
     <div
+      data-wizard="add-scooter"
       className={cn(
         "fixed inset-0 z-[130] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
@@ -957,7 +975,7 @@ export function AddScooterModal({
                     >
                       {done ? <Check size={11} strokeWidth={3} /> : i + 1}
                     </span>
-                    <span className="truncate">{t}</span>
+                    <span className="truncate">{STEPS_SHORT[i]}</span>
                   </button>
                   {i < STEPS.length - 1 && <span className="h-px min-w-3 flex-1 bg-border" />}
                 </li>
@@ -970,7 +988,13 @@ export function AddScooterModal({
           {body}
         </div>
 
-        <div className="flex items-center gap-3 border-t border-border bg-surface-soft px-6 py-3">
+        {submitError && <div className="border-t border-border bg-surface-soft px-6 pt-3">{errorBar}</div>}
+        <div
+          className={cn(
+            "flex items-center gap-3 bg-surface-soft px-6 py-3",
+            submitError ? "pt-0" : "border-t border-border",
+          )}
+        >
           <div className="min-w-0 flex-1 text-[12px] text-muted">
             {!stepValid[step] && stepHint[step] ? (
               <span className="font-semibold text-ink-2">{stepHint[step]}</span>
@@ -1337,6 +1361,20 @@ function ReviewStep({
           </>
         ),
     },
+    // Директору с правом на прибыль — сколько сверху закупа, только когда
+    // известны обе цены у всех единиц (иначе цифра была бы неправдой).
+    ...(category === "sale" && purchasePrice != null && pricedCount === n
+      ? [
+          {
+            label: "Разница с закупом",
+            value: (
+              <span className={priceSum - purchasePrice * n >= 0 ? "text-green-ink" : "text-red-600"}>
+                {fmtMoney(priceSum - purchasePrice * n)}
+              </span>
+            ),
+          },
+        ]
+      : []),
     ...(investorName ? [{ label: "Инвестор", value: investorName }] : []),
   ];
 
