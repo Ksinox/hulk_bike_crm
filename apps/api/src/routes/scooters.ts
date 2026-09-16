@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { appSettings, rentals, scooters, users } from "../db/schema.js";
+import { appSettings, rentals, scooterModels, scooters, users } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
 import { requireDirectorApproval } from "./approvals.js";
@@ -57,6 +57,63 @@ const CreateScooterBody = z
   .strict();
 
 const PatchScooterBody = CreateScooterBody.partial();
+
+/**
+ * Релиз 2.0.1: добавление техники партией. Общее (модель, категория,
+ * партия, дата и цена закупа) — один раз, уникальное (рама, двигатель,
+ * пробег, номер) — строкой на каждую единицу.
+ */
+const BatchUnit = z
+  .object({
+    vin: z.string().trim().max(20).optional().nullable(),
+    engineNo: z.string().trim().max(50).optional().nullable(),
+    year: z.number().int().min(1980).max(2100).optional().nullable(),
+    color: z.string().trim().max(50).optional().nullable(),
+    mileage: z.number().int().min(0).max(1_000_000).optional(),
+    rentalSlot: z.number().int().min(1).optional().nullable(),
+    marketValue: z.number().int().min(0).optional().nullable(),
+    salePrice: z.number().int().min(0).optional().nullable(),
+    note: z.string().trim().max(500).optional().nullable(),
+  })
+  .strict();
+
+const BatchBody = z
+  .object({
+    modelId: z.number().int().positive(),
+    baseStatus: ScooterBaseStatusEnum,
+    purchaseBatch: z.string().trim().max(120).optional().nullable(),
+    purchaseDate: z.string().optional().nullable(),
+    /** Цена закупа ЗА ЕДИНИЦУ — только с правом на прибыль. */
+    purchasePrice: z.number().int().min(0).optional().nullable(),
+    isPartner: z.boolean().optional(),
+    investorId: z.number().int().positive().optional().nullable(),
+    /**
+     * Модель ещё не отмечена под эту категорию (например, продаём модель,
+     * которую раньше только сдавали) — отметить её заодно.
+     */
+    enableModelPurpose: z.boolean().optional(),
+    units: z.array(BatchUnit).min(1).max(50),
+  })
+  .strict();
+
+/** Статусы арендного контура: модель должна быть «сдаём». */
+const RENT_CONTOUR = ["rental_pool", "repair", "dtp", "disassembly"];
+/** Служебные номера в названии техники без арендного номера — отсюда. */
+const SERVICE_NAME_FROM = 1001;
+
+/** Как на фронте (ModelPicker): enum — для старых мест, префикс — для имени. */
+function legacyModelEnum(name: string): "jog" | "gear" | "honda" | "tank" {
+  const l = name.toLowerCase();
+  if (l.includes("jog")) return "jog";
+  if (l.includes("gear")) return "gear";
+  if (l.includes("honda")) return "honda";
+  if (l.includes("tank")) return "tank";
+  return "jog";
+}
+function namePrefix(modelName: string): string {
+  const parts = modelName.trim().split(/\s+/);
+  return parts[parts.length - 1] || "Scooter";
+}
 
 const directorOnly = requireRole("director");
 
@@ -395,6 +452,323 @@ export async function scootersRoutes(app: FastifyInstance) {
       }
       throw e;
     }
+  });
+
+  /**
+   * POST /api/scooters/batch — партия техники одной транзакцией
+   * (релиз 2.0.1). Либо добавляются все единицы, либо ни одной: ошибки
+   * возвращаются по строкам, чтобы форма подсветила конкретную ячейку.
+   */
+  app.post("/batch", async (req, reply) => {
+    const parsed = BatchBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
+    }
+    const body = parsed.data;
+    const units = body.units.map((u) => ({
+      ...u,
+      vin: u.vin ? u.vin.toUpperCase() : null,
+      engineNo: u.engineNo || null,
+      color: u.color || null,
+      note: u.note || null,
+    }));
+    const status = body.baseStatus;
+    const role = req.user!.role as string;
+    const canProfit = !!req.perms?.["data.profit"];
+
+    const [model] = await db
+      .select()
+      .from(scooterModels)
+      .where(eq(scooterModels.id, body.modelId));
+    if (!model) {
+      return reply.code(404).send({ error: "model_not_found", message: "Модель не найдена." });
+    }
+
+    // Назначение модели: продажную модель в аренду не заводим и наоборот.
+    const needRent = RENT_CONTOUR.includes(status);
+    const needSale = status === "for_sale" || status === "sold";
+    const missingPurpose =
+      (needRent && !model.forRent) || (needSale && !model.forSale);
+    if (missingPurpose) {
+      const canEditModel = role === "director" || role === "admin" || role === "creator";
+      if (!body.enableModelPurpose || !canEditModel) {
+        return reply.code(409).send({
+          error: needRent ? "model_not_for_rent" : "model_not_for_sale",
+          message: needRent
+            ? `Модель «${model.name}» не отмечена для аренды. Отметьте «Сдаём в аренду» в «Модели».`
+            : `Модель «${model.name}» не отмечена для продажи. Отметьте «Продаём» в «Модели».`,
+        });
+      }
+    }
+
+    type RowError = { index: number; field: string; message: string };
+    const rowsMessage = (errs: RowError[]) =>
+      errs.length === 1
+        ? `Строка ${errs[0]!.index + 1}: ${errs[0]!.message}`
+        : `Исправьте строки: ${[...new Set(errs.map((e) => e.index + 1))].join(", ")} — они подсвечены.`;
+    const rowErrors: RowError[] = [];
+
+    // Рама: без дублей внутри партии и с уже заведённой техникой. В базе
+    // номер рамы уникален и среди архива — говорим об этом прямо.
+    const vins = units.map((u) => u.vin).filter((v): v is string => !!v);
+    const seen = new Map<string, number>();
+    units.forEach((u, i) => {
+      if (!u.vin) return;
+      const first = seen.get(u.vin);
+      if (first != null) {
+        rowErrors.push({
+          index: i,
+          field: "vin",
+          message: `Такой номер рамы уже в строке ${first + 1}.`,
+        });
+      } else seen.set(u.vin, i);
+    });
+    if (vins.length) {
+      const dups = await db
+        .select({
+          vin: scooters.vin,
+          name: scooters.name,
+          slot: scooters.rentalSlot,
+          archivedAt: scooters.archivedAt,
+          deletedAt: scooters.deletedAt,
+        })
+        .from(scooters)
+        .where(inArray(scooters.vin, vins));
+      for (const d of dups) {
+        units.forEach((u, i) => {
+          if (u.vin !== d.vin) return;
+          const where = d.deletedAt
+            ? " (удалена, ждёт очистки)"
+            : d.archivedAt
+              ? " (в архиве)"
+              : "";
+          rowErrors.push({
+            index: i,
+            field: "vin",
+            message: `Такая рама уже есть: «${scooterLabel(d.name, d.slot)}»${where}.`,
+          });
+        });
+      }
+    }
+
+    // Явные номера — без повторов внутри партии.
+    const holds = holdsSlot(status);
+    if (holds) {
+      const firstBySlot = new Map<number, number>();
+      units.forEach((u, i) => {
+        if (u.rentalSlot == null) return;
+        const first = firstBySlot.get(u.rentalSlot);
+        if (first != null) {
+          rowErrors.push({
+            index: i,
+            field: "rentalSlot",
+            message: `Номер ${u.rentalSlot} уже выбран в строке ${first + 1}.`,
+          });
+        } else firstBySlot.set(u.rentalSlot, i);
+      });
+    }
+    if (rowErrors.length) {
+      return reply.code(409).send({
+        error: "rows",
+        message: rowsMessage(rowErrors),
+        rows: rowErrors,
+      });
+    }
+
+    const prefix = namePrefix(model.name);
+    const legacy = legacyModelEnum(model.name);
+    const purchasePrice =
+      canProfit && body.purchasePrice != null ? body.purchasePrice : null;
+    const investorId = body.investorId ?? null;
+    const isPartner = investorId ? true : (body.isPartner ?? false);
+
+    type Inserted = typeof scooters.$inferSelect;
+    type Result =
+      | { ok: true; rows: Inserted[] }
+      | { ok: false; code: number; payload: Record<string, unknown> };
+
+    const result: Result = await db.transaction(async (tx) => {
+      // Одна партия за раз: номера аренды и служебные имена раздаются
+      // без гонки с соседним добавлением.
+      await tx.execute(sql`select pg_advisory_xact_lock(815001)`);
+
+      let slots: (number | null)[] = units.map(() => null);
+      if (holds) {
+        const [totalRow] = await tx
+          .select({ value: appSettings.value })
+          .from(appSettings)
+          .where(eq(appSettings.key, "rental_slots_total"));
+        const totalN = Number(totalRow?.value);
+        const total = Number.isFinite(totalN) && totalN >= 0 ? totalN : 0;
+        const usedRows = await tx
+          .select({ slot: scooters.rentalSlot })
+          .from(scooters)
+          .where(
+            and(
+              isNotNull(scooters.rentalSlot),
+              isNull(scooters.archivedAt),
+              isNull(scooters.deletedAt),
+            ),
+          );
+        const busy = new Set(usedRows.map((r) => r.slot!));
+        const errs: RowError[] = [];
+        units.forEach((u, i) => {
+          if (u.rentalSlot == null) return;
+          if (u.rentalSlot > total) {
+            errs.push({
+              index: i,
+              field: "rentalSlot",
+              message: `Номер ${u.rentalSlot} больше общего количества номеров (${total}).`,
+            });
+          } else if (busy.has(u.rentalSlot)) {
+            errs.push({
+              index: i,
+              field: "rentalSlot",
+              message: `Номер ${u.rentalSlot} уже занят.`,
+            });
+          }
+        });
+        if (errs.length) {
+          return {
+            ok: false,
+            code: 409,
+            payload: { error: "rows", message: rowsMessage(errs), rows: errs },
+          };
+        }
+        const explicit = new Set(
+          units.map((u) => u.rentalSlot).filter((x): x is number => x != null),
+        );
+        const free: number[] = [];
+        for (let n = 1; n <= total; n++) {
+          if (!busy.has(n) && !explicit.has(n)) free.push(n);
+        }
+        const autoNeeded = units.filter((u) => u.rentalSlot == null).length;
+        if (autoNeeded > free.length) {
+          return {
+            ok: false,
+            code: 409,
+            payload: {
+              error: "no_free_slots",
+              message: `Свободных номеров: ${free.length}, а в партии без номера: ${autoNeeded}. Увеличьте общее количество номеров или заведите часть партии в «Пока не решили».`,
+              free: free.length,
+              needed: autoNeeded,
+            },
+          };
+        }
+        let k = 0;
+        slots = units.map((u) => u.rentalSlot ?? free[k++]!);
+      }
+
+      // Служебные имена «Jog #N» уникальны по всей базе, включая архив.
+      const nameRows = await tx
+        .select({ name: scooters.name })
+        .from(scooters)
+        .where(ilike(scooters.name, `${prefix} #%`));
+      const usedNums = new Set<number>();
+      for (const r of nameRows) {
+        const m = r.name.match(/^(.*?)\s*#\s*0*(\d+)\s*$/);
+        if (m && m[1]!.trim().toLowerCase() === prefix.toLowerCase()) {
+          usedNums.add(Number(m[2]));
+        }
+      }
+      let next = SERVICE_NAME_FROM;
+      const names = slots.map((slot) => {
+        // В аренде служебный номер совпадает с арендным, если свободен.
+        if (slot != null && !usedNums.has(slot)) {
+          usedNums.add(slot);
+          return `${prefix} #${String(slot).padStart(2, "0")}`;
+        }
+        while (usedNums.has(next)) next++;
+        usedNums.add(next);
+        return `${prefix} #${next}`;
+      });
+
+      if (missingPurpose) {
+        await tx
+          .update(scooterModels)
+          .set(
+            needRent
+              ? { forRent: true, updatedAt: new Date() }
+              : { forSale: true, updatedAt: new Date() },
+          )
+          .where(eq(scooterModels.id, model.id));
+      }
+
+      const rows = await tx
+        .insert(scooters)
+        .values(
+          units.map((u, i) => ({
+            name: names[i]!,
+            model: legacy,
+            modelId: model.id,
+            vin: u.vin,
+            frameNumber: u.vin,
+            engineNo: u.engineNo,
+            uid: uidFromVin(u.vin),
+            year: u.year ?? null,
+            color: u.color,
+            mileage: u.mileage ?? 0,
+            baseStatus: status,
+            rentalSlot: slots[i] ?? null,
+            purchaseDate: body.purchaseDate || null,
+            purchasePrice,
+            purchaseBatch: body.purchaseBatch || null,
+            marketValue: u.marketValue ?? null,
+            salePrice: u.salePrice ?? null,
+            note: u.note,
+            isPartner,
+            investorId,
+          })),
+        )
+        .returning();
+      // Порядок строк ответа = порядок строк формы.
+      rows.sort((a, b) => a.id - b.id);
+      return { ok: true, rows };
+    });
+
+    if (!result.ok) return reply.code(result.code).send(result.payload);
+
+    if (missingPurpose) {
+      await logActivity(req, {
+        entity: "model",
+        entityId: model.id,
+        action: "updated",
+        summary: `Модель «${model.name}» отмечена: ${needRent ? "сдаём в аренду" : "продаём"} — при добавлении техники`,
+      });
+    }
+    const n = result.rows.length;
+    const where =
+      status === "rental_pool"
+        ? "в арендный парк"
+        : status === "for_sale"
+          ? "на продажу"
+          : status === "buyout"
+            ? "в выкуп"
+            : `со статусом «${scooterStatusLabel(status)}»`;
+    for (const [i, row] of result.rows.entries()) {
+      const bits = [
+        `Добавлена техника «${scooterLabel(row.name, row.rentalSlot)}» ${where}`,
+        body.purchaseBatch ? `партия «${body.purchaseBatch}»` : null,
+        n > 1 ? `${i + 1} из ${n}` : null,
+        row.vin ? `рама ${row.vin}` : null,
+        row.salePrice != null
+          ? `цена продажи ${row.salePrice.toLocaleString("ru-RU")} ₽`
+          : null,
+      ].filter(Boolean);
+      await logActivity(req, {
+        entity: "scooter",
+        entityId: row.id,
+        action: "created",
+        summary: bits.join(" · "),
+        meta: {
+          batch: body.purchaseBatch ?? null,
+          batchSize: n,
+          batchIndex: i + 1,
+          ...(purchasePrice != null ? { purchasePrice } : {}),
+        },
+      });
+    }
+    return reply.code(201).send({ items: result.rows });
   });
 
   app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {

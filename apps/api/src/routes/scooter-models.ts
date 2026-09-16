@@ -23,6 +23,9 @@ const Body = z
     /** Пункт 14: статусы модели — электро / партнёрская техника. */
     isElectric: z.boolean().optional(),
     isPartner: z.boolean().optional(),
+    /** Релиз 2.0.1: назначение — сдаём в аренду / продаём. */
+    forRent: z.boolean().optional(),
+    forSale: z.boolean().optional(),
     dayRate: z.number().int().min(0).max(1_000_000).optional(),
     shortRate: z.number().int().min(0).max(1_000_000).optional(),
     weekRate: z.number().int().min(0).max(1_000_000).optional(),
@@ -53,6 +56,14 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
     }
     const data = parsed.data;
+    const forRent = data.forRent ?? true;
+    const forSale = data.forSale ?? false;
+    if (!forRent && !forSale) {
+      return reply.code(400).send({
+        error: "no_purpose",
+        message: "Отметьте, для чего модель: сдаём в аренду, продаём или и то и другое.",
+      });
+    }
     const [dup] = await db
       .select({ id: scooterModels.id })
       .from(scooterModels)
@@ -69,6 +80,8 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         active: data.active ?? true,
         isElectric: data.isElectric ?? false,
         isPartner: data.isPartner ?? false,
+        forRent,
+        forSale,
         dayRate: data.dayRate ?? 1300,
         shortRate: data.shortRate ?? 700,
         weekRate: data.weekRate ?? 500,
@@ -87,7 +100,9 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
       entity: "model",
       entityId: row.id,
       action: "created",
-      summary: `Создана модель «${row.name}» · тарифы ${row.shortRate}/${row.weekRate}/${row.monthRate} ₽ за сутки`,
+      summary: row.forRent
+        ? `Создана модель «${row.name}»${row.forSale ? " · аренда и продажа" : ""} · тарифы ${row.shortRate}/${row.weekRate}/${row.monthRate} ₽ за сутки`
+        : `Создана модель «${row.name}» · только продажа`,
     });
 
     return row;
@@ -109,6 +124,14 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         .from(scooterModels)
         .where(eq(scooterModels.id, id));
       if (!before) return reply.code(404).send({ error: "not found" });
+      const nextRent = parsed.data.forRent ?? before.forRent;
+      const nextSale = parsed.data.forSale ?? before.forSale;
+      if (!nextRent && !nextSale) {
+        return reply.code(400).send({
+          error: "no_purpose",
+          message: "Отметьте, для чего модель: сдаём в аренду, продаём или и то и другое.",
+        });
+      }
 
       // Подготавливаем patch: numeric требует string-репрезентацию
       const patch: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
@@ -137,6 +160,8 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
           weekRate: "тариф 7–29 дней",
           monthRate: "тариф 30+ дней",
           quickPick: "быстрый выбор",
+          forRent: "сдаём в аренду",
+          forSale: "продаём",
           maxSpeedKmh: "макс. скорость",
           tankVolumeL: "объём бака",
           fuelLPer100Km: "расход топлива",

@@ -98,6 +98,8 @@ export async function publicRoutes(app: FastifyInstance) {
           ne(scooterModels.avatarKey, ""),
           // Неактивные модели на лендинге не показываем
           eq(scooterModels.active, true),
+          // 2.0.1: модель только для продажи в аренду не предлагаем.
+          eq(scooterModels.forRent, true),
         ),
       )
       .orderBy(scooterModels.id);
@@ -134,7 +136,7 @@ export async function publicRoutes(app: FastifyInstance) {
           isElectric: scooterModels.isElectric,
         })
         .from(scooterModels)
-        .where(eq(scooterModels.active, true))
+        .where(and(eq(scooterModels.active, true), eq(scooterModels.forRent, true)))
         .orderBy(scooterModels.id),
       db
         .select({ modelId: scooters.modelId, model: scooters.model })
