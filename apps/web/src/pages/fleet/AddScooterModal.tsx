@@ -55,6 +55,7 @@ import {
   holdsSlot,
   lastModelPrice,
   newRow,
+  normalizeVin,
   plural,
   requestAddScooterReopen,
   resizeRows,
@@ -255,8 +256,10 @@ export function AddScooterModal({
     for (const s of fleet) {
       if (!s.vin) continue;
       const m = models.find((x) => x.id === s.modelId);
-      const label = `${m?.name ?? scooterModelName(s.name)}${s.rentalSlot != null ? ` №${s.rentalSlot}` : ""}`;
-      map.set(s.vin.toUpperCase(), {
+      const label = `${m?.name ?? scooterModelName(s.name)}${
+        s.rentalSlot != null ? ` №${s.rentalSlot}` : s.uid ? ` · ID ${s.uid}` : ""
+      }`;
+      map.set(normalizeVin(s.vin), {
         label,
         where: s.archivedAt || s.deletedAt ? "archive" : "",
       });

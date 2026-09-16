@@ -194,11 +194,16 @@ export function buildVinProfile(modelName: string, vins: (string | null | undefi
     byPrefix.set(pfx, (byPrefix.get(pfx) ?? 0) + 1);
     byLen.set(v.length, (byLen.get(v.length) ?? 0) + 1);
   }
-  const prefixes = [...byPrefix.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  // Правило — только из повторяющихся начал, и только если они покрывают
+  // большую часть рам модели. Случайные рамы (тесты, опечатки) правилом не
+  // становятся — иначе предупреждение было бы на каждой строке.
+  const repeated = [...byPrefix.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]);
+  const covered = repeated.reduce((sum, [, n]) => sum + n, 0);
+  if (!repeated.length || covered / list.length < 0.7) return null;
   const [topLen, topCount] = [...byLen.entries()].sort((a, b) => b[1] - a[1])[0]!;
   return {
     modelName,
-    prefixes,
+    prefixes: repeated.map(([k]) => k),
     length: topCount / list.length >= 0.7 ? topLen : null,
   };
 }

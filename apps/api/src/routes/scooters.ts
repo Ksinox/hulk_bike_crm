@@ -559,6 +559,7 @@ export async function scootersRoutes(app: FastifyInstance) {
           vin: scooters.vin,
           name: scooters.name,
           slot: scooters.rentalSlot,
+          uid: scooters.uid,
           archivedAt: scooters.archivedAt,
           deletedAt: scooters.deletedAt,
         })
@@ -575,7 +576,7 @@ export async function scootersRoutes(app: FastifyInstance) {
           rowErrors.push({
             index: i,
             field: "vin",
-            message: `Такая рама уже есть: «${scooterLabel(d.name, d.slot)}»${where}.`,
+            message: `Такая рама уже есть: «${scooterLabel(d.name, d.slot)}»${d.slot == null && d.uid ? ` · ID ${d.uid}` : ""}${where}.`,
           });
         });
       }
