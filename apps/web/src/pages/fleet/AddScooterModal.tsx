@@ -39,6 +39,7 @@ import {
 } from "@/lib/api/scooters";
 import { ModelPicker } from "./ModelPicker";
 import { scooterModelName } from "@/components/ScooterName";
+import { rankSuggestions } from "@/components/SuggestInput";
 import { TABLET_WIZARD_PANEL, TABLET_WIZARD_PANEL_WIDE } from "@/mobile/tablet";
 import {
   MAX_UNITS,
@@ -240,6 +241,12 @@ export function AddScooterModal({
     }
     return [...seen.keys()];
   }, [fleet]);
+
+  // 16.09: цвет — подсказки из парка и из того, что уже вписали в эту партию.
+  const colorSuggestions = useMemo(
+    () => rankSuggestions([...fleet.map((s) => s.color), common.color, ...rows.map((r) => r.color)]),
+    [fleet, common.color, rows],
+  );
 
   const localIssues = useMemo(
     () =>
@@ -748,6 +755,7 @@ export function AddScooterModal({
           onOpenPasteList={() => setPasteOpen(true)}
           tableMode={tableMode}
           touch={touch}
+          colorSuggestions={colorSuggestions}
         />
       )}
 

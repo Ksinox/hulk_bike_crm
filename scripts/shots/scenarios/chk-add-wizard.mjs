@@ -132,5 +132,15 @@ export async function run(page, ctx) {
     await ctx.sleep(2500);
     await ctx.shot("wiz-d7-done", { jpeg: true });
     console.log("  тост:", /Добавлено: 5 единиц/.test(await text()));
+    console.log("  окно закрыто:", !(await page.$("[data-wizard]")));
+    // Поиск партии в «Скутеры → Продажа»
+    const search = await page.$('input[placeholder^="Номер, модель"]') ?? await page.$('main input[type="text"]');
+    if (search) {
+      await search.type(`shotbot ${tag}`);
+      await ctx.sleep(900);
+      await ctx.shot("wiz-d8-batch-search", { jpeg: true });
+      const n = await page.evaluate(() => document.body.innerText.match(/TSTSB|Jog/g)?.length ?? 0);
+      console.log("  поиск по партии, совпадений в тексте:", n);
+    } else console.log("  поле поиска не найдено");
   }
 }

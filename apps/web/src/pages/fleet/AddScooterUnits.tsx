@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ChevronRight, ClipboardPaste, Hash, Plus, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SuggestInput } from "@/components/SuggestInput";
 import {
   MAX_UNITS,
   digitsOnly,
@@ -105,7 +106,26 @@ type EditorProps = {
   onOpenPasteList: () => void;
   tableMode: boolean;
   touch: boolean;
+  /** Цвета, которые уже вписывали, — подсказки в поле «Цвет». */
+  colorSuggestions: string[];
 };
+
+/**
+ * Поле ячейки: у «Цвета» — с подсказками из вписанного раньше, у
+ * остальных — обычное.
+ */
+type CellProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & {
+  value: string;
+  onValueChange: (v: string) => void;
+  suggestions?: string[];
+  touch: boolean;
+};
+function CellInput({ suggestions, touch, onValueChange, ...rest }: CellProps) {
+  if (suggestions) {
+    return <SuggestInput {...rest} touch={touch} suggestions={suggestions} onValueChange={onValueChange} />;
+  }
+  return <input {...rest} onChange={(e) => onValueChange(e.target.value)} />;
+}
 
 export function UnitsEditor(p: EditorProps) {
   const cols = columnsFor(p.category);
@@ -122,7 +142,7 @@ export function UnitsEditor(p: EditorProps) {
             ? p.touch
               ? "Строка «Для всех» подставляется в пустые ячейки. Столбцы из Excel вставляются в ячейку сразу на несколько строк."
               : "Строка «Для всех» подставляется в пустые ячейки. Можно вставить столбцы из Excel — встаньте в ячейку и нажмите Ctrl+V."
-            : "Одинаковое для всех заполните один раз — в карточках останется только своё."}
+            : "Общее — один раз, ниже — своё у каждой единицы."}
         </div>
         <button
           type="button"
@@ -253,13 +273,13 @@ function UnitsTable(
             {p.cols.map((c) =>
               c.common ? (
                 <td key={c.key} className="px-1 py-1.5">
-                  <input
+                  <CellInput
                     data-row={-1}
                     data-col={c.key}
+                    touch={p.touch}
+                    suggestions={c.key === "color" ? p.colorSuggestions : undefined}
                     value={p.common[c.key as CommonKey]}
-                    onChange={(e) =>
-                      p.onCommonChange({ [c.key]: cleanValue(c, e.target.value) })
-                    }
+                    onValueChange={(v) => p.onCommonChange({ [c.key]: cleanValue(c, v) })}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === "ArrowDown") {
                         e.preventDefault();
@@ -317,11 +337,13 @@ function UnitsTable(
                   const inherited = c.common ? p.common[c.key as CommonKey] : "";
                   return (
                     <td key={c.key} className="px-1 py-1.5">
-                      <input
+                      <CellInput
                         data-row={i}
                         data-col={c.key}
+                        touch={p.touch}
+                        suggestions={c.key === "color" ? p.colorSuggestions : undefined}
                         value={r[c.key]}
-                        onChange={(e) => p.onRowChange(r.key, { [c.key]: cleanValue(c, e.target.value) })}
+                        onValueChange={(v) => p.onRowChange(r.key, { [c.key]: cleanValue(c, v) })}
                         onKeyDown={(e) => onKey(e, i, c.key)}
                         onPaste={(e) => onPaste(e, i, c.key)}
                         inputMode={c.numeric ? "numeric" : undefined}
@@ -472,10 +494,12 @@ function UnitsCards(
                 )}
               >
                 <span className="text-[12px] font-semibold text-blue-900/80">{c.label}</span>
-                <input
+                <CellInput
                   data-unit-field
+                  touch={p.touch}
+                  suggestions={c.key === "color" ? p.colorSuggestions : undefined}
                   value={p.common[c.key as CommonKey]}
-                  onChange={(e) => p.onCommonChange({ [c.key]: cleanValue(c, e.target.value) })}
+                  onValueChange={(v) => p.onCommonChange({ [c.key]: cleanValue(c, v) })}
                   onKeyDown={focusNext}
                   inputMode={c.numeric ? "numeric" : undefined}
                   enterKeyHint="next"
@@ -555,7 +579,7 @@ function UnitsCards(
                   <ChevronRight size={16} className="shrink-0 text-muted-2" />
                 </button>
               )}
-              {slotIssue?.blocking ? (
+              {!p.holds ? null : slotIssue?.blocking ? (
                 <div className="-mt-1.5 mb-2 text-[12px] font-semibold text-red-600">{slotIssue.message}</div>
               ) : slot == null ? (
                 <div className="-mt-1.5 mb-2 text-[12px] font-semibold text-amber-800">
@@ -578,6 +602,7 @@ function UnitsCards(
                       issue={iss}
                       wide={c.key === "vin" || c.key === "engineNo" || c.key === "note" || c.key === "price"}
                       onKeyDown={focusNext}
+                      suggestions={c.key === "color" ? p.colorSuggestions : undefined}
                       onChange={(v) => p.onRowChange(r.key, { [c.key]: cleanValue(c, v) })}
                     />
                   );
@@ -597,10 +622,12 @@ function CardField({
   inherited,
   issue,
   wide,
+  suggestions,
   onChange,
   onKeyDown,
 }: {
   col: ColDef;
+  suggestions?: string[];
   value: string;
   inherited: string;
   issue: RowIssue | null;
@@ -628,11 +655,13 @@ function CardField({
   return (
     <label className={cn("flex flex-col gap-1", wide && "col-span-2")}>
       <span className="text-[12px] font-semibold text-muted">{col.label}</span>
-      <input
+      <CellInput
         data-unit-field
+        touch
+        suggestions={suggestions}
         value={value}
         autoFocus={expanded}
-        onChange={(e) => onChange(e.target.value)}
+        onValueChange={onChange}
         onKeyDown={onKeyDown}
         inputMode={col.numeric ? "numeric" : undefined}
         autoCapitalize={col.mono ? "characters" : undefined}
