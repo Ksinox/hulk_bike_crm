@@ -360,7 +360,8 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
         desktop: { before: `${P}/addsc-was-1-top.jpg`, after: `${P}/addsc-now-3-table.jpg` },
         phone: { before: `${P}/addsc-was-m1.jpg`, after: `${P}/addsc-now-m3-cards.jpg` },
       },
-      imgPos: { desktop: "center center", phone: "center top" },
+      // Телефон: в кадре — «Одинаковое для всех» и карточка единицы.
+      imgPos: { desktop: "center center", phone: "center 58%" },
     },
     {
       id: "fewer-errors",
@@ -372,8 +373,7 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
         "Ошибка в партии раньше означала архив для каждой единицы через ключ директора, а опечатка в раме уходила в договор.",
       points: [
         "«Отменить» 10 секунд после добавления — данные вернутся в черновик",
-        "Рама не похожа на обычные для модели — жёлтое предупреждение",
-        "Рама всегда латиницей — даже при русской раскладке",
+        "Рама — латиницей при любой раскладке; необычная для модели — предупреждение",
         "Цена подставляется из последней по модели — поправьте, если изменилась",
       ],
       audience: "all",
@@ -384,7 +384,8 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
         desktop: { before: `${P}/addsc2-was-table.jpg`, after: `${P}/vinfmt-now-table.jpg` },
         phone: { before: `${P}/errors-was-m.jpg`, after: `${P}/errors-now-m.jpg` },
       },
-      imgPos: { desktop: "center center", phone: "center top" },
+      // Телефон: в кадре — пометка о цене и предупреждение под рамой.
+      imgPos: { desktop: "center center", phone: "center 39%" },
     },
     {
       id: "batches",
@@ -408,7 +409,8 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
         desktop: { before: `${P}/batch-was-search.jpg`, after: `${P}/batch-now-d.jpg` },
         phone: { before: `${P}/batch-was-m.jpg`, after: `${P}/batch-now-m.jpg` },
       },
-      imgPos: { desktop: "center center", phone: "center top" },
+      // Телефон: в кадре — суммы партии.
+      imgPos: { desktop: "center center", phone: "center 67%" },
       hints: {
         desktop: [
           {
