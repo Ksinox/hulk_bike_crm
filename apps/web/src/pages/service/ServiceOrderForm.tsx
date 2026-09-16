@@ -394,8 +394,8 @@ export function ServiceOrderForm({
           type="button"
           onClick={onClose}
           className={cn(
-            "rounded-xl bg-surface-soft px-5 font-bold text-muted hover:text-ink",
-            touch ? "h-12 flex-1 text-[14px]" : "h-11 text-[13px]",
+            "shrink-0 rounded-xl bg-surface-soft font-bold text-muted hover:text-ink",
+            touch ? "h-12 px-4 text-[14px]" : "h-11 px-5 text-[13px]",
           )}
         >
           Отмена
@@ -405,8 +405,8 @@ export function ServiceOrderForm({
           onClick={save}
           disabled={create.isPending}
           className={cn(
-            "rounded-xl bg-ink px-6 font-bold text-white disabled:opacity-50",
-            touch ? "h-12 flex-[1.8] text-[14px]" : "h-11 text-[13.5px]",
+            "whitespace-nowrap rounded-xl bg-ink font-bold text-white disabled:opacity-50",
+            touch ? "h-12 flex-1 px-3 text-[14px]" : "h-11 px-6 text-[13.5px]",
             !canSave && !create.isPending && "opacity-60",
           )}
         >

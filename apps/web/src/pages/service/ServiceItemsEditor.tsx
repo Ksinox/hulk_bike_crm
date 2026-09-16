@@ -254,8 +254,10 @@ function AddRow({
   };
 
   const inputCls = cn(
-    "w-full rounded-xl border border-border bg-surface px-3 tabular-nums text-ink outline-none placeholder:text-muted-2 focus:border-blue-600",
-    touch ? "h-11 text-right text-[15px] font-bold" : "h-9 text-right text-[12.5px] font-bold",
+    "w-full rounded-xl border border-border bg-surface tabular-nums text-ink outline-none placeholder:font-normal placeholder:text-muted-2 focus:border-blue-600",
+    touch
+      ? "h-11 px-2.5 text-right text-[15px] font-bold placeholder:text-[13px]"
+      : "h-9 px-3 text-right text-[12.5px] font-bold",
   );
 
   if (touch) {
