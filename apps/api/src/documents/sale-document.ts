@@ -51,7 +51,7 @@ export async function loadSaleBundle(id: number): Promise<SaleBundle | null> {
   };
 }
 
-function escape(s: string | null | undefined): string {
+export function escape(s: string | null | undefined): string {
   if (s == null) return "";
   return String(s)
     .replace(/&/g, "&amp;")
@@ -76,7 +76,7 @@ function fmtDateRu(d: Date | string | null | undefined): string {
 }
 
 /** «150000 → Сто пятьдесят тысяч». */
-function moneyWords(n: number | null | undefined): string {
+export function moneyWords(n: number | null | undefined): string {
   if (!n) return "ноль";
   const num = Math.abs(Math.round(n));
   const u = ["", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"];

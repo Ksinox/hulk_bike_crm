@@ -444,6 +444,7 @@ function buildRentalBody(
     days: r.days,
     sum: r.sum,
     paymentMethod: r.paymentMethod,
+    ...(r.paymentSplit ? { paymentSplit: r.paymentSplit } : {}),
     equipment: r.equipment,
     equipmentJson: r.equipmentJson ?? [],
     note: r.note ?? null,

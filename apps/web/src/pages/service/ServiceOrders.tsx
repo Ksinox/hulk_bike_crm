@@ -3,25 +3,29 @@ import { useCan } from "@/lib/permissions";
 import {
   Banknote,
   Bike,
+  Hourglass,
   Plus,
   Search,
   TrendingUp,
   Wrench,
-  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import {
-  useCreateServiceOrder,
   useServiceOrders,
   type ServiceOrder,
   type ServiceOrderStatus,
 } from "@/lib/api/service-orders";
+import { serviceMoney } from "@/lib/serviceMoney";
+import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 import { ServiceOrderCard } from "./ServiceOrderCard";
+import { ServiceOrderForm } from "./ServiceOrderForm";
 import {
   money,
+  moneyState,
+  orderNo,
   periodBounds,
   PERIOD_LABEL,
   StatusBadge,
@@ -37,6 +41,9 @@ import {
  * (сколько ремонтов, выручка, прибыль), ниже — очередь заказ-нарядов.
  * Выручка отсюда намеренно не подмешивается в дашборд: заказчик просил
  * держать её внутри блока, как у партнёрки.
+ *
+ * 2.0.2: выручка — это принятые деньги по дате оплаты (аванс — в день
+ * аванса), а не цена ремонтов «в работе». Формула — lib/serviceMoney.
  */
 
 const PERIODS: ServicePeriod[] = ["month", "quarter", "year", "all"];
@@ -76,25 +83,8 @@ export function ServiceOrders() {
 
   const bounds = periodBounds(period);
 
-  /** Статистика за период — только по неотменённым. */
-  const stats = useMemo(() => {
-    const inPeriod = orders.filter((o) => {
-      if (o.status === "cancelled") return false;
-      if (!bounds.from) return true;
-      return new Date(o.acceptedAt) >= bounds.from;
-    });
-    const paid = inPeriod.filter((o) => o.status === "paid");
-    return {
-      count: inPeriod.length,
-      revenue: inPeriod.reduce((s, o) => s + o.totals.revenue, 0),
-      profit: inPeriod.reduce((s, o) => s + o.totals.profit, 0),
-      cash: paid.reduce((s, o) => s + (o.cashAmount ?? 0), 0),
-      transfer: paid.reduce((s, o) => s + (o.transferAmount ?? 0), 0),
-      unpaid: inPeriod
-        .filter((o) => o.status !== "paid")
-        .reduce((s, o) => s + o.totals.revenue, 0),
-    };
-  }, [orders, bounds.from]);
+  /** Деньги за период — по дате оплаты (2.0.2). */
+  const stats = useMemo(() => serviceMoney(orders, bounds.from), [orders, bounds.from]);
 
   const list = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -156,17 +146,17 @@ export function ServiceOrders() {
           <Kpi
             icon={<Wrench size={14} />}
             label="Ремонтов"
-            value={String(stats.count)}
-            caption={bounds.label}
+            value={String(stats.accepted)}
+            caption={`принято · ${bounds.label}`}
           />
           <Kpi
             icon={<Banknote size={14} />}
             label="Выручка"
             value={money(stats.revenue)}
             caption={
-              stats.cash + stats.transfer > 0
+              stats.payments > 0
                 ? `нал ${money(stats.cash)} · перевод ${money(stats.transfer)}`
-                : "работы и запчасти"
+                : "денег за период не принимали"
             }
             tone="good"
           />
@@ -175,16 +165,20 @@ export function ServiceOrders() {
               icon={<TrendingUp size={14} />}
               label="Прибыль"
               value={money(stats.profit)}
-              caption="за вычетом закупа запчастей"
+              caption={`по оплаченным: ${stats.paidOrders}`}
               tone={stats.profit >= 0 ? "good" : "bad"}
             />
           )}
           <Kpi
-            icon={<Banknote size={14} />}
+            icon={<Hourglass size={14} />}
             label="Ждём оплату"
-            value={money(stats.unpaid)}
-            caption="ещё не подтверждена"
-            tone={stats.unpaid > 0 ? "warn" : undefined}
+            value={money(stats.waiting)}
+            caption={
+              stats.waitingOrders > 0
+                ? `${stats.waitingOrders} в работе${stats.advances > 0 ? ` · аванс ${money(stats.advances)}` : ""}`
+                : "все ремонты оплачены"
+            }
+            tone={stats.waiting > 0 ? "warn" : undefined}
           />
         </div>
       </section>
@@ -252,29 +246,53 @@ export function ServiceOrders() {
       )}
 
       {/* ---- Карточка ---- */}
-      {open && (
-        <div
-          className="fixed inset-0 z-[60] flex justify-end bg-ink/25"
-          onClick={() => setOpenId(null)}
-        >
+      {open &&
+        (isMobile ? (
           <div
-            className={cn(
-              "relative flex h-full flex-col overflow-hidden bg-surface shadow-card-lg",
-              isMobile ? "w-full" : "w-full max-w-[720px]",
-            )}
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[60] flex flex-col bg-surface lg:items-center lg:bg-ink/45 lg:backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
           >
-            <ServiceOrderCard order={open} onClose={() => setOpenId(null)} />
+            <div className={cn(TABLET_WIZARD_PANEL, "relative")}>
+              <ServiceOrderCard order={open} touch onClose={() => setOpenId(null)} />
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div
+            className="fixed inset-0 z-[60] flex justify-end bg-ink/25"
+            onClick={() => setOpenId(null)}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              className="relative flex h-full w-full max-w-[760px] flex-col overflow-hidden bg-surface shadow-card-lg"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ServiceOrderCard order={open} touch={false} onClose={() => setOpenId(null)} />
+            </div>
+          </div>
+        ))}
 
       {creating && (
-        <NewOrderDialog
+        <ServiceOrderForm
+          touch={isMobile}
           onClose={() => setCreating(false)}
-          onCreated={(id) => {
+          onCreated={(o) => {
             setCreating(false);
-            setOpenId(id);
+            setFilter("all");
+            const t = o.totals;
+            toast.action({
+              title: `Ремонт ${orderNo(o.number)} сохранён — в работе`,
+              message: [
+                `${o.vehicle} · ${o.customerName}`,
+                t.due > 0 ? `к оплате ${money(t.due)}` : "позиции добавите в карточке",
+                t.paid > 0 ? `аванс ${money(t.paid)} · остаток ${money(t.left)}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              actionLabel: "Открыть",
+              onAction: () => setOpenId(o.id),
+            });
           }}
         />
       )}
@@ -324,10 +342,12 @@ function OrderRow({
   onOpen: () => void;
 }) {
   const canRepairProfit = useCan("data.repairProfit");
+  const ms = moneyState(order);
   return (
     <button
       type="button"
       onClick={onOpen}
+      data-order-row={order.number}
       className="flex w-full items-center gap-3 rounded-2xl bg-surface px-4 py-3 text-left shadow-card-sm transition-shadow hover:shadow-card"
     >
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-muted">
@@ -336,7 +356,7 @@ function OrderRow({
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-2">
           <span className="text-[10.5px] font-bold tabular-nums text-muted-2">
-            №{String(order.number).padStart(4, "0")}
+            {orderNo(order.number)}
           </span>
           <span className="truncate text-[14px] font-bold text-ink">
             {order.vehicle}
@@ -351,160 +371,26 @@ function OrderRow({
       </span>
       <span className="shrink-0 text-right">
         <span className="block text-[15px] font-extrabold tabular-nums text-ink">
-          {money(order.totals.revenue)}
+          {money(order.totals.due)}
         </span>
-        {canRepairProfit && (
-          <span className="block text-[11.5px] tabular-nums text-muted-2">
+        <span
+          className={cn(
+            "block max-w-[46vw] truncate text-[11.5px] font-semibold tabular-nums sm:max-w-none",
+            ms.tone === "warn" && "text-orange-ink",
+            ms.tone === "good" && "text-green-ink",
+            ms.tone === "bad" && "text-red-ink",
+            ms.tone === "muted" && "text-muted-2",
+          )}
+        >
+          {ms.text}
+        </span>
+        {canRepairProfit && order.totals.profit !== undefined && order.status !== "cancelled" && (
+          <span className="hidden text-[11px] tabular-nums text-muted-2 sm:block">
             прибыль {money(order.totals.profit)}
           </span>
         )}
       </span>
     </button>
-  );
-}
-
-/** Приём техники: минимум полей, остальное дозаполняется в карточке. */
-function NewOrderDialog({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: (id: number) => void;
-}) {
-  const create = useCreateServiceOrder();
-  const [vehicle, setVehicle] = useState("");
-  const [vehicleNumber, setVehicleNumber] = useState("");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [complaint, setComplaint] = useState("");
-
-  const canSave = vehicle.trim().length > 0 && name.trim().length > 0;
-
-  const submit = async () => {
-    if (!canSave) return;
-    try {
-      const r = await create.mutateAsync({
-        vehicle: vehicle.trim(),
-        vehicleNumber: vehicleNumber.trim() || null,
-        customerName: name.trim(),
-        customerPhone: phone.trim() || null,
-        complaint: complaint.trim() || null,
-      });
-      toast.success(
-        `Ремонт №${String(r.order.number).padStart(4, "0")} принят`,
-        "Добавьте работы из прайса и запчасти",
-      );
-      onCreated(r.order.id);
-    } catch {
-      toast.error("Не удалось создать ремонт");
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-ink/30 p-4 sm:items-center">
-      <div className="w-full max-w-[460px] rounded-3xl bg-surface p-5 shadow-card-lg">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="font-display text-[19px] font-extrabold text-ink">
-              Принять технику в ремонт
-            </div>
-            <div className="mt-0.5 text-[12.5px] text-muted">
-              Это чужой скутер — записываем словами, в парк он не заводится.
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-2 hover:bg-surface-soft hover:text-ink"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="mt-4 flex flex-col gap-2.5">
-          <Field label="Техника" hint="марка и модель">
-            <input
-              autoFocus
-              value={vehicle}
-              onChange={(e) => setVehicle(e.target.value)}
-              placeholder="Honda Dio AF62"
-              className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-[14px] outline-none focus:border-blue-600"
-            />
-          </Field>
-          <Field label="Номер или VIN" hint="если есть">
-            <input
-              value={vehicleNumber}
-              onChange={(e) => setVehicleNumber(e.target.value)}
-              placeholder="AF62-1234567"
-              className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-[14px] outline-none focus:border-blue-600"
-            />
-          </Field>
-          <Field label="Клиент">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Имя"
-              className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-[14px] outline-none focus:border-blue-600"
-            />
-          </Field>
-          <Field label="Телефон" hint="если есть">
-            <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+7 ..."
-              className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-[14px] outline-none focus:border-blue-600"
-            />
-          </Field>
-          <Field label="С чем приехали" hint="жалоба клиента">
-            <textarea
-              value={complaint}
-              onChange={(e) => setComplaint(e.target.value)}
-              rows={2}
-              placeholder="Не заводится, стучит вариатор…"
-              className="w-full resize-none rounded-xl border border-border bg-surface px-3 py-2 text-[14px] outline-none focus:border-blue-600"
-            />
-          </Field>
-        </div>
-
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-11 flex-1 rounded-xl bg-surface-soft text-[13px] font-bold text-muted hover:text-ink"
-          >
-            Отмена
-          </button>
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!canSave || create.isPending}
-            className="h-11 flex-[1.6] rounded-xl bg-ink text-[13px] font-bold text-white disabled:opacity-40"
-          >
-            Принять в ремонт
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-        {label}
-        {hint && <span className="ml-1.5 font-semibold normal-case text-muted-2/70">{hint}</span>}
-      </span>
-      {children}
-    </label>
   );
 }
 

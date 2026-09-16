@@ -2,12 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
 /**
- * Сторонние ремонты (06.09) — заказ-наряды на чужую технику.
+ * Сторонние ремонты (06.09, деньги — 2.0.2) — заказ-наряды на чужую технику.
  *
- * Деньги считает сервер и отдаёт в totals: выручка = работы + запчасти,
- * себестоимость = закуп запчастей, прибыль = разница. На фронте их не
- * пересчитываем, чтобы цифра была одна и та же в списке, в карточке и в
- * статистике.
+ * Деньги считает сервер и отдаёт в totals: к оплате = работы + запчасти −
+ * скидка, внесено = сумма платежей, остаток = к оплате − внесено. На фронте
+ * их не пересчитываем, чтобы цифра была одна и та же в списке, в карточке,
+ * в накладной и в статистике.
  */
 
 export type ServiceOrderItem = {
@@ -18,17 +18,45 @@ export type ServiceOrderItem = {
   name: string;
   qty: number;
   price: number;
-  cost: number;
+  /** Закуп за штуку — приходит только с правом на прибыль ремонтов. */
+  cost?: number;
   sortOrder: number;
+  createdAt: string;
+};
+
+export type ServiceOrderPayment = {
+  id: number;
+  orderId: number;
+  kind: "advance" | "payment" | "refund";
+  /** У возврата — отрицательная. */
+  amount: number;
+  method: "cash" | "transfer" | "mixed";
+  cashAmount: number;
+  transferAmount: number;
+  discount: number;
+  paidAt: string;
+  note: string | null;
+  prevStatus: string | null;
+  createdByUserId: number | null;
   createdAt: string;
 };
 
 export type ServiceOrderTotals = {
   works: number;
   parts: number;
+  /** Работы + запчасти, до скидки. */
   revenue: number;
-  cost: number;
-  profit: number;
+  discount: number;
+  /** К оплате. */
+  due: number;
+  cost?: number;
+  profit?: number;
+  /** Внесено всего (возвраты вычтены). */
+  paid: number;
+  /** Остаток к оплате. */
+  left: number;
+  /** Внесли больше, чем к оплате. */
+  overpaid: number;
 };
 
 export type ServiceOrderStatus = "in_work" | "done" | "paid" | "cancelled";
@@ -47,9 +75,11 @@ export type ServiceOrder = {
   acceptedAt: string;
   completedAt: string | null;
   paidAt: string | null;
+  cancelledAt: string | null;
+  statusBeforeCancel: string | null;
   paymentMethod: "cash" | "transfer" | "mixed" | null;
   paidAmount: number | null;
-  /** Доли смешанной оплаты. */
+  discount: number;
   cashAmount: number;
   transferAmount: number;
   masterUserId: number | null;
@@ -57,6 +87,7 @@ export type ServiceOrder = {
   createdAt: string;
   updatedAt: string;
   items: ServiceOrderItem[];
+  payments: ServiceOrderPayment[];
   totals: ServiceOrderTotals;
 };
 
@@ -71,14 +102,40 @@ export function useServiceOrders() {
   });
 }
 
-function useInvalidate() {
+/**
+ * Ответ мутации сразу кладём в кэш списка — карточка обновляется без
+ * ожидания повторного запроса (иначе «остаток» мигал старой цифрой).
+ */
+function useSettle() {
   const qc = useQueryClient();
-  return () => {
+  return (order?: ServiceOrder | null) => {
+    if (order) {
+      qc.setQueryData<{ orders: ServiceOrder[] }>(key, (prev) => {
+        if (!prev) return prev;
+        const has = prev.orders.some((o) => o.id === order.id);
+        return {
+          orders: has
+            ? prev.orders.map((o) => (o.id === order.id ? order : o))
+            : [order, ...prev.orders],
+        };
+      });
+    }
     void qc.invalidateQueries({ queryKey: key });
     // Аналитика считает ремонты за период — обновим и её.
     void qc.invalidateQueries({ queryKey: ["analytics"] });
   };
 }
+
+export type PayMethodValue = "cash" | "transfer" | "mixed";
+
+export type NewServiceItem = {
+  kind: "work" | "part";
+  name: string;
+  qty?: number;
+  price?: number;
+  cost?: number;
+  priceItemId?: number | null;
+};
 
 export type NewServiceOrder = {
   customerName: string;
@@ -89,51 +146,40 @@ export type NewServiceOrder = {
   complaint?: string | null;
   note?: string | null;
   masterUserId?: number | null;
+  items?: NewServiceItem[];
+  advance?: { amount: number; method: PayMethodValue; cashAmount?: number };
 };
 
+type OrderResp = { order: ServiceOrder; paymentId?: number };
+
 export function useCreateServiceOrder() {
-  const invalidate = useInvalidate();
+  const settle = useSettle();
   return useMutation({
-    mutationFn: (body: NewServiceOrder) =>
-      api.post<{ order: ServiceOrder }>("/api/service-orders", body),
-    onSuccess: invalidate,
+    mutationFn: (body: NewServiceOrder) => api.post<OrderResp>("/api/service-orders", body),
+    onSuccess: (r) => settle(r.order),
   });
 }
 
 export function usePatchServiceOrder() {
-  const invalidate = useInvalidate();
+  const settle = useSettle();
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: number } & Partial<NewServiceOrder>) =>
-      api.patch<{ order: ServiceOrder }>(`/api/service-orders/${id}`, body),
-    onSuccess: invalidate,
+    mutationFn: ({ id, ...body }: { id: number } & Partial<Omit<NewServiceOrder, "items" | "advance">>) =>
+      api.patch<OrderResp>(`/api/service-orders/${id}`, body),
+    onSuccess: (r) => settle(r.order),
   });
 }
 
 export function useAddServiceOrderItem() {
-  const invalidate = useInvalidate();
+  const settle = useSettle();
   return useMutation({
-    mutationFn: ({
-      orderId,
-      ...body
-    }: {
-      orderId: number;
-      kind: "work" | "part";
-      name: string;
-      qty?: number;
-      price?: number;
-      cost?: number;
-      priceItemId?: number | null;
-    }) =>
-      api.post<{ order: ServiceOrder }>(
-        `/api/service-orders/${orderId}/items`,
-        body,
-      ),
-    onSuccess: invalidate,
+    mutationFn: ({ orderId, ...body }: { orderId: number } & NewServiceItem) =>
+      api.post<OrderResp>(`/api/service-orders/${orderId}/items`, body),
+    onSuccess: (r) => settle(r.order),
   });
 }
 
 export function usePatchServiceOrderItem() {
-  const invalidate = useInvalidate();
+  const settle = useSettle();
   return useMutation({
     mutationFn: ({
       itemId,
@@ -144,61 +190,115 @@ export function usePatchServiceOrderItem() {
       qty?: number;
       price?: number;
       cost?: number;
-    }) =>
-      api.patch<{ order: ServiceOrder }>(
-        `/api/service-orders/items/${itemId}`,
-        body,
-      ),
-    onSuccess: invalidate,
+    }) => api.patch<OrderResp>(`/api/service-orders/items/${itemId}`, body),
+    onSuccess: (r) => settle(r.order),
   });
 }
 
 export function useDeleteServiceOrderItem() {
-  const invalidate = useInvalidate();
+  const settle = useSettle();
   return useMutation({
     mutationFn: (itemId: number) =>
-      api.delete<{ order: ServiceOrder }>(`/api/service-orders/items/${itemId}`),
-    onSuccess: invalidate,
+      api.delete<OrderResp>(`/api/service-orders/items/${itemId}`),
+    onSuccess: (r) => settle(r.order),
   });
 }
 
 export function useCompleteServiceOrder() {
-  const invalidate = useInvalidate();
+  const settle = useSettle();
   return useMutation({
     mutationFn: (id: number) =>
-      api.post<{ order: ServiceOrder }>(`/api/service-orders/${id}/complete`, {}),
-    onSuccess: invalidate,
+      api.post<OrderResp>(`/api/service-orders/${id}/complete`, {}),
+    onSuccess: (r) => settle(r.order),
   });
 }
 
-export function usePayServiceOrder() {
-  const invalidate = useInvalidate();
+/** Аванс — часть суммы, остаток считается сам. */
+export function useServiceAdvance() {
+  const settle = useSettle();
   return useMutation({
     mutationFn: ({
       id,
-      amount,
-      method,
-      cashAmount,
+      ...body
     }: {
       id: number;
-      amount?: number;
-      method: "cash" | "transfer" | "mixed";
+      amount: number;
+      method: PayMethodValue;
       cashAmount?: number;
-    }) =>
-      api.post<{ order: ServiceOrder }>(`/api/service-orders/${id}/pay`, {
-        amount,
-        method,
-        cashAmount,
-      }),
-    onSuccess: invalidate,
+    }) => api.post<OrderResp>(`/api/service-orders/${id}/advance`, body),
+    onSuccess: (r) => settle(r.order),
+  });
+}
+
+/** Расчёт при выдаче: остаток (можно со скидкой) — ремонт оплачен. */
+export function useSettleServiceOrder() {
+  const settle = useSettle();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: number;
+      method: PayMethodValue;
+      cashAmount?: number;
+      discount: number;
+      /** Остаток, который видел оператор. */
+      expected: number;
+    }) => api.post<OrderResp>(`/api/service-orders/${id}/settle`, body),
+    onSuccess: (r) => settle(r.order),
+  });
+}
+
+/** Вернули клиенту переплату. */
+export function useServiceRefund() {
+  const settle = useSettle();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: number;
+      amount: number;
+      method: PayMethodValue;
+      cashAmount?: number;
+    }) => api.post<OrderResp>(`/api/service-orders/${id}/refund`, body),
+    onSuccess: (r) => settle(r.order),
+  });
+}
+
+/** Отменить последний платёж (для кнопки «Отменить» в уведомлении). */
+export function useUndoServicePayment() {
+  const settle = useSettle();
+  return useMutation({
+    mutationFn: (paymentId: number) =>
+      api.delete<OrderResp>(`/api/service-orders/payments/${paymentId}`),
+    onSuccess: (r) => settle(r.order),
   });
 }
 
 export function useCancelServiceOrder() {
-  const invalidate = useInvalidate();
+  const settle = useSettle();
   return useMutation({
     mutationFn: (id: number) =>
-      api.post<{ order: ServiceOrder }>(`/api/service-orders/${id}/cancel`, {}),
-    onSuccess: invalidate,
+      api.post<OrderResp>(`/api/service-orders/${id}/cancel`, {}),
+    onSuccess: (r) => settle(r.order),
   });
+}
+
+/** Вернуть отменённый ремонт в работу. */
+export function useReopenServiceOrder() {
+  const settle = useSettle();
+  return useMutation({
+    mutationFn: ({ id, keepAdvance }: { id: number; keepAdvance?: boolean }) =>
+      api.post<OrderResp>(`/api/service-orders/${id}/reopen`, { keepAdvance }),
+    onSuccess: (r) => settle(r.order),
+  });
+}
+
+const API_BASE =
+  (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+
+/** Накладная по ремонту: html — предпросмотр и печать, docx — Word. */
+export function serviceInvoiceUrl(id: number, format: "html" | "docx" = "html") {
+  return `${API_BASE}/api/service-orders/${id}/document${format === "docx" ? "?format=docx" : ""}`;
 }

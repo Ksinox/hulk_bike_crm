@@ -5,7 +5,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Check, Lock, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeftRight, Banknote, Check, CreditCard, Lock, Search, UserPlus, X } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { initialsOf, type Client } from "@/lib/mock/clients";
 import {
@@ -168,6 +169,13 @@ export function NewRentalModal({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(
     null,
   );
+  /**
+   * 2.0.2 (заказчик): при открытии аренды — раздельный (смешанный) платёж.
+   * «Разделить» — третья кнопка рядом с «Наличные» и «Перевод», как в окне
+   * приёма оплаты: вводят наличную часть, перевод считается сам.
+   */
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitCashStr, setSplitCashStr] = useState("");
   const [note, setNote] = useState("");
 
   /** Залог: режим — сумма или предмет */
@@ -304,13 +312,25 @@ export function NewRentalModal({
     : rate * days + equipmentExtra;
   const endPlanned = addDays(start, days);
 
+  const splitCash = Math.min(sum, Number(splitCashStr || 0));
+  const splitTransfer = sum - splitCash;
+  const splitValid = splitMode && sum > 0 && splitCash >= 1 && splitTransfer >= 1;
+  const payChoice: "cash" | "transfer" | "split" | null = splitMode
+    ? "split"
+    : paymentMethod === "cash"
+      ? "cash"
+      : paymentMethod === "transfer"
+        ? "transfer"
+        : null;
+  const paymentOk = splitMode ? splitValid : paymentMethod != null;
+
   const blacklistedClient = !!client?.blacklisted;
   const canSave =
     clientId != null &&
     !blacklistedClient &&
     scooterName != null &&
     days > 0 &&
-    paymentMethod != null;
+    paymentOk;
 
   // Можно ли перейти с шага step на следующий (мобильный мастер).
   const canAdvanceStep = (s: number): boolean => {
@@ -493,7 +513,14 @@ export function NewRentalModal({
           depositMode === "item" ? depositItemText.trim() || null : null,
         equipment: equipmentLegacyNames,
         equipmentJson,
-        paymentMethod: paymentMethod ?? "cash",
+        // Смешанная оплата: способ аренды — по большей доле (его берут
+        // продления), сами доли уходят отдельно и пишутся двумя платежами.
+        paymentMethod: splitValid
+          ? splitCash >= splitTransfer
+            ? "cash"
+            : "transfer"
+          : (paymentMethod ?? "cash"),
+        paymentSplit: splitValid ? { cash: splitCash, transfer: splitTransfer } : null,
         note: note.trim() || undefined,
         contractUploaded: false,
         paymentConfirmed: null,
@@ -963,12 +990,11 @@ export function NewRentalModal({
                 переключатель единицы измерения «₽/сут / ₽/нед» внутри.
                 В режиме «нед» поле «Срок» означает НЕДЕЛИ. */}
             <div className="mt-3 flex items-start gap-2 rounded-[10px] border border-border bg-surface-soft p-2">
-              <label className="mt-1 flex cursor-pointer items-center gap-2">
-                <input
-                  type="checkbox"
+              <label className="flex min-h-8 cursor-pointer items-center gap-2">
+                <Switch
                   checked={customMode}
-                  onChange={(e) => toggleCustomMode(e.target.checked)}
-                  className="h-4 w-4 cursor-pointer accent-blue-600"
+                  onChange={(v) => toggleCustomMode(v)}
+                  label="Произвольный тариф"
                 />
                 <span className="text-[12px] font-semibold">
                   Произвольный тариф
@@ -1158,34 +1184,104 @@ export function NewRentalModal({
                 />
               )}
             </div>
-            <div className="mt-3">
+            <div className="mt-3" data-rental-pay>
               <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
                 Способ оплаты
-                {paymentMethod === null && (
+                {payChoice === null && (
                   <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[9px] font-bold normal-case text-orange-ink">
                     выберите
                   </span>
                 )}
               </div>
-              <div className="flex gap-2">
-                {(["cash", "transfer"] as PaymentMethod[]).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setPaymentMethod(m)}
-                    className={cn(
-                      "flex-1 rounded-[10px] px-3 py-2 text-[12px] font-semibold transition-colors",
-                      paymentMethod === m
-                        ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600"
-                        : paymentMethod === null
-                          ? "bg-orange-soft/40 text-ink ring-1 ring-inset ring-orange-ink/30 hover:bg-orange-soft/60"
-                          : "bg-surface-soft text-muted hover:bg-border",
-                    )}
-                  >
-                    {m === "cash" ? "Наличные" : "Безнал"}
-                  </button>
-                ))}
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    { id: "cash", label: "Наличные", Icon: Banknote },
+                    { id: "transfer", label: "Перевод", Icon: CreditCard },
+                    { id: "split", label: "Разделить", Icon: ArrowLeftRight },
+                  ] as const
+                ).map((o) => {
+                  const active = payChoice === o.id;
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => {
+                        if (o.id === "split") {
+                          setSplitMode(true);
+                          setPaymentMethod(null);
+                          if (!splitCashStr && sum > 1) setSplitCashStr(String(Math.floor(sum / 2)));
+                        } else {
+                          setSplitMode(false);
+                          setPaymentMethod(o.id);
+                        }
+                      }}
+                      className={cn(
+                        "flex items-center justify-center gap-1.5 rounded-[10px] px-2 font-semibold transition-colors",
+                        isMobile ? "h-12 text-[13.5px]" : "h-10 text-[12.5px]",
+                        active
+                          ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600"
+                          : payChoice === null
+                            ? "bg-orange-soft/40 text-ink ring-1 ring-inset ring-orange-ink/30 hover:bg-orange-soft/60"
+                            : "bg-surface-soft text-muted hover:bg-border",
+                      )}
+                    >
+                      <o.Icon size={isMobile ? 16 : 14} className="shrink-0" />
+                      <span className="truncate">{o.label}</span>
+                    </button>
+                  );
+                })}
               </div>
+              {splitMode && (
+                <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-blue-200 bg-blue-50/40 p-2.5" data-rental-split>
+                  <label className="flex flex-col gap-1">
+                    <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                      <Banknote size={11} /> Наличными
+                    </span>
+                    <span className="flex items-center gap-1 rounded-lg border border-border bg-surface px-2 focus-within:border-blue-600">
+                      <input
+                        inputMode="numeric"
+                        value={splitCashStr}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onChange={(e) => setSplitCashStr(e.target.value.replace(/\D/g, "").slice(0, 7))}
+                        aria-label="Наличными"
+                        className={cn(
+                          "w-full bg-transparent font-bold tabular-nums text-ink outline-none",
+                          isMobile ? "h-11 text-[16px]" : "h-9 text-[14px]",
+                        )}
+                      />
+                      <span className="text-[12px] text-muted">₽</span>
+                    </span>
+                  </label>
+                  <div className="flex flex-col gap-1">
+                    <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                      <CreditCard size={11} /> Переводом
+                    </span>
+                    <span
+                      className={cn(
+                        "flex items-center justify-between rounded-lg bg-surface-soft px-2",
+                        isMobile ? "h-11" : "h-9",
+                      )}
+                    >
+                      <span className={cn("font-bold tabular-nums text-ink", isMobile ? "text-[16px]" : "text-[14px]")}>
+                        {Math.max(0, splitTransfer).toLocaleString("ru-RU")}
+                      </span>
+                      <span className="text-[12px] text-muted">₽</span>
+                    </span>
+                  </div>
+                  <div className="col-span-2 text-[11px] font-semibold">
+                    {splitValid ? (
+                      <span className="text-muted">
+                        Всего {sum.toLocaleString("ru-RU")} ₽ — пройдут двумя платежами: наличные и перевод.
+                      </span>
+                    ) : (
+                      <span className="text-orange-ink">
+                        Обе части больше нуля, вместе — {sum.toLocaleString("ru-RU")} ₽.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="mt-3">
               <label className="text-[12px] font-semibold text-ink">
@@ -1227,11 +1323,13 @@ export function NewRentalModal({
                     : depositItemText.trim() || "предмет не указан"
                 }
                 payment={
-                  paymentMethod === "cash"
-                    ? "Наличные"
-                    : paymentMethod === "transfer"
-                      ? "Безнал"
-                      : "—"
+                  splitValid
+                    ? `Наличные ${splitCash.toLocaleString("ru-RU")} ₽ + перевод ${splitTransfer.toLocaleString("ru-RU")} ₽`
+                    : paymentMethod === "cash"
+                      ? "Наличные"
+                      : paymentMethod === "transfer"
+                        ? "Перевод"
+                        : "—"
                 }
                 total={sum}
               />

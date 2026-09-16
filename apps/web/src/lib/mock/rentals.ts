@@ -86,6 +86,8 @@ export type Rental = {
    */
   equipmentJson?: { itemId?: number | null; name: string; price: number; free: boolean }[];
   paymentMethod: PaymentMethod;
+  /** 2.0.2: смешанная оплата при открытии — доли наличных и перевода. */
+  paymentSplit?: { cash: number; transfer: number } | null;
   note?: string;
   contractUploaded?: boolean;
   paymentConfirmed?: PaymentConfirmation | null;
@@ -240,6 +242,16 @@ export const STATUS_TONE: Record<
   problem: "red",
   cancelled: "gray",
 };
+
+/** Способ оплаты аренды для карточек: смешанная — с долями (2.0.2). */
+export function rentalPaymentLabel(r: {
+  paymentMethod: PaymentMethod;
+  paymentSplit?: { cash: number; transfer: number } | null;
+}): string {
+  if (r.paymentSplit)
+    return `смешанно: нал ${r.paymentSplit.cash.toLocaleString("ru-RU")} ₽ + перевод ${r.paymentSplit.transfer.toLocaleString("ru-RU")} ₽`;
+  return PAYMENT_LABEL[r.paymentMethod];
+}
 
 export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   cash: "наличные",

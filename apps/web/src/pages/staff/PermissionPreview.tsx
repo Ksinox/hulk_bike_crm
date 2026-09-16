@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { serviceMoney } from "@/lib/serviceMoney";
 import { Bike, Handshake, Users, Wallet, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sensitive } from "@/components/Sensitive";
@@ -43,18 +44,10 @@ export function PermissionPreview({
     return computeMetrics(deals);
   }, [salesData, monthStart]);
 
+  // 2.0.2: та же формула, что в блоке «Ремонты» — деньги по дате оплаты.
   const service = useMemo(() => {
-    const inMonth = orders.filter(
-      (o) => o.status !== "cancelled" && new Date(o.acceptedAt).getTime() >= monthStart,
-    );
-    return {
-      count: inMonth.length,
-      revenue: inMonth.reduce((s, o) => s + (o.totals.revenue ?? 0), 0),
-      profit: inMonth.reduce((s, o) => s + (o.totals.profit ?? 0), 0),
-      unpaid: inMonth
-        .filter((o) => o.status !== "paid")
-        .reduce((s, o) => s + (o.totals.revenue ?? 0), 0),
-    };
+    const m = serviceMoney(orders, new Date(monthStart));
+    return { count: m.accepted, revenue: m.revenue, profit: m.profit, unpaid: m.waiting };
   }, [orders, monthStart]);
 
   const investors = investorsData?.items ?? [];

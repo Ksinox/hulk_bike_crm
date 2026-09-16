@@ -86,6 +86,18 @@ const CreateRentalBody = z
     days: z.number().int().positive(),
     sum: z.number().int().min(0),
     paymentMethod: z.enum(["cash", "card", "transfer"]),
+    /**
+     * 2.0.2: смешанная оплата при открытии — доли наличных и перевода.
+     * Сумма долей = sum; обе доли больше нуля. Платёж пишется двумя строками.
+     */
+    paymentSplit: z
+      .object({
+        cash: z.number().int().min(1),
+        transfer: z.number().int().min(1),
+      })
+      .strict()
+      .optional()
+      .nullable(),
     /** Legacy список строк. Желательно присылать equipmentJson. */
     equipment: z.array(z.string()).optional(),
     /** Новый формат экипировки — снимок из каталога */
@@ -316,6 +328,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
     }
 
     const initialStatus = d.status ?? "active";
+    const split = d.paymentSplit ?? null;
+    if (split && split.cash + split.transfer !== d.sum) {
+      return reply.code(400).send({
+        error: "split_mismatch",
+        message: `Наличные и перевод должны давать сумму аренды (${d.sum.toLocaleString("ru-RU")} ₽).`,
+      });
+    }
+    // Способ аренды — по большей доле: его берут продления и пересчёты.
+    const mainMethod = split
+      ? split.cash >= split.transfer
+        ? ("cash" as const)
+        : ("transfer" as const)
+      : d.paymentMethod;
     // v0.4.60: snapshot пробега скутера на момент выдачи. Используется
     // в шаблонах актов выдачи через {rental.mileageAtStart} — иначе
     // {scooter.mileage} рендерил бы live-значение, которое после
@@ -350,7 +375,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
         endPlannedAt: new Date(d.endPlannedAt),
         days: d.days,
         sum: d.sum,
-        paymentMethod: d.paymentMethod,
+        paymentMethod: mainMethod,
+        paymentSplit: split,
         equipment: d.equipment ?? [],
         equipmentJson: (d.equipmentJson ?? []) as unknown as object,
         customTariff: d.customTariff ?? false,
@@ -367,18 +393,31 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // аренда есть — значит оплачена».
     const issued = initialStatus === "active";
     if (issued && row.sum > 0) {
-      await db.insert(payments).values({
-        rentalId: row.id,
-        type: "rent",
-        amount: row.sum,
-        method: row.paymentMethod,
-        paid: true,
-        paidAt: new Date(),
-        note: "оплата аренды (автоматически при создании)",
-        // Снимок для «отката создания аренды в день»: kind=created.
-        // Откат архивирует аренду и удаляет этот платёж создания.
-        rollbackSnapshot: { kind: "created" } as unknown as object,
-      });
+      // Смешанная оплата — две строки (наличные и перевод), чтобы касса и
+      // выручка по способам сходились. Обе помечены как платёж создания:
+      // откат создания удаляет их вместе.
+      const parts: Array<{ amount: number; method: "cash" | "card" | "transfer"; note: string }> =
+        split && issued
+          ? [
+              { amount: split.cash, method: "cash", note: "оплата аренды (автоматически при создании) · наличными" },
+              { amount: split.transfer, method: "transfer", note: "оплата аренды (автоматически при создании) · переводом" },
+            ]
+          : [{ amount: row.sum, method: row.paymentMethod as "cash" | "card" | "transfer", note: "оплата аренды (автоматически при создании)" }];
+      const paidAt = new Date();
+      await db.insert(payments).values(
+        parts.map((p) => ({
+          rentalId: row.id,
+          type: "rent" as const,
+          amount: p.amount,
+          method: p.method,
+          paid: true,
+          paidAt,
+          note: p.note,
+          // Снимок для «отката создания аренды в день»: kind=created.
+          // Откат архивирует аренду и удаляет платежи создания.
+          rollbackSnapshot: { kind: "created" } as unknown as object,
+        })),
+      );
     }
 
     const summary = await summaryForRental(row.id);
@@ -412,7 +451,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
         },
         // Способ оплаты — только если при создании реально взяли платёж
         // (issued && sum>0). Создание «в долг» метод не пишет.
-        method: issued && row.sum > 0 ? row.paymentMethod : undefined,
+        method: issued && row.sum > 0 ? (split ? "mixed" : row.paymentMethod) : undefined,
+        split: issued && row.sum > 0 && split ? split : undefined,
       },
     });
     return reply.code(201).send(row);
@@ -617,6 +657,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
             .update(payments)
             .set({ amount: targetAmount })
             .where(eq(payments.id, target.id));
+          // 2.0.2: у смешанной оплаты при открытии две строки. Если сумма
+          // упала ниже остальных строк, разницу снимаем с них по очереди
+          // (с поздних к ранним) — иначе оплаты превысили бы сумму аренды.
+          let excess = othersSum - newRentalSum;
+          if (excess > 0) {
+            const rest = existingRent
+              .filter((p) => p.id !== target.id)
+              .sort((a, b) => b.id - a.id);
+            for (const p of rest) {
+              if (excess <= 0) break;
+              const cut = Math.min(p.amount, excess);
+              excess -= cut;
+              await db
+                .update(payments)
+                .set({ amount: p.amount - cut })
+                .where(eq(payments.id, p.id));
+            }
+          }
         }
       } else if (newRentalSum > 0) {
         // Платежа не было — создадим, если статус активен/завершён.
@@ -2478,13 +2536,26 @@ export async function rentalsRoutes(app: FastifyInstance) {
               .set({ baseStatus: "rental_pool", updatedAt: sql`now()` })
               .where(eq(scooters.id, rentalNow.scooterId));
           }
-          await tx.delete(payments).where(eq(payments.id, paymentId));
+          // Смешанная оплата при создании — две строки; убираем обе.
+          const createdPays = await tx
+            .select({ id: payments.id, amount: payments.amount })
+            .from(payments)
+            .where(
+              and(
+                eq(payments.rentalId, id),
+                sql`${payments.rollbackSnapshot}->>'kind' = 'created'`,
+              ),
+            );
+          const createdIds = [...new Set([paymentId, ...createdPays.map((p) => p.id)])];
+          await tx.delete(payments).where(inArray(payments.id, createdIds));
           return {
             ok: true as const,
             kind: "created" as const,
             before: rentalNow,
             after: archived,
-            amount: pay.amount,
+            amount: createdPays.length
+              ? createdPays.reduce((s2, p) => s2 + p.amount, 0)
+              : pay.amount,
           };
         }
 
