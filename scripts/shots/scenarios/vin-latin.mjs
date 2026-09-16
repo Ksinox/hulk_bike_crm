@@ -68,6 +68,18 @@ export async function run(page, ctx) {
   const d = await page.evaluate(() => [...document.querySelectorAll('input[data-col="vin"]')].map((i) => i.value));
   console.log(`[${phase}] компьютер, рамы:`, d.join(" | "));
   await ctx.shot(`vinlat-${phase}-d`, { jpeg: true });
+  // Вставка в середину: курсор после «SA», клавиша X («Ч»).
+  await page.focus('input[data-row="0"][data-col="vin"]');
+  await page.evaluate(() => document.querySelector('input[data-row="0"][data-col="vin"]').setSelectionRange(2, 2));
+  const x = { key: "Ч", code: "KeyX", windowsVirtualKeyCode: 88, modifiers: 8 };
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", text: "Ч", ...x });
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...x });
+  await ctx.sleep(200);
+  const mid = await page.evaluate(() => {
+    const el = document.querySelector('input[data-row="0"][data-col="vin"]');
+    return `${el.value} · курсор ${el.selectionStart}`;
+  });
+  console.log(`[${phase}] вставка в середину:`, mid);
   await page.keyboard.press("Escape");
   await ctx.sleep(400);
   await clearDraft();

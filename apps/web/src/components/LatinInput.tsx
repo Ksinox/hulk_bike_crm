@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Languages } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +54,17 @@ export function LatinInput({ value, onValueChange, onKeyDown, hint = "below", cl
   useEffect(() => () => {
     if (timer.current) window.clearTimeout(timer.current);
   }, []);
+  const caret = useRef<{ el: HTMLInputElement; pos: number } | null>(null);
+  useLayoutEffect(() => {
+    const c = caret.current;
+    if (!c) return;
+    caret.current = null;
+    try {
+      c.el.setSelectionRange(c.pos, c.pos);
+    } catch {
+      /* поле без фокуса */
+    }
+  }, [value]);
 
   return (
     <>
@@ -74,17 +85,19 @@ export function LatinInput({ value, onValueChange, onKeyDown, hint = "below", cl
             const ch = latinForKey(e);
             e.preventDefault();
             if (ch) {
+              // Вставка в место курсора как обычный ввод: курсор, выделение и
+              // «отменить» ведут себя как при наборе. Без execCommand —
+              // вручную, курсор ставим сразу после отрисовки.
               const el = e.currentTarget;
-              const start = el.selectionStart ?? value.length;
-              const end = el.selectionEnd ?? start;
-              onValueChange(value.slice(0, start) + ch.toUpperCase() + value.slice(end));
-              requestAnimationFrame(() => {
-                try {
-                  el.setSelectionRange(start + 1, start + 1);
-                } catch {
-                  /* поле уже без фокуса */
-                }
-              });
+              const inserted =
+                typeof document.execCommand === "function" &&
+                document.execCommand("insertText", false, ch.toUpperCase());
+              if (!inserted) {
+                const start = el.selectionStart ?? value.length;
+                const end = el.selectionEnd ?? start;
+                caret.current = { el, pos: start + 1 };
+                onValueChange(value.slice(0, start) + ch.toUpperCase() + value.slice(end));
+              }
               flash("layout");
             } else {
               flash("keyboard");
