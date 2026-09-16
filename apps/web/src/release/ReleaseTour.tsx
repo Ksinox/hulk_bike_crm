@@ -156,7 +156,9 @@ export function ReleaseTour({
     if (started.current === cfg.version || phase !== "none") return;
     started.current = cfg.version;
     if (laterNow) return;
-    const seen = Math.min(view?.cardsSeen ?? 0, cards.length - 1);
+    // Продолжаем с последней ПОКАЗАННОЙ карточки: отметка ставится при показе,
+    // а не при прочтении, и повторная отрисовка не должна её пропускать.
+    const seen = Math.min(Math.max(0, (view?.cardsSeen ?? 0) - 1), cards.length - 1);
     if (cfg.major && (view?.cardsSeen ?? 0) === 0) setPhase("intro");
     else {
       setCardIdx(Math.max(0, seen));
@@ -239,6 +241,8 @@ export function ReleaseTour({
     // Пока открыт титул или карточки — подсказок нет. Таймер снимается, если
     // в этот же момент открылся показ: иначе подсказка перебила бы титул.
     if (phase !== "none" || hintsTried.current.has(route)) return;
+    // «Посмотрю позже» — и подсказки ждут следующего входа.
+    if (laterNow) return;
     // Подсказки на месте — из любого выпуска, у кого они ещё не закрыты.
     let found: { item: TourItem; version: string } | null = null;
     for (const r of RELEASE_TOURS) {
@@ -263,7 +267,7 @@ export function ReleaseTour({
     }, 900);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route, phase, viewsQ.data]);
+  }, [route, phase, viewsQ.data, laterNow]);
 
   const hintOk = () => {
     const h = queue[qi];
@@ -290,7 +294,7 @@ export function ReleaseTour({
   };
 
   const resume = () => {
-    const idx = Math.min(view?.cardsSeen ?? 0, cards.length - 1);
+    const idx = Math.min(Math.max(0, (view?.cardsSeen ?? 0) - 1), cards.length - 1);
     setCardIdx(Math.max(0, idx));
     setEntering(!reduceMotion());
     setPhase("cards");
