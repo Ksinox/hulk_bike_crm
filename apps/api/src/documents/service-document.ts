@@ -153,7 +153,7 @@ export function renderServiceInvoiceHtml(o: InvoiceOrder): string {
     <tr><td class="k">Статус</td><td>${STATUS[o.status] ?? o.status}</td></tr>
   </table>
 
-  ${itemsTable("Выполненные работы", works, t.works)}
+  ${itemsTable(preliminary ? "Работы" : "Выполненные работы", works, t.works)}
   ${itemsTable("Запчасти и материалы", parts, t.parts)}
   ${works.length + parts.length === 0 ? `<p class="note">Работы и запчасти пока не внесены.</p>` : ""}
 

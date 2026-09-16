@@ -120,8 +120,11 @@ export function useToasts(): Toast[] {
 export function ToastContainer() {
   const toasts = useToasts();
   return (
-    <div className="pointer-events-none fixed left-3 right-3 top-3 z-[1000] flex flex-col gap-2 sm:bottom-5 sm:left-auto sm:right-5 sm:top-auto sm:w-full sm:max-w-[440px] sm:gap-3">
+    <div className="toast-stack pointer-events-none fixed left-3 right-3 top-3 z-[1000] flex flex-col gap-2 sm:bottom-5 sm:left-auto sm:right-5 sm:top-auto sm:w-full sm:max-w-[440px] sm:gap-3">
       <style>{`
+/* 2.0.2: у открытой панели с кнопками внизу (карточка ремонта) уведомление
+   встаёт над её кнопками, а не закрывает «Принять оплату» на 10 секунд. */
+@media(min-width:640px){body:has([data-toast-lift]) .toast-stack{bottom:84px}}
 @keyframes toastSpringIn{0%{opacity:0;transform:translateY(18px) scale(.9)}55%{opacity:1;transform:translateY(-3px) scale(1.015)}100%{transform:translateY(0) scale(1)}}
 @keyframes toastSpringInTop{0%{opacity:0;transform:translateY(-18px) scale(.94)}55%{opacity:1;transform:translateY(3px) scale(1.012)}100%{transform:translateY(0) scale(1)}}
 @keyframes toastBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}

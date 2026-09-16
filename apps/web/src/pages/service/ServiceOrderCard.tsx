@@ -326,6 +326,7 @@ export function ServiceOrderCard({
       {/* ---- Действия ---- */}
       {active ? (
         <footer
+          data-toast-lift
           className={cn(
             "shrink-0 border-t border-border px-4 py-3",
             touch ? "grid grid-cols-2 gap-2 pb-[calc(12px+env(safe-area-inset-bottom))]" : "flex flex-wrap items-center gap-2",
@@ -377,7 +378,7 @@ export function ServiceOrderCard({
           </button>
         </footer>
       ) : order.status === "paid" ? (
-        <footer className="flex shrink-0 gap-2 border-t border-border px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
+        <footer data-toast-lift className="flex shrink-0 gap-2 border-t border-border px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={() => setDocOpen(true)}
