@@ -246,6 +246,7 @@ export function ServicePaySheet({
                 cash={cash}
                 onCash={setCash}
                 compact={!touch}
+                touch={touch}
               />
             </div>
           )}

@@ -291,6 +291,7 @@ export function ServiceOrders() {
                 .filter(Boolean)
                 .join(" · "),
               actionLabel: "Открыть",
+              actionKind: "open",
               onAction: () => setOpenId(o.id),
             });
           }}
@@ -343,6 +344,14 @@ function OrderRow({
 }) {
   const canRepairProfit = useCan("data.repairProfit");
   const ms = moneyState(order);
+  const msTone =
+    ms.tone === "warn"
+      ? "text-orange-ink"
+      : ms.tone === "good"
+        ? "text-green-ink"
+        : ms.tone === "bad"
+          ? "text-red-ink"
+          : "text-muted-2";
   return (
     <button
       type="button"
@@ -368,20 +377,17 @@ function OrderRow({
           {order.customerPhone ? ` · ${order.customerPhone}` : ""} ·{" "}
           {new Date(order.acceptedAt).toLocaleDateString("ru-RU")}
         </span>
+        {/* Телефон: аванс и остаток — своей строкой, иначе имя и техника
+            сжимались до «Honda Di…». */}
+        <span className={cn("mt-0.5 block truncate text-[12px] font-semibold tabular-nums sm:hidden", msTone)}>
+          {ms.text}
+        </span>
       </span>
       <span className="shrink-0 text-right">
         <span className="block text-[15px] font-extrabold tabular-nums text-ink">
           {money(order.totals.due)}
         </span>
-        <span
-          className={cn(
-            "block max-w-[46vw] truncate text-[11.5px] font-semibold tabular-nums sm:max-w-none",
-            ms.tone === "warn" && "text-orange-ink",
-            ms.tone === "good" && "text-green-ink",
-            ms.tone === "bad" && "text-red-ink",
-            ms.tone === "muted" && "text-muted-2",
-          )}
-        >
+        <span className={cn("hidden text-[11.5px] font-semibold tabular-nums sm:block", msTone)}>
           {ms.text}
         </span>
         {canRepairProfit && order.totals.profit !== undefined && order.status !== "cancelled" && (

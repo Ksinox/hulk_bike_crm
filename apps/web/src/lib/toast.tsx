@@ -18,6 +18,7 @@ import {
 } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   Info,
   Undo2,
@@ -39,6 +40,8 @@ export type ToastAction = {
    *  (напр. реальное удаление файла с сервера). Учитывает паузу таймера на
    *  hover, т.к. срабатывает на фактическом закрытии тоста. */
   onExpire?: () => void | Promise<void>;
+  /** «open» — переход («Открыть»), а не отмена. */
+  kind?: "undo" | "open";
 };
 
 export type Toast = {
@@ -96,11 +99,14 @@ export const toast = {
     /** Окно отмены прошло (таймер/крестик, не «Отменить») — коммит операции. */
     onExpire?: () => void | Promise<void>;
     ttl?: number;
+    /** «open» — кнопка перехода («Открыть»): без значка отмены (2.0.2). */
+    actionKind?: "undo" | "open";
   }) =>
     push(opts.kind ?? "success", opts.title, opts.message, opts.ttl ?? 10000, {
       label: opts.actionLabel ?? "Отменить",
       onAct: opts.onAction,
       onExpire: opts.onExpire,
+      kind: opts.actionKind,
     }),
   dismiss,
 };
@@ -259,7 +265,15 @@ function ToastRow({ toast: t }: { toast: Toast }) {
               disabled={busy}
               className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-surface-soft px-3 py-1.5 text-[12.5px] font-bold text-ink ring-1 ring-inset ring-border transition-colors hover:bg-border hover:text-ink active:scale-[0.98] disabled:opacity-60 sm:mt-2.5 sm:px-3.5 sm:py-2 sm:text-[13.5px]"
             >
-              <Undo2 size={15} /> {busy ? "Отменяем…" : t.action.label}
+              {t.action.kind === "open" ? (
+                <>
+                  {t.action.label} <ArrowRight size={15} />
+                </>
+              ) : (
+                <>
+                  <Undo2 size={15} /> {busy ? "Отменяем…" : t.action.label}
+                </>
+              )}
             </button>
           )}
         </div>

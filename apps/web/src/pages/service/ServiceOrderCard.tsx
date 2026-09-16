@@ -232,7 +232,7 @@ export function ServiceOrderCard({
               <CheckCircle2 size={13} /> Сохранено
             </span>
           </div>
-          <div className="mt-0.5 truncate text-[12.5px] text-muted">
+          <div className={cn("mt-0.5 text-[12.5px] text-muted", !touch && "truncate")}>
             принят {fmtDay(order.acceptedAt)}
             {order.completedAt && order.status !== "in_work" ? ` · готов ${fmtDay(order.completedAt)}` : ""}
             {active ? " · правки сохраняются сразу" : ""}
@@ -266,7 +266,12 @@ export function ServiceOrderCard({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {order.status === "cancelled" && (
-          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface-soft px-4 py-3">
+          <div
+            className={cn(
+              "mb-4 flex gap-3 rounded-2xl border border-border bg-surface-soft px-4 py-3",
+              touch ? "flex-col" : "flex-wrap items-center",
+            )}
+          >
             <div className="min-w-0 flex-1 text-[13px] text-ink-2">
               <b className="text-ink">Ремонт отменён{order.cancelledAt ? ` ${fmtDay(order.cancelledAt)}` : ""}.</b>{" "}
               В статистику не идёт. Если отменили по ошибке или клиент вернулся — верните его в работу.
@@ -275,7 +280,10 @@ export function ServiceOrderCard({
               type="button"
               onClick={doReopen}
               disabled={busy}
-              className={cn("inline-flex items-center gap-1.5 rounded-xl bg-ink px-4 font-bold text-white disabled:opacity-50", btn)}
+              className={cn(
+                "inline-flex items-center justify-center gap-1.5 rounded-xl bg-ink px-4 font-bold text-white disabled:opacity-50",
+                btn,
+              )}
             >
               <RotateCcw size={15} /> Вернуть в работу
             </button>
@@ -353,29 +361,39 @@ export function ServiceOrderCard({
           ) : (
             touch && <span />
           )}
-          <button
-            type="button"
-            onClick={saveAndClose}
-            className={cn(
-              "inline-flex items-center justify-center gap-1.5 rounded-xl bg-surface-soft px-4 font-bold text-ink-2 hover:bg-border",
-              btn,
-              !touch && "ml-auto",
-            )}
-          >
-            Сохранить и закрыть
-          </button>
-          <button
-            type="button"
-            onClick={() => setPay("settle")}
-            disabled={t.revenue <= 0 || t.overpaid > 0}
-            className={cn(
-              "inline-flex items-center justify-center gap-1.5 rounded-xl bg-green px-4 font-bold text-white disabled:opacity-40",
-              btn,
-            )}
-          >
-            <Banknote size={16} />
-            {t.left > 0 ? `Принять оплату · ${money(t.left)}` : "Закрыть — оплачен"}
-          </button>
+          <div className={cn(touch ? "col-span-2 grid grid-cols-[1fr_1.7fr] gap-2" : "contents")}>
+            <button
+              type="button"
+              onClick={saveAndClose}
+              className={cn(
+                "inline-flex items-center justify-center gap-1.5 rounded-xl bg-surface-soft px-4 font-bold text-ink-2 hover:bg-border",
+                touch ? "h-14 text-[14px]" : cn(btn, "ml-auto"),
+              )}
+            >
+              {touch ? "Сохранить" : "Сохранить и закрыть"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPay("settle")}
+              disabled={t.revenue <= 0 || t.overpaid > 0}
+              className={cn(
+                "inline-flex items-center justify-center gap-1.5 rounded-xl bg-green px-4 font-bold text-white disabled:opacity-40",
+                touch ? "h-14" : btn,
+              )}
+            >
+              {touch ? (
+                <span className="flex flex-col items-center leading-tight">
+                  <span className="text-[14.5px]">{t.left > 0 ? "Принять оплату" : "Закрыть — оплачен"}</span>
+                  {t.left > 0 && <span className="text-[12.5px] font-semibold text-white/85">{money(t.left)}</span>}
+                </span>
+              ) : (
+                <>
+                  <Banknote size={16} />
+                  {t.left > 0 ? `Принять оплату · ${money(t.left)}` : "Закрыть — оплачен"}
+                </>
+              )}
+            </button>
+          </div>
         </footer>
       ) : order.status === "paid" ? (
         <footer data-toast-lift className="flex shrink-0 gap-2 border-t border-border px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]">

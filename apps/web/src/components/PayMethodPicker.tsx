@@ -35,6 +35,7 @@ export function PayMethodPicker({
   cash,
   onCash,
   compact,
+  touch,
 }: {
   /** Полная сумма операции — из неё вычитается наличная часть. */
   total: number;
@@ -44,6 +45,8 @@ export function PayMethodPicker({
   cash: number;
   onCash: (v: number) => void;
   compact?: boolean;
+  /** Телефон и планшет: кнопки и поля по 44px (2.0.2). */
+  touch?: boolean;
 }) {
   const { cash: cashPart, transfer } = splitByMethod(total, method, cash);
 
@@ -64,7 +67,7 @@ export function PayMethodPicker({
             onClick={() => onMethod(id)}
             className={cn(
               "flex-1 rounded-full font-semibold transition-colors",
-              compact ? "py-1.5 text-[12px]" : "py-2 text-[13px]",
+              touch ? "min-h-11 text-[14px]" : compact ? "py-1.5 text-[12px]" : "py-2 text-[13px]",
               method === id ? "bg-surface text-ink shadow-card-sm" : "text-muted",
             )}
           >
@@ -85,14 +88,22 @@ export function PayMethodPicker({
               onChange={(e) =>
                 onCash(clamp(Number(e.target.value.replace(/[^\d]/g, "")) || 0, 0, total))
               }
-              className="h-10 rounded-xl border border-border bg-surface px-3 text-[14px] font-bold tabular-nums outline-none focus:border-emerald-500"
+              className={cn(
+                "rounded-xl border border-border bg-surface px-3 font-bold tabular-nums outline-none focus:border-emerald-500",
+                touch ? "h-11 text-[16px]" : "h-10 text-[14px]",
+              )}
             />
           </label>
           <div className="flex flex-col gap-1">
             <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
               Переводом
             </span>
-            <div className="flex h-10 items-center rounded-xl bg-surface-soft px-3 text-[14px] font-bold tabular-nums text-ink">
+            <div
+              className={cn(
+                "flex items-center rounded-xl bg-surface-soft px-3 font-bold tabular-nums text-ink",
+                touch ? "h-11 text-[16px]" : "h-10 text-[14px]",
+              )}
+            >
               {transfer.toLocaleString("ru-RU")} ₽
             </div>
           </div>

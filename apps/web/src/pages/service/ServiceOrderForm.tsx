@@ -352,6 +352,7 @@ export function ServiceOrderForm({
                       cash={draft.advCash}
                       onCash={(v) => set("advCash", v)}
                       compact={!touch}
+                      touch={touch}
                     />
                   </div>
                 )}
