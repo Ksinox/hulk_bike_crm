@@ -296,7 +296,7 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
   version: "2.0.1",
   label: "2.0.1",
   major: false,
-  date: "2026-09-17",
+  date: "2026-09-16",
   subtitle: "Добавление техники: сначала категория, партия — таблицей, сводка по партиям.",
   items: [
     {
