@@ -838,6 +838,13 @@ export const scooterModels = pgTable(
     isElectric: boolean("is_electric").notNull().default(false),
     /** Пункт 14: партнёрская техника (выручка делится с партнёром, п. 11). */
     isPartner: boolean("is_partner").notNull().default(false),
+    /**
+     * Релиз 2.0.1: назначение модели. «Сдаём» — модель видна в аренде
+     * (лендинг, анкета, калькулятор) и у неё есть тарифы. «Продаём» — её
+     * можно завести на продажу. Хотя бы один флаг включён.
+     */
+    forRent: boolean("for_rent").notNull().default(true),
+    forSale: boolean("for_sale").notNull().default(false),
     /** Ставки ₽/сут по периодам аренды */
     dayRate: integer("day_rate").notNull().default(1300), // 1–2 дня
     shortRate: integer("short_rate").notNull().default(700), // 3–6 дней

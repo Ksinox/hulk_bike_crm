@@ -9,6 +9,10 @@ import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { useRole } from "@/lib/role";
 import { useCan } from "@/lib/permissions";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { SuggestInput } from "@/components/SuggestInput";
+import { LatinInput } from "@/components/LatinInput";
+import { useScooterColorSuggestions } from "@/lib/scooterColors";
+import { useIsMobile } from "@/lib/useIsMobile";
 import {
   ModelPicker,
   modelEnumFromName,
@@ -80,6 +84,9 @@ export function ScooterEditForm({
     scooter.year != null ? String(scooter.year) : "",
   );
   const [color, setColor] = useState(scooter.color ?? "");
+  // 16.09: цвет — с подсказками из уже вписанных в парке.
+  const colorSuggestions = useScooterColorSuggestions();
+  const touch = useIsMobile();
   const [note, setNote] = useState(scooter.note ?? "");
   const [purchasePrice, setPurchasePrice] = useState(
     scooter.purchasePrice != null ? String(scooter.purchasePrice) : "",
@@ -296,10 +303,10 @@ export function ScooterEditForm({
                 </span>
               }
             >
-              <input
+              <LatinInput
                 type="text"
                 value={frameNumber}
-                onChange={(e) => setFrameNumber(e.target.value.toUpperCase())}
+                onValueChange={(v) => setFrameNumber(v.toUpperCase())}
                 placeholder="SA36J-605232"
                 className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600"
               />
@@ -318,10 +325,12 @@ export function ScooterEditForm({
                 />
               </Field>
               <Field label="Цвет">
-                <input
+                <SuggestInput
                   type="text"
                   value={color}
-                  onChange={(e) => setColor(e.target.value)}
+                  onValueChange={setColor}
+                  suggestions={colorSuggestions}
+                  touch={touch}
                   placeholder="Серебристый"
                   className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
                 />

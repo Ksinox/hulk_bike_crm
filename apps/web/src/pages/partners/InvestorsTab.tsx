@@ -26,7 +26,7 @@ import {
 } from "@/lib/api/investors";
 import { ApiError } from "@/lib/api";
 import { useApiScooters } from "@/lib/api/scooters";
-import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
+import { AddScooterModal, addScooterDraftKey, useAddScooterReopen } from "@/pages/fleet/AddScooterModal";
 import { ScooterName } from "@/components/ScooterName";
 import { PayoutsHistoryDialog } from "./PayoutsHistoryDialog";
 import { ElectricMark } from "@/components/PowerTypeBadge";
@@ -369,6 +369,7 @@ function InvestorDetails({
   const unmark = useUnmarkPayout();
   const del = useDeleteInvestor();
   const [addOpen, setAddOpen] = useState(false);
+  useAddScooterReopen(addScooterDraftKey(true, investor.id), () => setAddOpen(true));
   const [payOpen, setPayOpen] = useState(false);
 
   const units = scooters.filter((s) => s.investorId === investor.id);

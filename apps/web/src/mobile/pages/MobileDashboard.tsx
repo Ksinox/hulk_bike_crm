@@ -79,7 +79,7 @@ export function MobileDashboard({
   usePageFab(
     "Сделка",
     () => setDealSheetOpen(true),
-    openRentalId != null || overdueListOpen || revenueOpen || newRentalOpen,
+    openRentalId != null || overdueListOpen || revenueOpen || newRentalOpen || dealSheetOpen,
   );
 
   if (m.isLoading) {

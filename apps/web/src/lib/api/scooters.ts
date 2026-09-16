@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCan } from "@/lib/permissions";
 import { api } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
 import type { ApiScooter, ListResponse } from "./types";
 
 export const scootersKeys = {
@@ -36,6 +37,67 @@ export function useRentalSlots() {
   return useQuery({
     queryKey: [...scootersKeys.all, "slots"] as const,
     queryFn: () => api.get<SlotsState>("/api/scooters/slots"),
+  });
+}
+
+/** Релиз 2.0.1: партия техники одной транзакцией. */
+export type BatchUnitInput = {
+  vin?: string | null;
+  engineNo?: string | null;
+  year?: number | null;
+  color?: string | null;
+  mileage?: number;
+  rentalSlot?: number | null;
+  marketValue?: number | null;
+  salePrice?: number | null;
+  note?: string | null;
+};
+export type BatchInput = {
+  modelId: number;
+  baseStatus: ApiScooter["baseStatus"];
+  purchaseBatch?: string | null;
+  purchaseDate?: string | null;
+  purchasePrice?: number | null;
+  isPartner?: boolean;
+  investorId?: number | null;
+  enableModelPurpose?: boolean;
+  units: BatchUnitInput[];
+};
+/** Ошибка по строке партии — форма подсвечивает ячейку. */
+export type BatchRowError = { index: number; field: string; message: string };
+
+export function useAddScootersBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: BatchInput) =>
+      api.post<{ items: ApiScooter[] }>("/api/scooters/batch", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: scootersKeys.all });
+      qc.invalidateQueries({ queryKey: ["scooter-models"] });
+    },
+  });
+}
+
+/**
+ * «Отменить» после добавления партии — только свою и в первые 10 минут.
+ * Обычная функция, не хук: к нажатию «Отменить» окно уже закрыто.
+ */
+export async function undoScootersBatch(ids: number[]): Promise<number> {
+  const res = await api.post<{ deleted: number }>("/api/scooters/batch/undo", { ids });
+  await queryClient.invalidateQueries({ queryKey: scootersKeys.all });
+  return res.deleted;
+}
+
+/** Вся техника вместе с архивом — чтобы сразу видеть занятую раму. */
+export function useApiScootersWithArchive(enabled = true) {
+  return useQuery({
+    queryKey: [...scootersKeys.all, "with-archive"] as const,
+    queryFn: () =>
+      api
+        .get<ListResponse<ApiScooter>>("/api/scooters?includeArchived=1")
+        .then((r) => r.items),
+    enabled,
+    staleTime: 30_000,
   });
 }
 

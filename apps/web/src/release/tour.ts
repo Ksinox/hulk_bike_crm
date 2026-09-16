@@ -18,8 +18,14 @@ import type { PermissionKey } from "@/lib/permissions";
  * ответил «Новый сотрудник») прошлые обновления не показываем — сравнивать ему
  * не с чем; подсказки на месте и метки работают.
  *
- * Как собрать следующий релиз: новая версия, карточки из пунктов «Развития»,
- * якоря подсказок — `data-tour` на кнопке или текст кнопки.
+ * Как собрать следующий релиз (правило заказчика с 16.09 — для КАЖДОГО
+ * выпуска): новая запись в RELEASE_TOURS, карточка на каждое нововведение —
+ * «было / стало» (кадры одного размера, «было» снимать до правок), коротко что
+ * изменилось и `why` — зачем. Карточка должна быть понятна без пояснений.
+ * Якоря подсказок — `data-tour` на кнопке или текст кнопки.
+ *
+ * Несколько выпусков подряд показываются по очереди, от старого к новому;
+ * «Позже» откладывает все.
  */
 
 export type TourDevice = "desktop" | "phone";
@@ -43,13 +49,23 @@ export type TourItem = {
   /** Раздел CRM, к которому относится карточка (подсказки, метка «новое»). */
   route: RouteId | null;
   headline: string;
-  /** Пункт и право, без которого пункт не показываем. */
-  points: Array<string | { text: string; perm: PermissionKey }>;
+  /** Зачем сделали — причина словами заказчика/сотрудника (с 2.0.1). */
+  why?: string;
+  /**
+   * Пункт; с `perm` — только при этом праве, с `managers` — только директору
+   * (закуп и прибыль при добавлении техники видит только он).
+   */
+  points: Array<string | { text: string; perm?: PermissionKey; managers?: boolean }>;
   audience: TourAudience;
   devices: TourDevice[];
   img: Partial<Record<TourDevice, string>>;
   before?: Partial<Record<TourDevice, string>>;
   imgPos?: Partial<Record<TourDevice, string>>;
+  /**
+   * «Крупно» (16.09): полные скриншоты того же места — во весь экран, чтобы
+   * рассмотреть весь блок. Без них — те же кадры, что в слайде.
+   */
+  zoom?: Partial<Record<TourDevice, { before?: string; after: string }>>;
   /** «Где найти» — первая подсказка по кнопке «Показать где» у нового раздела. */
   path?: Partial<Record<TourDevice, { anchor: TourAnchor; text: string }>>;
   hints?: Partial<Record<TourDevice, TourHint[]>>;
@@ -67,7 +83,7 @@ export type ReleaseTourConfig = {
 
 const R = "/release/2.0";
 
-export const RELEASE_TOUR: ReleaseTourConfig = {
+const RELEASE_2_0: ReleaseTourConfig = {
   version: "2.0.0",
   label: "2.0",
   major: true,
@@ -87,7 +103,8 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       ],
       audience: "staff",
       devices: ["desktop", "phone"],
-      img: { desktop: `${R}/d-login.jpg`, phone: `${R}/m-login.jpg` },
+      img: { desktop: `${R}/d-login-sq.jpg`, phone: `${R}/m-login.jpg` },
+      zoom: { desktop: { after: `${R}/d-login.jpg` } },
       imgPos: { desktop: "center center", phone: "center 40%" },
     },
     {
@@ -103,8 +120,9 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       ],
       audience: "managers",
       devices: ["desktop", "phone"],
-      img: { desktop: `${R}/d-staff.jpg`, phone: `${R}/m-staff.jpg` },
-      imgPos: { desktop: "left top", phone: "center top" },
+      img: { desktop: `${R}/d-staff-sq.jpg`, phone: `${R}/m-staff.jpg` },
+      zoom: { desktop: { after: `${R}/d-staff.jpg` } },
+      imgPos: { desktop: "center center", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-staff", "nav-more"] }, text: "Раздел «Сотрудники» — в меню слева." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне — в меню «Ещё»." },
@@ -127,8 +145,9 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       ],
       audience: "all",
       devices: ["desktop", "phone"],
-      img: { desktop: `${R}/d-sales.jpg`, phone: `${R}/m-sales.jpg` },
-      imgPos: { desktop: "left top", phone: "center top" },
+      img: { desktop: `${R}/d-sales-sq.jpg`, phone: `${R}/m-sales.jpg` },
+      zoom: { desktop: { after: `${R}/d-sales.jpg` } },
+      imgPos: { desktop: "center center", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-sales", "nav-more"] }, text: "Новый раздел — в меню слева, иконка кошелька." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне раздел живёт в меню «Ещё»." },
@@ -151,8 +170,9 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       ],
       audience: "all",
       devices: ["desktop", "phone"],
-      img: { desktop: `${R}/d-buyout.jpg`, phone: `${R}/m-buyout.jpg` },
-      imgPos: { desktop: "left top", phone: "center top" },
+      img: { desktop: `${R}/d-buyout-sq.jpg`, phone: `${R}/m-buyout.jpg` },
+      zoom: { desktop: { after: `${R}/d-buyout.jpg` } },
+      imgPos: { desktop: "center center", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-rassrochki", "nav-more"] }, text: "Раздел — в меню слева, иконка чека." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне — в меню «Ещё»." },
@@ -177,9 +197,10 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       devices: ["desktop", "phone"],
       // «Было» и «стало» — одного размера окна (1600×950), иначе половинки
       // сравнения не совпадают.
-      before: { desktop: `${R}/d-service-was.jpg` },
-      img: { desktop: `${R}/d-service-ba.jpg`, phone: `${R}/m-service.jpg` },
-      imgPos: { desktop: "left top", phone: "center top" },
+      before: { desktop: `${R}/d-service-was-sq.jpg` },
+      img: { desktop: `${R}/d-service-ba-sq.jpg`, phone: `${R}/m-service.jpg` },
+      zoom: { desktop: { before: `${R}/d-service-was.jpg`, after: `${R}/d-service-ba.jpg` } },
+      imgPos: { desktop: "center center", phone: "center top" },
       path: { phone: { anchor: { tour: ["tab-more"] }, text: "Раздел на прежнем месте — в «Ещё»." } },
       hints: {
         desktop: [
@@ -202,8 +223,9 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       ],
       audience: "all",
       devices: ["desktop", "phone"],
-      img: { desktop: `${R}/d-analytics.jpg`, phone: `${R}/m-analytics.jpg` },
-      imgPos: { desktop: "left top", phone: "center top" },
+      img: { desktop: `${R}/d-analytics-sq.jpg`, phone: `${R}/m-analytics.jpg` },
+      zoom: { desktop: { after: `${R}/d-analytics.jpg` } },
+      imgPos: { desktop: "center center", phone: "center top" },
       path: {
         desktop: { anchor: { tour: ["nav-analytics", "nav-more"] }, text: "Раздел — в меню слева." },
         phone: { anchor: { tour: ["tab-more"] }, text: "На телефоне — в меню «Ещё»." },
@@ -230,8 +252,9 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
       ],
       audience: "all",
       devices: ["desktop"],
-      img: { desktop: `${R}/d-search.jpg` },
-      imgPos: { desktop: "left top" },
+      img: { desktop: `${R}/d-search-sq.jpg` },
+      zoom: { desktop: { after: `${R}/d-search.jpg` } },
+      imgPos: { desktop: "center center" },
       hints: {
         desktop: [{ anchor: { placeholder: "Поиск: клиент" }, title: "Поиск", text: "Вбейте номер скутера, VIN или телефон — CRM покажет, где совпало." }],
       },
@@ -261,12 +284,189 @@ export const RELEASE_TOUR: ReleaseTourConfig = {
   ],
 };
 
+const R201 = "/release/2.0.1";
+/** Полные скриншоты «Развития» — для «Крупно». */
+const P = "/progress";
+
+/**
+ * 2.0.1 (правки заказчика 16.09): добавление техники — сначала категория,
+ * партия таблицей; модели «сдаём / продаём».
+ */
+const RELEASE_2_0_1: ReleaseTourConfig = {
+  version: "2.0.1",
+  label: "2.0.1",
+  major: false,
+  date: "2026-09-16",
+  subtitle: "Добавление техники: сначала категория, партия — таблицей, сводка по партиям.",
+  items: [
+    {
+      id: "add-category",
+      kind: "changed",
+      title: "Новая техника: сначала — куда",
+      route: "fleet",
+      headline: "Первым шагом выбираете: в аренду, на продажу, в выкуп или пока не решили.",
+      why:
+        "Раньше была одна длинная форма: скутер на продажу получал арендный номер, а форма спрашивала тарифы, которые продаже не нужны.",
+      points: [
+        "На продажу — без арендного номера и тарифов, сразу цена продажи",
+        "В аренду — номер из свободных, видно, сколько останется",
+        "В «Продажи → В продаже» — кнопка «Добавить на продажу»",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R201}/d-add-was.jpg`, phone: `${R201}/m-add-was.jpg` },
+      img: { desktop: `${R201}/d-add-now.jpg`, phone: `${R201}/m-add-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/addsc-was-3-sale-number.jpg`, after: `${P}/addsc-now-1-category.jpg` },
+        phone: { before: `${P}/addsc-was-m1.jpg`, after: `${P}/addsc-now-m1-category.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center top" },
+      hints: {
+        desktop: [
+          {
+            anchor: { text: "Добавить скутер" },
+            title: "Новая техника",
+            text: "Сначала выберите, куда добавляете, — дальше окно спросит только нужное.",
+          },
+        ],
+        phone: [
+          {
+            anchor: { tour: ["fab"] },
+            title: "Новая техника",
+            text: "Сначала — куда добавляете: в аренду, на продажу или в выкуп.",
+          },
+        ],
+      },
+    },
+    {
+      id: "add-batch",
+      kind: "new",
+      title: "Партия за один раз",
+      route: "fleet",
+      headline: "Модель, количество и номер партии — один раз, дальше таблица на все единицы.",
+      why:
+        "Пришла поставка из пяти Jog — раньше пять раз открывали форму и заново выбирали модель, дату и цену закупа.",
+      points: [
+        "Строка «Для всех»: год, цвет, цена — подставятся в каждую единицу",
+        "Номера рам и двигателей вставляются столбцом из Excel",
+        "Повтор рамы подсвечивается сразу, до сохранения",
+        { text: "Директору на проверке — закуп партии и прибыль", managers: true },
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R201}/d-batch-was.jpg`, phone: `${R201}/m-batch-was.jpg` },
+      img: { desktop: `${R201}/d-batch-now.jpg`, phone: `${R201}/m-batch-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/addsc-was-1-top.jpg`, after: `${P}/addsc-now-3-table.jpg` },
+        phone: { before: `${P}/addsc-was-m1.jpg`, after: `${P}/addsc-now-m3-cards.jpg` },
+      },
+      // Телефон: в кадре — «Одинаковое для всех» и карточка единицы.
+      imgPos: { desktop: "center center", phone: "center 58%" },
+    },
+    {
+      id: "fewer-errors",
+      kind: "changed",
+      title: "Меньше ошибок при добавлении",
+      route: "fleet",
+      headline: "Ошиблись — «Отменить», рама не похожа на обычные — предупредим, цена — из прошлой.",
+      why:
+        "Ошибка в партии раньше означала архив для каждой единицы через ключ директора, а опечатка в раме уходила в договор.",
+      points: [
+        "«Отменить» 10 секунд после добавления — данные вернутся в черновик",
+        "Рама — латиницей при любой раскладке; необычная для модели — предупреждение",
+        "Цена подставляется из последней по модели — поправьте, если изменилась",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R201}/d-errors-was.jpg`, phone: `${R201}/m-errors-was.jpg` },
+      img: { desktop: `${R201}/d-errors-now.jpg`, phone: `${R201}/m-errors-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/addsc2-was-table.jpg`, after: `${P}/vinfmt-now-table.jpg` },
+        phone: { before: `${P}/errors-was-m.jpg`, after: `${P}/errors-now-m.jpg` },
+      },
+      // Телефон: в кадре — пометка о цене и предупреждение под рамой.
+      imgPos: { desktop: "center center", phone: "center 39%" },
+    },
+    {
+      id: "batches",
+      kind: "new",
+      title: "Партии",
+      route: "fleet",
+      headline: "Как отбилась поставка: сколько продано, сколько на витрине и на какую сумму.",
+      why:
+        "Номер партии записывали, но посмотреть, как разошлась поставка, было негде — только искать единицы по номеру.",
+      points: [
+        "«Скутеры → Партии», на телефоне — кнопка «Партии»",
+        "Продано на — по сделкам, на витрине на — по ценам из карточек",
+        { text: "Директору — закуп партии и прибыль по проданным", managers: true },
+        "Нажмите на единицу — откроется её карточка",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R201}/d-batches-was.jpg`, phone: `${R201}/m-batches-was.jpg` },
+      img: { desktop: `${R201}/d-batches-now.jpg`, phone: `${R201}/m-batches-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/batch-was-search.jpg`, after: `${P}/batch-now-d.jpg` },
+        phone: { before: `${P}/batch-was-m.jpg`, after: `${P}/batch-now-m.jpg` },
+      },
+      // Телефон: в кадре — суммы партии.
+      imgPos: { desktop: "center center", phone: "center 67%" },
+      hints: {
+        desktop: [
+          {
+            anchor: { text: "Партии" },
+            title: "Партии",
+            text: "Сводка по каждой поставке: продано, на витрине, суммы.",
+          },
+        ],
+        phone: [
+          {
+            anchor: { tour: ["batches-m"] },
+            title: "Партии",
+            text: "Сводка по каждой поставке — здесь.",
+          },
+        ],
+      },
+    },
+    {
+      id: "model-purpose",
+      kind: "changed",
+      title: "Модели: сдаём или продаём",
+      route: "fleet",
+      headline: "У модели две отметки — «Сдаём в аренду» и «Продаём».",
+      why:
+        "Модель, заведённая под продажу, появлялась в аренде: на сайте, в анкете клиента и в калькуляторе — с тарифами, которых у неё нет.",
+      points: [
+        "Тарифы — только у моделей, которые сдаём",
+        "Модель только для продажи не видна клиентам в аренде",
+        "В «Модели» — фильтр «Сдаём / Продаём»",
+      ],
+      audience: "managers",
+      devices: ["desktop"],
+      before: { desktop: `${R201}/d-models-was.jpg` },
+      img: { desktop: `${R201}/d-models-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/models-was-2-form.jpg`, after: `${P}/models-now-2-form.jpg` },
+      },
+      imgPos: { desktop: "center center" },
+    },
+  ],
+};
+
+/** Все выпуски с показом — от старого к новому. */
+export const RELEASE_TOURS: ReleaseTourConfig[] = [RELEASE_2_0, RELEASE_2_0_1];
+
+/** Последний выпуск — для «кто посмотрел» и меток. */
+export const RELEASE_TOUR: ReleaseTourConfig = RELEASE_TOURS[RELEASE_TOURS.length - 1]!;
+
 /** Сколько дней держится метка «новое» у раздела. */
 export const NEW_LABEL_DAYS = 7;
 
 /** Разделы с меткой «новое»: новые разделы релиза. */
 export function newSectionRoutes(cfg: ReleaseTourConfig = RELEASE_TOUR): RouteId[] {
+  // Метка «новое» — только у НОВЫХ разделов. Новая возможность внутри
+  // старого раздела (партия в «Скутерах») метку разделу не ставит.
   return cfg.items
-    .filter((i) => i.kind === "new" && i.route && i.audience === "all")
+    .filter((i) => i.kind === "new" && i.route && i.audience === "all" && cfg.major)
     .map((i) => i.route as RouteId);
 }

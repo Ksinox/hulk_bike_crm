@@ -53,7 +53,7 @@ import {
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { ExNumberTag, ScooterName } from "@/components/ScooterName";
 import { ScooterCard } from "./ScooterCard";
-import { AddScooterModal } from "./AddScooterModal";
+import { AddScooterModal, addScooterDraftKey, useAddScooterReopen } from "./AddScooterModal";
 
 /** «Сегодня» по демо-таймлайну */
 const TODAY = new Date();
@@ -172,6 +172,8 @@ export function Fleet({
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // «Отменить» после добавления — окно открывается снова с тем же черновиком.
+  useAddScooterReopen(addScooterDraftKey(false), () => setAddOpen(true));
   const [backTo, setBackTo] = useState<BackTarget | null>(null);
 
   // v0.8.22: режим «Список/Плитки» (пер-пользователь, морфинг как в Арендах).
@@ -355,7 +357,9 @@ export function Fleet({
                 matchText(r.scooter.vin ?? undefined, q) ||
                 matchText(r.scooter.engineNo ?? undefined, q) ||
                 matchText(r.scooter.frameNumber ?? undefined, q) ||
-                matchText(r.scooter.uid ?? undefined, q)));
+                matchText(r.scooter.uid ?? undefined, q) ||
+                // 2.0.1: партию, заведённую разом, находим по её номеру.
+                matchText(r.scooter.purchaseBatch ?? undefined, q)));
           if (!ok) return false;
         }
         return true;
@@ -622,7 +626,9 @@ export function Fleet({
       )}
       </div>
 
-      {addOpen && <AddScooterModal onClose={() => setAddOpen(false)} />}
+      {addOpen && (
+        <AddScooterModal defaultCategory={mode} onClose={() => setAddOpen(false)} />
+      )}
     </Root>
   );
 }
@@ -712,6 +718,10 @@ function FleetRow({
           />
           <div className="truncate text-[11px] uppercase tracking-wider text-muted-2">
             {MODEL_LABEL[scooter.model]}
+            {/* 2.0.1: без арендного номера одинаковые «Jog» различает ID. */}
+            {scooter.rentalSlot == null && scooter.uid && (
+              <span className="normal-case tracking-normal"> · ID {scooter.uid}</span>
+            )}
           </div>
         </div>
       </div>
@@ -835,6 +845,9 @@ function FleetTile({
           />
           <div className="truncate text-[10px] uppercase tracking-wider text-muted-2">
             {MODEL_LABEL[scooter.model]}
+            {scooter.rentalSlot == null && scooter.uid && (
+              <span className="normal-case tracking-normal"> · ID {scooter.uid}</span>
+            )}
           </div>
         </div>
       </div>

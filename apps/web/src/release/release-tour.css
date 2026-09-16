@@ -102,7 +102,7 @@
 .rt-sheet.enter { animation: rt-sheet-dive .6s cubic-bezier(.2,.8,.2,1) both; }
 .rt-media { position: relative; background: #f3f6fb; overflow: hidden; }
 .rt-media > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.rt-body { padding: 1.6em 1.7em 1.4em; display: flex; flex-direction: column; gap: .7em; min-height: 0; overflow-y: auto; }
+.rt-body { padding: 1.6em 1.7em 0; display: flex; flex-direction: column; gap: .7em; min-height: 0; overflow-y: auto; }
 .rt-top { display: flex; flex-direction: column; gap: .7em; }
 .rt-top-row { display: flex; align-items: center; gap: .6em; }
 .rt-brand { display: inline-flex; align-items: center; gap: .5em; white-space: nowrap; font: 700 .95em/1 "Inter", sans-serif; color: #0f172a; }
@@ -118,10 +118,17 @@
 .rt-kind.changed { background: #E6EDFD; color: #1D4ED8; }
 .rt-card-title { font: 800 2.3em/1.05 "Manrope", "Inter", sans-serif; letter-spacing: -.025em; margin: 0; }
 .rt-headline { margin: 0; font-size: 1.12em; line-height: 1.4; color: #2B3447; font-weight: 500; }
+.rt-why { margin: 0; padding: .7em .85em; border-radius: .8em; background: #F4F8EE; border: 1px solid #DCEBC8; font-size: .95em; line-height: 1.42; color: #33431F; }
+.rt-why b { color: #4d8a1c; font-weight: 800; }
 .rt-points { list-style: none; margin: .2em 0 0; padding: 0; display: grid; gap: .5em; }
 .rt-points li { position: relative; padding-left: 1.3em; font-size: .98em; line-height: 1.4; color: #3A4458; }
 .rt-points li::before { content: ""; position: absolute; left: .15em; top: .5em; width: .5em; height: .5em; border-radius: 2px; background: #2563EB; }
-.rt-card-actions { margin-top: auto; display: flex; flex-wrap: wrap; gap: .5em; align-items: center; padding-top: .6em; }
+/* Кнопки всегда видны: длинный текст прокручивается под ними (16.09). */
+.rt-card-actions {
+  margin-top: auto; display: flex; flex-wrap: wrap; gap: .5em; align-items: center;
+  position: sticky; bottom: 0; z-index: 2; padding: 1em 0 1.4em;
+  background: linear-gradient(to top, #fff 78%, rgba(255,255,255,0));
+}
 .rt-btn { border: 0; border-radius: 999px; cursor: pointer; font: 700 1em/1 "Inter", sans-serif; padding: .75em 1.2em; }
 .rt-show { background: #2563EB; color: #fff; }
 .rt-show:hover { background: #1d4ed8; }
@@ -152,10 +159,40 @@
   animation: rt-rise .4s ease-out .3s both;
 }
 
+/* «Крупно»: кнопка на картинке и просмотр во весь экран */
+.rt-zoom-btn {
+  position: absolute; right: .8em; bottom: .8em; z-index: 5;
+  display: inline-flex; align-items: center; gap: .4em; padding: .55em .85em; border: 0; border-radius: 999px;
+  background: rgba(255,255,255,.94); color: #0f172a; font: 700 .82em/1 "Inter", sans-serif; cursor: pointer;
+  box-shadow: 0 .3em 1em -.3em rgba(15,23,42,.45), 0 0 0 1px rgba(15,23,42,.1);
+}
+.rt-zoom-btn:hover { background: #fff; }
+.rt-zoom {
+  position: fixed; inset: 0; z-index: 420; display: grid; place-items: center;
+  padding: 3.6em .8em .8em; background: rgba(5,8,12,.9);
+}
+.rt-zoom-box {
+  position: relative; overflow: hidden; border-radius: .8em; background: #fff;
+  width: min(calc(100vw - 1.6em), calc((100dvh - 4.4em) * var(--r)));
+  box-shadow: 0 2em 5em -1em rgba(0,0,0,.6);
+}
+.rt-zoom-box > img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.rt-zoom-close {
+  position: fixed; top: .8em; right: .8em; z-index: 1;
+  display: inline-flex; align-items: center; gap: .4em; padding: .65em 1em; border: 0; border-radius: 999px;
+  background: #fff; color: #0f172a; font: 700 .9em/1 "Inter", sans-serif; cursor: pointer;
+}
+
+/* Планшет стоя: слайд узкий и высокий — картинка сверху, текст снизу. */
+@media (min-width: 768px) and (max-width: 1100px) and (orientation: portrait) {
+  .rt-sheet { width: min(92vw, 46em); height: min(92dvh, 66em); grid-template-columns: 1fr; grid-template-rows: 52% 48%; }
+}
+
 @media (max-width: 767px) {
   .rt-sheet { width: 100vw; height: 100dvh; border-radius: 0; grid-template-columns: 1fr; grid-template-rows: 47% 53%; }
   .rt-card-title { font-size: 2em; }
-  .rt-body { padding: 1.1em 1.1em calc(1em + env(safe-area-inset-bottom)); }
+  .rt-body { padding: 1.1em 1.1em 0; }
+  .rt-card-actions { padding-bottom: calc(1em + env(safe-area-inset-bottom)); }
   .rt-card-actions .rt-btn { flex: 1; }
   .rt-count { width: 100%; margin-left: 0; text-align: center; order: 3; }
 }

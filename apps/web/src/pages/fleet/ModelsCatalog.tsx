@@ -14,9 +14,12 @@ import {
   Zap,
   Fuel,
   Eye,
+  Key,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  modelForRent,
+  modelForSale,
   useApiScooterModels,
   useCreateScooterModel,
   useDeleteScooterModel,
@@ -34,23 +37,54 @@ export function ModelsCatalog() {
   const { data: items = [], isLoading } = useApiScooterModels();
   const [editing, setEditing] = useState<ApiScooterModel | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // 2.0.1: какие модели показывать — все, которые сдаём, которые продаём.
+  const [purpose, setPurpose] = useState<"all" | "rent" | "sale">("all");
+  const rentCount = items.filter(modelForRent).length;
+  const saleCount = items.filter(modelForSale).length;
 
   const sorted = useMemo(
     () =>
-      [...items].sort((a, b) => {
+      items
+        .filter((m) =>
+          purpose === "all" ? true : purpose === "rent" ? modelForRent(m) : modelForSale(m),
+        )
+        .sort((a, b) => {
         if (a.quickPick !== b.quickPick) return a.quickPick ? -1 : 1;
         return a.name.localeCompare(b.name, "ru");
       }),
-    [items],
+    [items, purpose],
   );
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <div className="text-[13px] text-muted">
-          {isLoading
-            ? "Загрузка…"
-            : `${items.length} ${plural(items.length, ["модель", "модели", "моделей"])} · ${items.filter((x) => x.quickPick).length} в быстром выборе`}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex rounded-full bg-surface p-1 shadow-card-sm">
+            {(
+              [
+                ["all", "Все", items.length],
+                ["rent", "Сдаём", rentCount],
+                ["sale", "Продаём", saleCount],
+              ] as const
+            ).map(([key, label, n]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPurpose(key)}
+                className={cn(
+                  "rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors",
+                  purpose === key ? "bg-ink text-white" : "text-muted hover:text-ink",
+                )}
+              >
+                {label} <span className="tabular-nums opacity-70">{n}</span>
+              </button>
+            ))}
+          </div>
+          <div className="text-[13px] text-muted">
+            {isLoading
+              ? "Загрузка…"
+              : `${items.filter((x) => x.quickPick).length} в быстром выборе`}
+          </div>
         </div>
         <button
           type="button"
@@ -68,7 +102,11 @@ export function ModelsCatalog() {
         {sorted.length === 0 && !isLoading && (
           <div className="col-span-full rounded-2xl bg-surface p-8 text-center text-muted shadow-card-sm">
             <Tag size={24} className="mx-auto mb-2" />
-            Пока ни одной модели. Добавьте первую.
+            {items.length === 0
+              ? "Пока ни одной модели. Добавьте первую."
+              : purpose === "sale"
+                ? "Ни одна модель не отмечена «Продаём». Откройте модель и отметьте."
+                : "Ни одна модель не отмечена «Сдаём в аренду»."}
           </div>
         )}
       </div>
@@ -193,20 +231,19 @@ function ModelCard({
         >
           {model.name}
         </div>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-2">
-          <span>
-            1–2 дн: <b className="text-ink">{model.dayRate}₽</b>
-          </span>
-          <span>
-            3–6 дн: <b className="text-ink">{model.shortRate}₽</b>
-          </span>
-          <span>
-            7–29 дн: <b className="text-ink">{model.weekRate}₽</b>
-          </span>
-          <span>
-            30+ дн: <b className="text-ink">{model.monthRate}₽</b>
-          </span>
-        </div>
+        <PurposeBadges forRent={modelForRent(model)} forSale={modelForSale(model)} />
+        {modelForRent(model) ? (
+          <RatesGrid
+            dayRate={model.dayRate}
+            shortRate={model.shortRate}
+            weekRate={model.weekRate}
+            monthRate={model.monthRate}
+          />
+        ) : (
+          <div className="text-[11px] text-muted-2">
+            Только продажа — тарифов нет, на лендинге и в аренде не видна
+          </div>
+        )}
         {model.note && (
           <div className="text-[11px] text-muted line-clamp-2">{model.note}</div>
         )}
@@ -238,6 +275,9 @@ function ModelFormModal({
   const [active, setActive] = useState(initial?.active ?? true);
   // Пункт 14: тип техники — электро / партнёрская.
   const [isElectric, setIsElectric] = useState(initial?.isElectric ?? false);
+  // 2.0.1: назначение модели. Хотя бы одно — иначе модель нигде не видна.
+  const [forRent, setForRent] = useState(initial ? modelForRent(initial) : true);
+  const [forSale, setForSale] = useState(initial ? modelForSale(initial) : false);
   const [maxSpeedKmh, setMaxSpeedKmh] = useState<string>(
     initial?.maxSpeedKmh != null ? String(initial.maxSpeedKmh) : "",
   );
@@ -252,7 +292,8 @@ function ModelFormModal({
   const [err, setErr] = useState<string | null>(null);
 
   const pending = createMut.isPending || patchMut.isPending;
-  const canSave = name.trim().length >= 1;
+  const noPurpose = !forRent && !forSale;
+  const canSave = name.trim().length >= 1 && !noPurpose;
   // Аватарку читаем из кеша: после загрузки превью должно обновиться сразу,
   // а в props у модалки останется прежний (stale) ключ.
   const { data: allModels = [] } = useApiScooterModels();
@@ -273,9 +314,11 @@ function ModelFormModal({
       shortRate,
       weekRate,
       monthRate,
-      quickPick,
+      quickPick: forRent ? quickPick : false,
       active,
       isElectric,
+      forRent,
+      forSale,
       maxSpeedKmh:
         speedNum != null && Number.isFinite(speedNum) && speedNum >= 0
           ? Math.round(speedNum)
@@ -329,7 +372,9 @@ function ModelFormModal({
             </div>
             <div className="mt-0.5 text-[12px] text-muted-2">
               {isEdit
-                ? "Тарифы и характеристики применяются к будущим арендам."
+                ? forRent
+                  ? "Тарифы и характеристики применяются к будущим арендам."
+                  : "Модель для продажи — тарифы не нужны."
                 : "Создайте модель, потом добавите аватарку и скутера в парк."}
             </div>
           </div>
@@ -357,25 +402,61 @@ function ModelFormModal({
             />
           </Field>
 
-          {/* Тарифы — единая карточка, 4 поля в ряд */}
+          {/* 2.0.1: для чего модель — от этого зависят тарифы и где она видна. */}
           <Section
-            icon={<Wallet size={13} />}
-            title="Тарифы"
-            hint="Цена за сутки в зависимости от срока аренды"
+            icon={<Tag size={13} />}
+            title="Для чего модель"
+            hint="Можно оба варианта"
           >
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-              <RateField label="1–2 дня" value={dayRate} onChange={setDayRate} />
-              <RateField label="3–6 дней" value={shortRate} onChange={setShortRate} />
-              <RateField label="7–29 дней" value={weekRate} onChange={setWeekRate} />
-              <RateField label="30+ дней" value={monthRate} onChange={setMonthRate} />
+            <div className="grid gap-2 sm:grid-cols-2">
+              <ToggleCard
+                checked={forRent}
+                onChange={setForRent}
+                icon={<Key size={15} />}
+                title="Сдаём в аренду"
+                hint="Тарифы, лендинг, анкета клиента, калькулятор"
+              />
+              <ToggleCard
+                checked={forSale}
+                onChange={setForSale}
+                icon={<Tag size={15} />}
+                title="Продаём"
+                hint="Технику этой модели можно заводить на продажу"
+              />
             </div>
+            {noPurpose && (
+              <div className="mt-1.5 text-[12px] font-semibold text-red-600">
+                Отметьте хотя бы одно — иначе модель нигде не будет видна.
+              </div>
+            )}
           </Section>
+
+          {/* Тарифы — только у модели, которую сдаём */}
+          {forRent ? (
+            <Section
+              icon={<Wallet size={13} />}
+              title="Тарифы"
+              hint="Цена за сутки в зависимости от срока аренды"
+            >
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                <RateField label="1–2 дня" value={dayRate} onChange={setDayRate} />
+                <RateField label="3–6 дней" value={shortRate} onChange={setShortRate} />
+                <RateField label="7–29 дней" value={weekRate} onChange={setWeekRate} />
+                <RateField label="30+ дней" value={monthRate} onChange={setMonthRate} />
+              </div>
+            </Section>
+          ) : (
+            <div className="rounded-[10px] bg-surface-soft px-3.5 py-2.5 text-[12.5px] text-muted">
+              Тарифы не нужны: модель только для продажи. Цена продажи
+              указывается у каждой единицы при добавлении.
+            </div>
+          )}
 
           {/* Тех.характеристики */}
           <Section
             icon={<Settings2 size={13} />}
             title="Технические характеристики"
-            hint="Показываются на лендинге для клиентов"
+            hint={forRent ? "Показываются на лендинге для клиентов" : "Для карточки техники"}
           >
             <div className="grid grid-cols-2 gap-2.5">
               <Field label="Макс. скорость, км/ч">
@@ -432,14 +513,22 @@ function ModelFormModal({
               checked={active}
               onChange={setActive}
               title="Активна"
-              hint="Показывать на лендинге и в выборе скутера"
+              hint={
+                forRent
+                  ? "Показывать на лендинге и в выборе техники"
+                  : "Показывать в выборе техники"
+              }
             />
             <ToggleCard
-              checked={quickPick}
+              checked={forRent && quickPick}
               onChange={setQuickPick}
-              disabled={!active}
+              disabled={!active || !forRent}
               title="Быстрый выбор"
-              hint="Отображать первой в форме новой аренды"
+              hint={
+                forRent
+                  ? "Отображать первой в форме новой аренды"
+                  : "Только для моделей, которые сдаём"
+              }
             />
           </div>
 
@@ -478,9 +567,11 @@ function ModelFormModal({
                 shortRate={shortRate}
                 weekRate={weekRate}
                 monthRate={monthRate}
-                quickPick={quickPick}
+                quickPick={forRent && quickPick}
                 active={active}
                 isElectric={isElectric}
+                forRent={forRent}
+                forSale={forSale}
                 avatarKey={isEdit ? liveAvatarKey : null}
               />
             </div>
@@ -602,38 +693,96 @@ function ToggleCard({
   disabled,
   title,
   hint,
+  icon,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
   title: string;
   hint: string;
+  icon?: React.ReactNode;
 }) {
   return (
-    <label
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
       className={cn(
-        "flex cursor-pointer items-start gap-2.5 rounded-[10px] border px-3 py-2.5 transition-colors",
+        "flex min-h-[56px] items-start gap-2.5 rounded-[10px] border px-3 py-2.5 text-left transition-colors",
         disabled
           ? "cursor-not-allowed border-border bg-surface-soft/50 opacity-60"
           : checked
-            ? "border-blue-300 bg-blue-50/40 hover:border-blue-400"
+            ? "border-blue-400 bg-blue-50/60 hover:border-blue-500"
             : "border-border bg-white hover:border-blue-300",
       )}
     >
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        disabled={disabled}
-        className="mt-0.5 h-4 w-4 accent-blue-600 disabled:opacity-40"
-      />
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-semibold text-ink">{title}</div>
-        <div className="mt-0.5 text-[11px] leading-snug text-muted-2">
+      <span
+        className={cn(
+          "mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors",
+          checked ? "border-blue-600 bg-blue-600 text-white" : "border-border-strong bg-white",
+        )}
+      >
+        {checked && <Check size={12} strokeWidth={3} />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+          {icon && <span className={checked ? "text-blue-600" : "text-muted-2"}>{icon}</span>}
+          {title}
+        </span>
+        <span className="mt-0.5 block text-[11px] leading-snug text-muted-2">
           {hint}
-        </div>
-      </div>
-    </label>
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/** Назначение модели — две метки под названием. */
+function PurposeBadges({ forRent, forSale }: { forRent: boolean; forSale: boolean }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {forRent && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10.5px] font-bold text-blue-700">
+          <Key size={10} /> аренда
+        </span>
+      )}
+      {forSale && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-green-soft px-2 py-0.5 text-[10.5px] font-bold text-green-ink">
+          <Tag size={10} /> продажа
+        </span>
+      )}
+    </div>
+  );
+}
+
+function RatesGrid({
+  dayRate,
+  shortRate,
+  weekRate,
+  monthRate,
+}: {
+  dayRate: number;
+  shortRate: number;
+  weekRate: number;
+  monthRate: number;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-2">
+      <span>
+        1–2 дн: <b className="text-ink">{dayRate}₽</b>
+      </span>
+      <span>
+        3–6 дн: <b className="text-ink">{shortRate}₽</b>
+      </span>
+      <span>
+        7–29 дн: <b className="text-ink">{weekRate}₽</b>
+      </span>
+      <span>
+        30+ дн: <b className="text-ink">{monthRate}₽</b>
+      </span>
+    </div>
   );
 }
 
@@ -651,6 +800,8 @@ function ModelPreviewCard({
   quickPick,
   active,
   isElectric,
+  forRent,
+  forSale,
   avatarKey,
 }: {
   name: string;
@@ -661,6 +812,8 @@ function ModelPreviewCard({
   quickPick: boolean;
   active: boolean;
   isElectric: boolean;
+  forRent: boolean;
+  forSale: boolean;
   avatarKey: string | null;
 }) {
   const src = fileUrl(avatarKey, { variant: "view" });
@@ -722,20 +875,17 @@ function ModelPreviewCard({
         >
           {name.trim() || "Название модели"}
         </div>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-2">
-          <span>
-            1–2 дн: <b className="text-ink">{dayRate}₽</b>
-          </span>
-          <span>
-            3–6 дн: <b className="text-ink">{shortRate}₽</b>
-          </span>
-          <span>
-            7–29 дн: <b className="text-ink">{weekRate}₽</b>
-          </span>
-          <span>
-            30+ дн: <b className="text-ink">{monthRate}₽</b>
-          </span>
-        </div>
+        <PurposeBadges forRent={forRent} forSale={forSale} />
+        {forRent ? (
+          <RatesGrid
+            dayRate={dayRate}
+            shortRate={shortRate}
+            weekRate={weekRate}
+            monthRate={monthRate}
+          />
+        ) : (
+          <div className="text-[11px] text-muted-2">Только продажа — без тарифов</div>
+        )}
       </div>
     </div>
   );
@@ -822,13 +972,4 @@ function Field({
       {children}
     </label>
   );
-}
-
-
-function plural(n: number, forms: [string, string, string]): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return forms[0];
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1];
-  return forms[2];
 }
