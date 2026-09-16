@@ -242,26 +242,26 @@ export function MobileScooters() {
         }}
       />
       <MobileSearch value={search} onChange={setSearch} placeholder="Номер, имя, VIN…" />
+      {/* 2.0.1: фильтры — во всю ширину, инструменты — строкой ниже (иначе
+          «Партии» и «Журнал» съедали место и фильтры не читались). */}
+      <MobileChips options={chips} value={filter} onChange={setFilter} />
       <div className="flex items-center gap-2">
-        <div className="min-w-0 flex-1">
-          <MobileChips options={chips} value={filter} onChange={setFilter} />
-        </div>
         <button
           type="button"
           onClick={() => setBatchesOpen(true)}
           data-tour="batches-m"
-          className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3 text-[13px] font-semibold text-ink shadow-card-sm"
+          className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-surface px-3 text-[13.5px] font-semibold text-ink shadow-card-sm"
           title="Сводка по партиям техники"
         >
-          <Layers size={15} /> Партии
+          <Layers size={16} /> Партии
         </button>
         <button
           type="button"
           onClick={() => setJournalOpen(true)}
-          className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3 text-[13px] font-semibold text-ink shadow-card-sm"
+          className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-surface px-3 text-[13.5px] font-semibold text-ink shadow-card-sm"
           title="Журнал действий с техникой"
         >
-          <ScrollText size={15} /> Журнал
+          <ScrollText size={16} /> Журнал
         </button>
         <button
           type="button"

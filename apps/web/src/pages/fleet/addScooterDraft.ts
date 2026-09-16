@@ -105,7 +105,8 @@ export function emptyDraft(category: Category | null = null): Draft {
 /** Черновик стоит восстанавливать, только если в нём что-то введено. */
 export function draftHasData(d: Draft): boolean {
   return (
-    d.step > 0 ||
+    d.modelId != null ||
+    d.step > 1 ||
     d.batch.trim() !== "" ||
     d.rows.some((r) => r.vin || r.engineNo || r.note || r.price || r.slot != null)
   );

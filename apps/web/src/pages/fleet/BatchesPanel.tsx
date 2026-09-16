@@ -308,7 +308,7 @@ function BatchCard({
               label="Прибыль по проданным"
               value={b.soldDeals.length ? fmtMoney(b.soldProfit) : "—"}
               tone={b.soldProfit < 0 ? "red" : b.soldDeals.length ? "green" : undefined}
-              hint={b.soldNoCost ? `у ${b.soldNoCost} сделок закуп не указан` : "продажа − закуп, как в «Продажах»"}
+              hint={b.soldNoCost ? `у ${b.soldNoCost} сделок закуп не указан` : "продажа − закуп"}
             />
           </>
         )}
@@ -348,16 +348,13 @@ function BatchCard({
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2 text-[13.5px] font-bold text-ink">
                       <ScooterName name={u.name} number={u.rentalSlot} size="sm" />
-                      {u.rentalSlot == null && u.uid && (
-                        <span className="text-[11px] font-medium text-muted-2">ID {u.uid}</span>
-                      )}
                     </span>
                     <span className="block truncate font-mono text-[11.5px] text-muted">{u.vin || "без рамы"}</span>
                   </span>
                   <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-bold", GROUP_TONE[g])}>
                     {g === "sold" && deal ? "Продан" : GROUP_LABEL[g]}
                   </span>
-                  <span className="w-[92px] shrink-0 text-right text-[12.5px] tabular-nums">
+                  <span className="w-[116px] shrink-0 whitespace-nowrap text-right text-[12.5px] tabular-nums">
                     {price != null ? (
                       <span className="font-semibold text-ink">{fmtMoney(price)}</span>
                     ) : (

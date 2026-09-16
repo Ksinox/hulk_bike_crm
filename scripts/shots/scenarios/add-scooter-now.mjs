@@ -59,6 +59,15 @@ export async function run(page, ctx) {
     await ctx.gotoRoute("fleet");
     await ctx.sleep(2000);
   };
+  // Цена «для всех» теперь подставляется сама — вписываем поверх.
+  const setValue = async (selector, value) => {
+    await page.focus(selector);
+    await page.keyboard.down("Control");
+    await page.keyboard.press("KeyA");
+    await page.keyboard.up("Control");
+    await page.keyboard.press("Backspace");
+    if (value) await page.keyboard.type(value);
+  };
   const grid = [1, 2, 3, 4, 5].map((i) => `SA36J-99160${i}\tA3E1-2209${i}4`).join("\n");
 
   // ───────── компьютер ─────────
@@ -83,7 +92,7 @@ export async function run(page, ctx) {
   await ctx.sleep(900);
   await page.type('input[data-row="-1"][data-col="year"]', "2021");
   await page.type('input[data-row="-1"][data-col="color"]', "Серебристый");
-  await page.type('input[data-row="-1"][data-col="price"]', "95000");
+  await setValue('input[data-row="-1"][data-col="price"]', "95000");
   await paste('input[data-row="0"][data-col="vin"]', grid);
   await ctx.sleep(400);
   await page.type('input[data-row="2"][data-col="price"]', "99000");
@@ -178,7 +187,7 @@ export async function run(page, ctx) {
   await ctx.sleep(800);
   await page.type('[data-wizard] input[placeholder="2020"]', "2021");
   await page.type('[data-wizard] input[placeholder="Чёрный"]', "Серебристый");
-  await page.type('[data-wizard] input[placeholder="150000"]', "150000");
+  await setValue('[data-wizard] input[placeholder="150000"]', "150000");
   await page.evaluate(() => {
     const b = [...document.querySelectorAll("[data-wizard] button")].find((x) => /^Одинаковое для всех/.test(x.textContent.trim()));
     b?.click();
@@ -207,7 +216,7 @@ export async function run(page, ctx) {
   await ctx.sleep(900);
   await page.type('input[data-row="-1"][data-col="year"]', "2021");
   await page.type('input[data-row="-1"][data-col="color"]', "Серебристый");
-  await page.type('input[data-row="-1"][data-col="price"]', "95000");
+  await setValue('input[data-row="-1"][data-col="price"]', "95000");
   await paste('input[data-row="0"][data-col="vin"]', grid.replace(/99160/g, "99162"));
   await page.evaluate(() => document.activeElement?.blur());
   await dismissToasts();

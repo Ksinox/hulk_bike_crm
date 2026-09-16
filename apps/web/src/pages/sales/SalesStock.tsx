@@ -107,6 +107,14 @@ export function SalesStock({
         />
       </StatRow>
 
+      <button
+        type="button"
+        onClick={() => setAddOpen(true)}
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 text-[15px] font-bold text-white active:bg-emerald-700 sm:hidden"
+      >
+        <Plus size={18} /> Добавить на продажу
+      </button>
+
       <SectionCard
         title="Техника в продаже"
         hint="статус «Продаётся» в разделе «Скутеры»"
@@ -115,7 +123,7 @@ export function SalesStock({
           <button
             type="button"
             onClick={() => setAddOpen(true)}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-emerald-600 px-3.5 text-[12.5px] font-bold text-white hover:bg-emerald-700 max-sm:h-10"
+            className="hidden h-8 shrink-0 items-center gap-1.5 rounded-full bg-emerald-600 px-3.5 text-[12.5px] font-bold text-white hover:bg-emerald-700 sm:inline-flex"
           >
             <Plus size={14} /> Добавить на продажу
           </button>
