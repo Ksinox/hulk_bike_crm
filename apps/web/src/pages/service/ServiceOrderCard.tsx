@@ -212,7 +212,9 @@ export function ServiceOrderCard({
     onClose();
   };
 
-  const btn = touch ? "h-12 text-[14px]" : "h-10 text-[13px]";
+  // Под палец — 48px и без переносов: на 360px «Готов к выдаче» влезает
+  // только с узкими полями.
+  const btn = touch ? "h-12 whitespace-nowrap !px-2 text-[14px]" : "h-10 text-[13px]";
 
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-service-card={order.id}>
