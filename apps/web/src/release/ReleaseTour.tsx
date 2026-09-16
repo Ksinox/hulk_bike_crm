@@ -147,6 +147,9 @@ export function ReleaseTour({
   const [resumeHidden, setResumeHidden] = useState(() => readSession(resumeHiddenKey("all")));
   /** Выпуск, для которого уже решали, показывать ли его сейчас. */
   const started = useRef<string | null>(null);
+  // То же в состоянии — чтобы кнопка «Продолжить» появилась и тогда, когда
+  // показ отложен и больше ничего не перерисовывается (после F5).
+  const [startedFor, setStartedFor] = useState<string | null>(null);
 
   const record = act.mutate;
 
@@ -155,6 +158,7 @@ export function ReleaseTour({
     if (skip || !me || !viewsQ.data || completed) return;
     if (started.current === cfg.version || phase !== "none") return;
     started.current = cfg.version;
+    setStartedFor(cfg.version);
     if (laterNow) return;
     // Продолжаем с последней ПОКАЗАННОЙ карточки: отметка ставится при показе,
     // а не при прочтении, и повторная отрисовка не должна её пропускать.
@@ -305,7 +309,7 @@ export function ReleaseTour({
   const showResume =
     phase === "none" &&
     !!viewsQ.data &&
-    started.current != null &&
+    startedFor != null &&
     !completed &&
     !resumeHidden &&
     cards.length > 0;
