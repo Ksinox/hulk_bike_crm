@@ -79,7 +79,9 @@ export async function releaseRoutes(app: FastifyInstance) {
       completedAt: cur?.completedAt ?? null,
     };
     if (action === "postpone" && next.status !== "completed") next.postponedCount += 1;
-    if (action === "complete" && next.status !== "completed") {
+    // «Досмотрел» — дата всегда новая: слайды, добавленные в выпуск позже
+    // (addedAt на фронте), сравниваются с ней и больше не показываются.
+    if (action === "complete") {
       next.status = "completed";
       next.completedAt = new Date();
     }
@@ -97,15 +99,18 @@ export async function releaseRoutes(app: FastifyInstance) {
 
     // В журнал — только решения человека, не каждый клик по карточке.
     const becameCompleted = action === "complete" && cur?.status !== "completed";
-    if (becameCompleted || (action === "postpone" && next.status !== "completed")) {
+    const extraViewed = action === "complete" && cur?.status === "completed";
+    if (becameCompleted || extraViewed || (action === "postpone" && next.status !== "completed")) {
       await logActivity(req, {
         entity: "user",
         entityId: userId,
-        action: becameCompleted ? "release_viewed" : "release_postponed",
+        action: becameCompleted || extraViewed ? "release_viewed" : "release_postponed",
         summary: becameCompleted
           ? `Посмотрел обновление ${human(version)} до конца`
-          : `Отложил показ обновления ${human(version)} (${next.postponedCount}-й раз)`,
-        meta: { version, cardsSeen: next.cardsSeen },
+          : extraViewed
+            ? `Посмотрел новые слайды обновления ${human(version)}`
+            : `Отложил показ обновления ${human(version)} (${next.postponedCount}-й раз)`,
+        meta: { version, cardsSeen: next.cardsSeen, ...(extraViewed ? { extra: true } : {}) },
       });
     }
     return { ok: true, status: next.status, postponedCount: next.postponedCount };

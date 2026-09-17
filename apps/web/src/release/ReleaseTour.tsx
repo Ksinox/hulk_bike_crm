@@ -82,6 +82,23 @@ export function tourCards(
     .slice(0, cfg.maxCards ?? 6);
 }
 
+/**
+ * Слайды, добавленные в выпуск после того, как человек его досмотрел
+ * (`addedAt` позже `completedAt`). Для недосмотренного выпуска — пусто.
+ */
+export function lateCards(
+  device: TourDevice,
+  isManager: boolean,
+  cfg: ReleaseTourConfig,
+  view: ReleaseView | undefined,
+): TourItem[] {
+  if (view?.status !== "completed" || !view.completedAt) return [];
+  const done = Date.parse(view.completedAt);
+  return tourCards(device, isManager, cfg).filter(
+    (i) => !!i.addedAt && Date.parse(i.addedAt) > done,
+  );
+}
+
 type QueuedHint = {
   /** Выпуск, в чей прогресс пишется «понятно». */
   version: string;
@@ -121,22 +138,41 @@ export function ReleaseTour({
 
   // Выпуски, которые человеку ещё показать, — от старого к новому. Новому
   // сотруднику — только вышедшие после того, как завели его аккаунт.
+  // Досмотренный выпуск возвращается, если в него добавили слайды.
   const pending = useMemo(
     () =>
       RELEASE_TOURS.filter((r) => {
         if (tourCards(device, isManager, r).length === 0) return false;
         if (newStaff && (!createdDay || r.date <= createdDay)) return false;
         const v = viewOf(r.version);
-        return v?.status !== "completed" && (v?.postponedCount ?? 0) < MAX_POSTPONES;
+        if (v?.status === "completed") return lateCards(device, isManager, r, v).length > 0;
+        return (v?.postponedCount ?? 0) < MAX_POSTPONES;
       }),
     [device, isManager, newStaff, createdDay, viewOf],
+  );
+  /** Что показать по выпуску: все слайды или только добавленные после просмотра. */
+  const cardsFor = useCallback(
+    (r: ReleaseTourConfig) => {
+      const v = viewOf(r.version);
+      return v?.status === "completed"
+        ? lateCards(device, isManager, r, v)
+        : tourCards(device, isManager, r);
+    },
+    [device, isManager, viewOf],
   );
   // «Позже» у любого выпуска — откладывает показ целиком до следующего входа.
   const laterNow =
     readSession(laterKey("all")) || pending.some((r) => readSession(laterKey(r.version)));
   const cfg: ReleaseTourConfig = pending[0] ?? RELEASE_TOUR;
-  const cards = useMemo(() => tourCards(device, isManager, cfg), [device, isManager, cfg]);
   const view = viewOf(cfg.version);
+  // «Дополнение»: выпуск досмотрен, показываем только новые слайды. Состав
+  // фиксируется на старте — отметка «досмотрел» не должна убрать слайд с экрана.
+  const [extraFor, setExtraFor] = useState<{ version: string; cards: TourItem[] } | null>(null);
+  const extra = extraFor?.version === cfg.version ? extraFor : null;
+  const cards = useMemo(
+    () => extra?.cards ?? (view?.status === "completed" ? cardsFor(cfg) : tourCards(device, isManager, cfg)),
+    [extra, view?.status, cardsFor, cfg, device, isManager],
+  );
   const completed = pending.length === 0;
 
   const [phase, setPhase] = useState<"none" | "intro" | "cards" | "hint">("none");
@@ -152,7 +188,7 @@ export function ReleaseTour({
    * дальше 2.0.1 — одной презентацией, с общим счётом карточек. Состав
    * фиксируется на старте, чтобы счёт не сбрасывался, когда выпуск досмотрен.
    */
-  const [chain, setChain] = useState<string[] | null>(null);
+  const [chain, setChain] = useState<{ version: string; count: number }[] | null>(null);
   const chaining = useRef(false);
   // То же в состоянии — чтобы кнопка «Продолжить» появилась и тогда, когда
   // показ отложен и больше ничего не перерисовывается (после F5).
@@ -167,7 +203,18 @@ export function ReleaseTour({
     started.current = cfg.version;
     setStartedFor(cfg.version);
     if (laterNow) return;
-    if (!chain || !chain.includes(cfg.version)) setChain(pending.map((r) => r.version));
+    if (!chain || !chain.some((c) => c.version === cfg.version)) {
+      setChain(pending.map((r) => ({ version: r.version, count: cardsFor(r).length })));
+    }
+    if (view?.status === "completed") {
+      // Дополнение — с первого нового слайда, без титула.
+      setExtraFor({ version: cfg.version, cards });
+      setCardIdx(0);
+      setEntering(!reduceMotion() && !chaining.current);
+      chaining.current = false;
+      setPhase("cards");
+      return;
+    }
     // Продолжаем с последней ПОКАЗАННОЙ карточки: отметка ставится при показе,
     // а не при прочтении, и повторная отрисовка не должна её пропускать.
     const seen = Math.min(Math.max(0, (view?.cardsSeen ?? 0) - 1), cards.length - 1);
@@ -182,11 +229,14 @@ export function ReleaseTour({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skip, me, viewsQ.data, completed, cfg.version, phase, laterNow]);
 
-  const chainCfgs = (chain ?? [cfg.version])
-    .map((v) => RELEASE_TOURS.find((r) => r.version === v))
+  const chainList = chain ?? [{ version: cfg.version, count: cards.length }];
+  const chainCfgs = chainList
+    .map((c) => RELEASE_TOURS.find((r) => r.version === c.version))
     .filter((r): r is ReleaseTourConfig => !!r);
   const chainAt = Math.max(0, chainCfgs.findIndex((r) => r.version === cfg.version));
-  const cardsOf = (r: ReleaseTourConfig) => tourCards(device, isManager, r).length;
+  // Счёт — по составу на старте: досмотренный выпуск не должен обнулить его.
+  const cardsOf = (r: ReleaseTourConfig) =>
+    chainList.find((c) => c.version === r.version)?.count ?? cardsFor(r).length;
   const chainOffset = chainCfgs.slice(0, chainAt).reduce((s, r) => s + cardsOf(r), 0);
   const chainTotal = Math.max(
     chainOffset + cards.length,
@@ -196,7 +246,7 @@ export function ReleaseTour({
 
   // ── Карточка на экране — отметка «посмотрел N карточек» ──
   useEffect(() => {
-    if (phase !== "cards") return;
+    if (phase !== "cards" || extra) return;
     if ((view?.cardsSeen ?? 0) < cardIdx + 1) {
       record({ version: cfg.version, action: "card", cardsSeen: cardIdx + 1 });
     }
@@ -213,11 +263,13 @@ export function ReleaseTour({
   }, [cfg.version, record]);
 
   const finishCards = useCallback(() => {
-    record({ version: cfg.version, action: "complete", cardsSeen: cards.length });
+    // В дополнении «досмотрел» — все слайды выпуска, не только новые.
+    const all = extra ? tourCards(device, isManager, cfg).length : cards.length;
+    record({ version: cfg.version, action: "complete", cardsSeen: all });
     // Дальше в этой же презентации — следующий выпуск, без паузы и «влёта».
     if (pending.length > 1) chaining.current = true;
     setPhase("none");
-  }, [cfg.version, record, cards.length, pending.length]);
+  }, [cfg, record, cards.length, pending.length, extra, device, isManager]);
 
   const startHints = useCallback(
     (item: TourItem, withPath: boolean, version: string) => {
@@ -363,6 +415,7 @@ export function ReleaseTour({
           device={device}
           label={cfg.label}
           major={cfg.major}
+          extra={!!extra}
           perms={perms}
           isManager={isManager}
           entering={entering}
@@ -558,6 +611,7 @@ function CardsScreen({
   device,
   label,
   major,
+  extra,
   perms,
   isManager,
   entering,
@@ -575,6 +629,8 @@ function CardsScreen({
   device: TourDevice;
   label: string;
   major: boolean;
+  /** Дополнение к досмотренному выпуску — только новые слайды. */
+  extra: boolean;
   perms: Record<string, boolean>;
   isManager: boolean;
   entering: boolean;
@@ -642,7 +698,7 @@ function CardsScreen({
               <div className="rt-top-row">
                 <span className="rt-brand">
                   <img src={logoUrl} alt="" />
-                  {major ? "Халк Байк CRM" : "Обновление"} <b>{label}</b>
+                  {extra ? "Дополнение к" : major ? "Халк Байк CRM" : "Обновление"} <b>{label}</b>
                 </span>
                 <button type="button" className="rt-later-link" onClick={onLater}>
                   Посмотрю позже
