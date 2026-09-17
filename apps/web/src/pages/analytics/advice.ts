@@ -128,7 +128,7 @@ export function buildAdvice(
     out.push({
       tone: "warn",
       title: `${svc.raw.unpaid} ${plural(svc.raw.unpaid, "ремонт", "ремонта", "ремонтов")} ждут оплату`,
-      text: `Не подтверждено ${money(svc.raw.unpaidSum ?? 0)}. Напомнить клиентам и отметить оплату — иначе выручка блока занижена.`,
+      text: `Остаток к оплате ${money(svc.raw.unpaidSum ?? 0)}. В выручку деньги попадут в день оплаты — примите их при выдаче.`,
     });
   }
 

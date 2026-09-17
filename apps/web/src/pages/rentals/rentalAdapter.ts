@@ -57,6 +57,7 @@ export function adaptRental(
     // расчёт delta в EquipmentChangeDialog всегда шёл от oldDaily=0.
     equipmentJson: r.equipmentJson ?? [],
     paymentMethod: r.paymentMethod,
+    paymentSplit: r.paymentSplit ?? null,
     note: r.note ?? undefined,
     contractUploaded: r.contractUploaded,
     // v0.5: поля paymentConfirmedBy/Name/At удалены из API (упростили

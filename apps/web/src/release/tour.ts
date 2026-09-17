@@ -77,6 +77,11 @@ export type ReleaseTourConfig = {
   major: boolean;
   /** День выкладки: от него считаются 7 дней метки «новое». */
   date: string;
+  /**
+   * Сколько карточек показать (по умолчанию 6). 2.0.2: восемь правок
+   * заказчика, каждая — своим слайдом, чтобы показ был самодостаточным.
+   */
+  maxCards?: number;
   subtitle: string;
   items: TourItem[];
 };
@@ -285,6 +290,7 @@ const RELEASE_2_0: ReleaseTourConfig = {
 };
 
 const R201 = "/release/2.0.1";
+const R202 = "/release/2.0.2";
 /** Полные скриншоты «Развития» — для «Крупно». */
 const P = "/progress";
 
@@ -453,8 +459,235 @@ const RELEASE_2_0_1: ReleaseTourConfig = {
   ],
 };
 
+const RELEASE_2_0_2: ReleaseTourConfig = {
+  version: "2.0.2",
+  label: "2.0.2",
+  major: false,
+  date: "2026-09-17",
+  maxCards: 9,
+  subtitle: "Ремонты: аванс, остаток, накладная и прайс запчастей; смешанная оплата аренды; загрузка парка без разборки.",
+  items: [
+    {
+      id: "repair-form",
+      kind: "changed",
+      title: "Новый ремонт — сразу с работами",
+      route: "service",
+      headline: "Клиент, техника, работы, запчасти и аванс — в одном окне. Кнопка «Сохранить — в работе».",
+      why:
+        "Раньше окно приёма спрашивало только технику и клиента, работы добавлялись потом в карточке — было непонятно, сохранён ли ремонт, пока его не оплатили.",
+      points: [
+        "Работы — из прайса, можно выбрать несколько подряд",
+        "Ремонт остаётся «в работе»: работы и запчасти меняются по ходу, до оплаты",
+        "Черновик не пропадёт, если обновить страницу",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R202}/d-repair-form-was.jpg`, phone: `${R202}/m-repair-form-was.jpg` },
+      img: { desktop: `${R202}/d-repair-form-now.jpg`, phone: `${R202}/m-repair-form-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v202-sv-new-was.jpg`, after: `${P}/v202-sv-form-now.jpg` },
+        phone: { before: `${P}/v202-sv-new-m-was.jpg`, after: `${P}/v202-sv-form-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center bottom" },
+      hints: {
+        desktop: [
+          {
+            anchor: { text: "Новый ремонт" },
+            title: "Новый ремонт",
+            text: "Работы, запчасти и аванс — сразу в окне приёма. Править можно до оплаты.",
+          },
+        ],
+        phone: [
+          {
+            anchor: { text: "Новый ремонт" },
+            title: "Новый ремонт",
+            text: "Всё в одном окне — и кнопка «Сохранить — в работе».",
+          },
+        ],
+      },
+    },
+    {
+      id: "repair-advance",
+      kind: "new",
+      title: "Аванс и остаток",
+      route: "service",
+      headline: "Клиент платит часть — в ремонте видно аванс и сколько осталось.",
+      why:
+        "Клиенты часто вносят часть денег вперёд, а отметить это было негде: только «оплачено» целиком. Меньшая сумма при оплате молча становилась скидкой.",
+      points: [
+        "Кнопка «Аванс» в ремонте и переключатель «Клиент вносит аванс» при приёме",
+        "Остаток считается сам: к оплате минус аванс",
+        "Платят меньше остатка — окно прямо пишет «скидка»",
+        "Ошиблись — «Отменить» в уведомлении",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R202}/d-repair-advance-was.jpg`, phone: `${R202}/m-repair-advance-was.jpg` },
+      img: { desktop: `${R202}/d-repair-advance-now.jpg`, phone: `${R202}/m-repair-advance-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v202-sv-pay-was.jpg`, after: `${P}/v202-sv-settle-now.jpg` },
+        phone: { before: `${P}/v202-sv-card-m2-was.jpg`, after: `${P}/v202-sv-card-money-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center bottom" },
+    },
+    {
+      id: "repair-revenue",
+      kind: "changed",
+      title: "Выручка ремонтов — по деньгам",
+      route: "service",
+      headline: "Сумма попадает в выручку, только когда деньги приняли. Аванс — в день аванса.",
+      why:
+        "Выручка блока считала и ремонты «в работе»: за сентябрь на превью показывала 20 950 ₽, хотя приняли 12 100 ₽.",
+      points: [
+        "«Ждём оплату» — остатки по ремонтам в работе",
+        { text: "Прибыль — по ремонтам, оплаченным полностью", perm: "data.repairProfit" },
+        "Так же считает «Аналитика»",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R202}/d-repair-revenue-was.jpg`, phone: `${R202}/m-repair-revenue-was.jpg` },
+      img: { desktop: `${R202}/d-repair-revenue-now.jpg`, phone: `${R202}/m-repair-revenue-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v202-sv-list-was.jpg`, after: `${P}/v202-sv-list-now.jpg` },
+        phone: { before: `${P}/v202-sv-list-m-was.jpg`, after: `${P}/v202-sv-list-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center 25%" },
+    },
+    {
+      id: "repair-invoice",
+      kind: "new",
+      title: "Накладная по ремонту",
+      route: "service",
+      headline: "Кнопка «Накладная» в ремонте: работы, запчасти, к оплате, аванс и остаток — на печать.",
+      why: "Клиенту нечего было отдать на руки: что делали и сколько он должен.",
+      points: [
+        "Пока ремонт в работе — помечена как предварительная",
+        "Закупочных цен в накладной нет",
+        "Печать и Word — как у договора",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R202}/d-repair-invoice-was.jpg`, phone: `${R202}/m-repair-invoice-was.jpg` },
+      img: { desktop: `${R202}/d-repair-invoice-now.jpg`, phone: `${R202}/m-repair-invoice-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v202-sv-card-was.jpg`, after: `${P}/v202-sv-invoice-now.jpg` },
+        phone: { before: `${P}/v202-sv-card-m-was.jpg`, after: `${P}/v202-sv-invoice-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "repair-client",
+      kind: "changed",
+      title: "Имя и телефон — правятся",
+      route: "service",
+      headline: "В ремонте кнопка «Изменить»: клиент, телефон, техника, с чем приехали.",
+      why: "Ошиблись в телефоне при приёме — исправить было нельзя, только завести ремонт заново.",
+      points: [
+        "Телефон в ремонте — нажмите, чтобы позвонить",
+        "Правка записывается в журнал: было → стало",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R202}/d-repair-client-was.jpg`, phone: `${R202}/m-repair-client-was.jpg` },
+      img: { desktop: `${R202}/d-repair-client-now.jpg`, phone: `${R202}/m-repair-client-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v202-sv-card-was.jpg`, after: `${P}/v202-sv-edit-now.jpg` },
+        phone: { before: `${P}/v202-sv-card-m-was.jpg`, after: `${P}/v202-sv-edit-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "repair-reopen",
+      kind: "changed",
+      title: "Отменённый ремонт — снова в работу",
+      route: "service",
+      headline: "В отменённом ремонте кнопка «Вернуть в работу».",
+      why: "Отменили по ошибке или клиент передумал — ремонт приходилось заводить заново.",
+      points: [
+        "Вернётся тот статус, что был до отмены",
+        "Был аванс — спросим: деньги у нас или клиент их забрал",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R202}/d-repair-reopen-was.jpg`, phone: `${R202}/m-repair-reopen-was.jpg` },
+      img: { desktop: `${R202}/d-repair-reopen-now.jpg`, phone: `${R202}/m-repair-reopen-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v202-sv-cancelled-was.jpg`, after: `${P}/v202-sv-reopen-now.jpg` },
+        phone: { before: `${P}/v202-sv-cancelled-m-was.jpg`, after: `${P}/v202-sv-reopen-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "rent-split",
+      kind: "changed",
+      title: "Новая аренда: разделить оплату",
+      route: "rentals",
+      headline: "Третья кнопка «Разделить»: часть наличными, часть переводом.",
+      why: "Клиент платит за аренду частями разными способами — при открытии можно было выбрать только один.",
+      points: [
+        "Вводите наличную часть — перевод посчитается сам",
+        "Пройдут два платежа — касса и переводы сходятся",
+        "Откат создания убирает оба",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R202}/d-rent-split-was.jpg`, phone: `${R202}/m-rent-split-was.jpg` },
+      img: { desktop: `${R202}/d-rent-split-now.jpg`, phone: `${R202}/m-rent-split-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v202-rent-pay-was.jpg`, after: `${P}/v202-rent-pay-now.jpg` },
+        phone: { before: `${P}/v202-rent-pay-m-was.jpg`, after: `${P}/v202-rent-pay-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center 45%" },
+    },
+    {
+      id: "repair-parts",
+      kind: "new",
+      title: "Прайс запчастей",
+      route: "service",
+      headline: "766 запчастей по узлам скутера — выбираются в ремонте, как работы. Своя деталь сама сохраняется в прайс.",
+      why:
+        "Запчасти вписывали вручную и каждый раз вспоминали цену и закуп. Теперь любая деталь — от клюва до сальника — находится за пару нажатий.",
+      points: [
+        "Зоны: кузов, двигатель, трансмиссия, тормоза… Модель подставляется из ремонта",
+        "Поиск по словам: «ремень gear»; подсказки с ценой при вводе",
+        "Новая деталь — в «Добавлено из ремонтов»; цены правятся в «Документах»",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R202}/d-repair-parts-was.jpg`, phone: `${R202}/m-repair-parts-was.jpg` },
+      img: { desktop: `${R202}/d-repair-parts-now.jpg`, phone: `${R202}/m-repair-parts-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v202-sv-card-was.jpg`, after: `${P}/v202-parts-picker-now.jpg` },
+        phone: { before: `${P}/v202-sv-card-m2-was.jpg`, after: `${P}/v202-parts-picker-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "park-load",
+      kind: "changed",
+      title: "Загрузка парка — без разборки",
+      route: "dashboard",
+      headline: "Скутеры в разборке больше не входят в «из N в парке».",
+      why: "Техника на запчасти в аренду не вернётся, а процент загрузки из-за неё был ниже настоящего.",
+      points: [
+        "Ремонт и ДТП по-прежнему считаются — они короткие",
+        "Так же — на телефоне и в «Аналитике»",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R202}/d-park-load-was.jpg`, phone: `${R202}/m-park-load-was.jpg` },
+      img: { desktop: `${R202}/d-park-load-now.jpg`, phone: `${R202}/m-park-load-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v202-load-was.jpg`, after: `${P}/v202-load-now.jpg` },
+        phone: { before: `${P}/v202-load-m-was.jpg`, after: `${P}/v202-load-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center 30%" },
+    },
+  ],
+};
+
 /** Все выпуски с показом — от старого к новому. */
-export const RELEASE_TOURS: ReleaseTourConfig[] = [RELEASE_2_0, RELEASE_2_0_1];
+export const RELEASE_TOURS: ReleaseTourConfig[] = [RELEASE_2_0, RELEASE_2_0_1, RELEASE_2_0_2];
 
 /** Последний выпуск — для «кто посмотрел» и меток. */
 export const RELEASE_TOUR: ReleaseTourConfig = RELEASE_TOURS[RELEASE_TOURS.length - 1]!;

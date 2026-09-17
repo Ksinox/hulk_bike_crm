@@ -169,6 +169,8 @@ export type ApiRental = {
   days: number;
   sum: number;
   paymentMethod: PaymentMethod;
+  /** 2.0.2: смешанная оплата при открытии — доли наличных и перевода. */
+  paymentSplit?: { cash: number; transfer: number } | null;
   contractUploaded: boolean;
   equipment: string[];
   equipmentJson: RentalEquipmentItem[];

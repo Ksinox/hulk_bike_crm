@@ -71,7 +71,7 @@ export async function run(page, ctx) {
     await clickText(/^Смотреть, что нового$/);
     await ctx.sleep(1500);
   }
-  for (let n = 1; n <= 14; n++) {
+  for (let n = 1; n <= 24; n++) {
     const st = await state();
     if (!st.card) {
       console.log(`[${key}] конец:`, JSON.stringify(st));
@@ -92,7 +92,7 @@ export async function run(page, ctx) {
       await ctx.shot(`tour-${key}-${nn}-now`, { jpeg: true });
     }
     // «Крупно» — на карточке «Партия за один раз»
-    if (/Партия за один раз/.test(st.card) && process.env.ZOOM === "1") {
+    if (new RegExp(process.env.ZOOM_CARD ?? "Партия за один раз").test(st.card) && process.env.ZOOM === "1") {
       await clickText(/Крупно$/);
       await ctx.sleep(800);
       await ctx.shot(`tour-${key}-${nn}-zoom`, { jpeg: true });

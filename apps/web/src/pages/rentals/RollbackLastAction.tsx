@@ -261,11 +261,15 @@ export function computeRollbackTarget(
     if (anchor.action === "created") {
       if (!lastPay || !payToday) return null;
       if (!/оплата\s+аренды.*создани/i.test(note)) return null;
+      // 2.0.2: смешанная оплата при открытии — две строки, откат снимает обе.
+      const createdSum = rows
+        .filter((p) => /оплата\s+аренды.*создани/i.test(p.note ?? ""))
+        .reduce((s2, p) => s2 + p.amount, 0);
       return {
         kind: "created",
         anchorId: anchor.id,
         paymentId: lastPay.id,
-        amount: lastPay.amount,
+        amount: createdSum || lastPay.amount,
       };
     }
 
@@ -502,7 +506,7 @@ const TITLE_BY_KIND: Record<RollbackKind, string> = {
 const LOCK_BY_KIND: Record<RollbackKind, string> = {
   extend: "Платёж продления удалится, период вернётся. ",
   equipment: "Прежний набор экипировки вернётся, платёж удалится. ",
-  created: "Аренда уйдёт в архив, скутер освободится, платёж создания удалится. ",
+  created: "Аренда уйдёт в архив, скутер освободится, оплата при создании удалится. ",
   payment: "Платёж удалится, долг снова станет открытым. ",
   security: "Платёж пополнения удалится, залог вернётся к прежней сумме. ",
   completed:

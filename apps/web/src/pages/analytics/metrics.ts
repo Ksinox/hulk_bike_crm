@@ -4,6 +4,7 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiPayments } from "@/lib/api/payments";
 import { useRepairJobs } from "@/lib/api/repair-jobs";
 import { useServiceOrders } from "@/lib/api/service-orders";
+import { serviceMoney } from "@/lib/serviceMoney";
 import { useSaleDeals } from "@/lib/api/sales";
 import { useBuyoutDeals } from "@/lib/api/buyout";
 import { usePartnerInfo } from "@/lib/partner";
@@ -216,7 +217,7 @@ export const METRICS: MetricDef[] = [
     id: "service.revenue",
     group: "service",
     title: "Выручка с ремонтов",
-    about: "Работы и запчасти по сторонним ремонтам за период.",
+    about: "Деньги, принятые за сторонние ремонты в периоде: авансы и расчёты при выдаче.",
     planable: true,
     periodic: true,
     defaultPeriod: "month",
@@ -226,7 +227,7 @@ export const METRICS: MetricDef[] = [
     id: "service.profit",
     group: "service",
     title: "Прибыль с ремонтов",
-    about: "Выручка за вычетом закупа запчастей.",
+    about: "По ремонтам, оплаченным полностью в периоде: к оплате минус закуп запчастей.",
     perm: "data.repairProfit",
     planable: true,
     periodic: true,
@@ -521,50 +522,41 @@ export function useMetricValues(periodOf: (metricId: string) => BoardPeriod) {
         tone: "neutral",
       };
       // Сторонние ремонты (06.09): считаем по заказ-нарядам, отменённые
-      // в статистику не берём. Дату берём по приёмке — как в самом блоке.
-      const orders = (serviceQ.data ?? []).filter((o) => o.status !== "cancelled");
+      // в статистику не берём. Принятые — по дате приёма, как в самом блоке.
+      // 2.0.2: выручка — принятые деньги по дате оплаты (аванс — в день
+      // аванса), прибыль — по ремонтам, оплаченным полностью в периоде.
+      const allOrders = serviceQ.data ?? [];
       const rc = rangeFor("service.count");
-      const inRc = orders.filter((o) => {
-        const t = new Date(o.acceptedAt).getTime();
-        return t >= rc.from.getTime() && t <= rc.to.getTime();
-      });
-      const unpaid = inRc.filter((o) => o.status !== "paid");
+      const mc = serviceMoney(allOrders, rc.from, rc.to);
       out["service.count"] = {
-        value: inRc.length,
-        display: count(inRc.length),
+        value: mc.accepted,
+        display: count(mc.accepted),
         caption: `принято ${rc.label}`,
-        extra: unpaid.length > 0 ? `ждут оплату: ${unpaid.length}` : undefined,
+        extra: mc.waitingOrders > 0 ? `ждут оплату: ${mc.waitingOrders}` : undefined,
         tone: "neutral",
         raw: {
-          unpaid: unpaid.length,
-          unpaidSum: unpaid.reduce((sum, o) => sum + o.totals.revenue, 0),
+          unpaid: mc.waitingOrders,
+          unpaidSum: mc.waiting,
         },
       };
 
       const rr = rangeFor("service.revenue");
-      const inRr = orders.filter((o) => {
-        const t = new Date(o.acceptedAt).getTime();
-        return t >= rr.from.getTime() && t <= rr.to.getTime();
-      });
-      const revenue = inRr.reduce((sum, o) => sum + o.totals.revenue, 0);
+      const mr = serviceMoney(allOrders, rr.from, rr.to);
       out["service.revenue"] = {
-        value: revenue,
-        display: money(revenue),
-        caption: `${rr.label} · ${inRr.length} ремонтов`,
-        tone: revenue > 0 ? "good" : "neutral",
+        value: mr.revenue,
+        display: money(mr.revenue),
+        caption: `${rr.label} · принятые оплаты`,
+        extra: mr.waiting > 0 ? `ждём ещё ${money(mr.waiting)}` : undefined,
+        tone: mr.revenue > 0 ? "good" : "neutral",
       };
 
       const rp = rangeFor("service.profit");
-      const inRp = orders.filter((o) => {
-        const t = new Date(o.acceptedAt).getTime();
-        return t >= rp.from.getTime() && t <= rp.to.getTime();
-      });
-      const profit = inRp.reduce((sum, o) => sum + o.totals.profit, 0);
+      const mp = serviceMoney(allOrders, rp.from, rp.to);
       out["service.profit"] = {
-        value: profit,
-        display: money(profit),
-        caption: `${rp.label} · за вычетом запчастей`,
-        tone: profit > 0 ? "good" : "neutral",
+        value: mp.profit,
+        display: money(mp.profit),
+        caption: `${rp.label} · по оплаченным ремонтам`,
+        tone: mp.profit > 0 ? "good" : "neutral",
       };
     }
 

@@ -213,7 +213,11 @@ export function formatActivitySummary(
 ): ActivitySummaryView {
   const view = buildActivitySummary(item);
   const m = readRecord(item.meta);
-  const method = paymentMethodLabel(m?.method);
+  const split = readRecord(m?.split);
+  const method =
+    m?.method === "mixed" && split
+      ? `смешанно — наличные ${Number(split.cash ?? 0).toLocaleString("ru-RU")} ₽ + перевод ${Number(split.transfer ?? 0).toLocaleString("ru-RU")} ₽`
+      : paymentMethodLabel(m?.method);
   if (method && !view.extras.some((e) => e.startsWith("Оплата:"))) {
     view.extras = [...view.extras, `Оплата: ${method}`];
   }

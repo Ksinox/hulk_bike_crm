@@ -22,11 +22,29 @@ type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChan
   limit?: number;
   /** Крупные строки списка — для пальца. */
   touch?: boolean;
+  /** Заголовок списка (по умолчанию «Вписывали раньше»). */
+  heading?: string;
+  /** Подпись справа у варианта — например цена из прайса. */
+  meta?: (s: string) => string | null | undefined;
+  /** Показывать список, только когда введено столько букв (длинные справочники). */
+  minChars?: number;
 };
 
 /** Ключ сравнения: без регистра, «ё» = «е». */
 export function suggestKey(s: string): string {
   return s.trim().toLowerCase().replace(/ё/g, "е");
+}
+
+/**
+ * Поиск по словам (2.0.2): «ремень gear» находит «Ремень вариатора — …
+ * Yamaha Gear 4T» — каждое слово есть в тексте, порядок не важен.
+ */
+export function matchWords(text: string, query: string): boolean {
+  const t = suggestKey(text);
+  return suggestKey(query)
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((w) => t.includes(w));
 }
 
 /**
@@ -54,7 +72,21 @@ export function rankSuggestions(values: (string | null | undefined)[]): string[]
 }
 
 export const SuggestInput = forwardRef<HTMLInputElement, Props>(function SuggestInput(
-  { value, onValueChange, suggestions, limit = 8, touch = false, onFocus, onBlur, onKeyDown, className, ...rest },
+  {
+    value,
+    onValueChange,
+    suggestions,
+    limit = 8,
+    touch = false,
+    heading = "Вписывали раньше",
+    meta,
+    minChars = 0,
+    onFocus,
+    onBlur,
+    onKeyDown,
+    className,
+    ...rest
+  },
   outerRef,
 ) {
   const innerRef = useRef<HTMLInputElement | null>(null);
@@ -67,11 +99,11 @@ export const SuggestInput = forwardRef<HTMLInputElement, Props>(function Suggest
     const all = suggestions.filter((s) => suggestKey(s) !== q);
     if (!q) return all.slice(0, limit);
     const starts = all.filter((s) => suggestKey(s).startsWith(q));
-    const inside = all.filter((s) => !suggestKey(s).startsWith(q) && suggestKey(s).includes(q));
+    const inside = all.filter((s) => !suggestKey(s).startsWith(q) && matchWords(s, q));
     return [...starts, ...inside].slice(0, limit);
   }, [suggestions, value, limit]);
 
-  const show = open && list.length > 0;
+  const show = open && list.length > 0 && value.trim().length >= minChars;
 
   useLayoutEffect(() => {
     if (!show) return;
@@ -170,7 +202,7 @@ export const SuggestInput = forwardRef<HTMLInputElement, Props>(function Suggest
             onMouseDown={(e) => e.preventDefault()}
           >
             <div className="flex items-center gap-1.5 border-b border-border bg-surface-soft px-2.5 py-1.5 text-[10.5px] font-semibold text-muted-2">
-              <History size={11} /> Вписывали раньше
+              <History size={11} /> {heading}
             </div>
             {list.map((s, i) => (
               <button
@@ -180,12 +212,15 @@ export const SuggestInput = forwardRef<HTMLInputElement, Props>(function Suggest
                 aria-selected={i === active}
                 onClick={() => pick(s)}
                 className={cn(
-                  "block w-full truncate px-3 text-left font-medium text-ink",
+                  "flex w-full items-center gap-2 px-3 text-left font-medium text-ink",
                   touch ? "h-11 text-[15px]" : "h-[34px] text-[13px]",
                   i === active ? "bg-blue-50 text-blue-700" : "hover:bg-surface-soft",
                 )}
               >
-                {s}
+                <span className="min-w-0 flex-1 truncate">{s}</span>
+                {meta?.(s) && (
+                  <span className="shrink-0 text-[12px] font-semibold tabular-nums text-muted">{meta(s)}</span>
+                )}
               </button>
             ))}
           </div>,

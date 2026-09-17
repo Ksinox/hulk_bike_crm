@@ -3,6 +3,7 @@ import {
   Pencil,
   Plus,
   Save,
+  Search,
   Trash2,
   X,
   Sparkles,
@@ -11,11 +12,17 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/api/auth";
+import { useCan } from "@/lib/permissions";
+import { Switch } from "@/components/ui/switch";
+import { matchWords, suggestKey } from "@/components/SuggestInput";
 import { toast } from "@/lib/toast";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import {
   type ApiPriceGroup,
   type ApiPriceItem,
+  type PriceKind,
+  priceZones,
+  splitPriceGroup,
   useApiPriceList,
   useCreatePriceGroup,
   useCreatePriceItem,
@@ -52,7 +59,11 @@ export function PriceListView() {
    * модель ни при чём. Разделены, чтобы механик не искал замену вариатора
    * среди штрафов.
    */
-  const [kind, setKind] = useState<"damage" | "service">("damage");
+  const [kind, setKind] = useState<PriceKind>("damage");
+  // 2.0.2: в прайсе запчастей сотни позиций — нужен поиск.
+  const [q, setQ] = useState("");
+  const [zone, setZone] = useState<string | null>(null);
+  const canCost = useCan("data.repairProfit");
 
   if (list.isLoading) {
     return (
@@ -63,25 +74,40 @@ export function PriceListView() {
   }
 
   const allGroups = list.data ?? [];
-  const groups = allGroups.filter((g) => (g.kind ?? "damage") === kind);
+  const kindGroups = allGroups.filter((g) => (g.kind ?? "damage") === kind);
+  const needle = suggestKey(q);
+  const zones = priceZones(kindGroups);
+  const groups = needle
+    ? kindGroups
+        .map((g) => ({ ...g, items: g.items.filter((i) => matchWords(`${i.name} ${g.name}`, needle)) }))
+        .filter((g) => g.items.length > 0 || matchWords(g.name, needle))
+    : zone
+      ? kindGroups.filter((g) => splitPriceGroup(g.name).zone === zone)
+      : kindGroups;
+  const itemCount = kindGroups.reduce((n, g) => n + g.items.length, 0);
 
-  const empty = groups.length === 0;
+  const empty = kindGroups.length === 0;
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex w-fit gap-1 rounded-full bg-surface p-1 shadow-card-sm">
+      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex w-fit flex-wrap gap-1 rounded-full bg-surface p-1 shadow-card-sm">
         {(
           [
             { id: "damage" as const, label: "Прайс ущерба" },
             { id: "service" as const, label: "Прайс работ" },
+            { id: "part" as const, label: "Прайс запчастей" },
           ]
         ).map((k) => (
           <button
             key={k.id}
             type="button"
+            data-price-tab={k.id}
             onClick={() => {
               setKind(k.id);
               setCreatingGroup(false);
+              setQ("");
+              setZone(null);
             }}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold transition-colors",
@@ -95,10 +121,24 @@ export function PriceListView() {
                 kind === k.id ? "text-white/60" : "text-muted-2",
               )}
             >
-              {allGroups.filter((g) => (g.kind ?? "damage") === k.id).length}
+              {allGroups
+                .filter((g) => (g.kind ?? "damage") === k.id)
+                .reduce((n, g) => n + g.items.length, 0)}
             </span>
           </button>
         ))}
+      </div>
+      {!empty && (
+        <div className="relative ml-auto w-full sm:w-[300px]">
+          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={kind === "part" ? "Найти запчасть или модель: ремень Gear" : "Найти позицию"}
+            className="h-10 w-full rounded-full bg-surface pl-9 pr-3 text-[13px] shadow-card-sm outline-none focus:ring-2 focus:ring-blue-500/30"
+          />
+        </div>
+      )}
       </div>
 
       <div className="rounded-[10px] bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
@@ -108,11 +148,20 @@ export function PriceListView() {
             экипировку. Используется при <b>фиксации ущерба</b> по аренде:
             выбираешь позиции из списка — сумма считается автоматически.
           </>
-        ) : (
+        ) : kind === "service" ? (
           <>
             Прайс работ — то, из чего собирают <b>сторонний ремонт</b>: строка
             «что делали» и цена по умолчанию. В заказ-наряде позиция берётся
-            одним кликом, а цену можно поправить прямо в счёте.
+            одним кликом, а цену можно поправить прямо в счёте. Работа, вписанная
+            в ремонте вручную, сама попадает сюда — в группу «Добавлено из ремонтов».
+          </>
+        ) : (
+          <>
+            Прайс запчастей для <b>сторонних ремонтов</b> — {itemCount} позиций по
+            узлам скутера, у каждой указано, на какие модели подходит.
+            {canCost ? " Закуп — для прибыли, цена — клиенту." : ""} Запчасть,
+            вписанная в ремонте вручную, сама попадает сюда — в группу «Добавлено из
+            ремонтов»; перенести её в нужную группу можно кнопкой «Изменить».
           </>
         )}
         {canEdit && (
@@ -123,6 +172,41 @@ export function PriceListView() {
           </>
         )}
       </div>
+
+      {empty && kind === "part" && (
+        <div className="flex flex-col items-center gap-2 rounded-[14px] border border-dashed border-border px-6 py-10 text-center">
+          <div className="text-[14px] font-semibold text-ink">Прайс запчастей пока пуст</div>
+          <div className="max-w-[440px] text-[12.5px] leading-relaxed text-muted">
+            Заведите группу (например «Двигатель» или «Пластик») и добавьте в неё
+            запчасти с закупом и ценой. Запчасти, вписанные в ремонтах, появятся
+            здесь сами.
+          </div>
+        </div>
+      )}
+
+      {zones.length > 1 && !needle && (
+        <div className="flex flex-wrap gap-1.5" data-zone-chips>
+          {[null, ...zones].map((zn) => (
+            <button
+              key={zn ?? "all"}
+              type="button"
+              onClick={() => setZone(zn)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
+                zone === zn ? "bg-ink text-white" : "bg-surface text-ink-2 shadow-card-sm hover:text-ink",
+              )}
+            >
+              {zn ?? "Все зоны"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {needle && groups.length === 0 && (
+        <div className="rounded-[14px] border border-dashed border-border px-6 py-8 text-center text-[13px] text-muted">
+          Ничего не нашли по «{q}».
+        </div>
+      )}
 
       {empty && kind === "service" && (
         <div className="flex flex-col items-center gap-2 rounded-[14px] border border-dashed border-border px-6 py-10 text-center">
@@ -178,14 +262,26 @@ export function PriceListView() {
           стоят рядом, дальше остальные группы тоже в 2 колонки. Это
           компактнее и в скролл влезает больше. На мобильном — 1 колонка. */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {groups.map((g) => (
+        {groups.map((g, gi) => {
+          const gz = splitPriceGroup(g.name).zone;
+          const prev = gi > 0 ? splitPriceGroup(groups[gi - 1]!.name).zone : null;
+          return (
+          <div key={g.id} className="contents">
+          {gz && gz !== prev && (
+            <div className="pt-2 font-display text-[18px] font-extrabold text-ink lg:col-span-2" data-zone-head>
+              {gz}
+            </div>
+          )}
           <PriceGroupCard
-            key={g.id}
             group={g}
             canEdit={canEdit}
+            withCost={kind === "part" && canCost}
+            moveTargets={kind === "damage" ? [] : kindGroups}
             modelOptions={models.data ?? []}
           />
-        ))}
+          </div>
+          );
+        })}
       </div>
 
       {canEdit && !empty && (
@@ -193,7 +289,7 @@ export function PriceListView() {
           {creatingGroup ? (
             <NewGroupForm
               kind={kind}
-              modelOptions={kind === "service" ? [] : (models.data ?? [])}
+              modelOptions={kind !== "damage" ? [] : (models.data ?? [])}
               allGroups={groups}
               onCancel={() => setCreatingGroup(false)}
               onSave={async (input) => {
@@ -266,10 +362,16 @@ export function PriceListView() {
 function PriceGroupCard({
   group,
   canEdit,
+  withCost,
+  moveTargets,
   modelOptions,
 }: {
   group: ApiPriceGroup;
   canEdit: boolean;
+  /** Колонка «Закуп» (прайс запчастей, есть право на прибыль ремонтов). */
+  withCost: boolean;
+  /** Группы того же прайса — куда можно перенести позицию. */
+  moveTargets: ApiPriceGroup[];
   modelOptions: { id: number; name: string }[];
 }) {
   const [editingHeader, setEditingHeader] = useState(false);
@@ -308,17 +410,18 @@ function PriceGroupCard({
           <>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <div className="text-[14px] font-bold text-ink">{group.name}</div>
+                <div className="text-[14px] font-bold text-ink">{splitPriceGroup(group.name).sub}</div>
                 {linkedModel && (
                   <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-700">
                     {linkedModel.name}
                   </span>
                 )}
-                {!linkedModel && (
+                {!linkedModel && group.kind === "damage" && (
                   <span className="rounded-full bg-surface-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
                     общая
                   </span>
                 )}
+                <span className="text-[11px] font-semibold tabular-nums text-muted-2">{group.items.length}</span>
               </div>
               {group.hasTwoPrices && (
                 <div className="text-[11px] text-muted-2">
@@ -370,8 +473,11 @@ function PriceGroupCard({
           <thead className="bg-surface-soft text-[11px] uppercase tracking-wider text-muted-2">
             <tr>
               <th className="px-3 py-1.5 text-left font-semibold">Позиция</th>
-              <th className="w-[140px] px-3 py-1.5 text-right font-semibold">
-                {group.priceALabel}
+              {withCost && (
+                <th className="w-[110px] px-3 py-1.5 text-right font-semibold">Закуп</th>
+              )}
+              <th className="w-[120px] px-3 py-1.5 text-right font-semibold">
+                {group.kind === "part" ? "Цена клиенту" : group.priceALabel}
               </th>
               {group.hasTwoPrices && (
                 <th className="w-[140px] px-3 py-1.5 text-right font-semibold">
@@ -387,13 +493,15 @@ function PriceGroupCard({
                 key={it.id}
                 item={it}
                 hasTwoPrices={group.hasTwoPrices}
+                withCost={withCost}
+                moveTargets={moveTargets}
                 canEdit={canEdit}
               />
             ))}
             {group.items.length === 0 && (
               <tr>
                 <td
-                  colSpan={group.hasTwoPrices ? 4 : 3}
+                  colSpan={(group.hasTwoPrices ? 4 : 3) + (withCost ? 1 : 0)}
                   className="px-3 py-4 text-center text-[12px] text-muted-2"
                 >
                   Пока пусто
@@ -408,6 +516,7 @@ function PriceGroupCard({
         <div className="border-t border-border px-3 py-2">
           {addingItem ? (
             <NewItemForm
+              withCost={withCost}
               hasTwoPrices={group.hasTwoPrices}
               priceALabel={group.priceALabel}
               priceBLabel={group.priceBLabel}
@@ -449,14 +558,20 @@ function PriceGroupCard({
 function PriceItemRow({
   item,
   hasTwoPrices,
+  withCost,
+  moveTargets,
   canEdit,
 }: {
   item: ApiPriceItem;
   hasTwoPrices: boolean;
+  withCost: boolean;
+  moveTargets: ApiPriceGroup[];
   canEdit: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(item.name);
+  const [c, setC] = useState<string>(item.cost == null ? "" : String(item.cost));
+  const [groupId, setGroupId] = useState(item.groupId);
   const [a, setA] = useState<string>(
     item.priceA == null ? "" : String(item.priceA),
   );
@@ -481,6 +596,8 @@ function PriceItemRow({
           name: name.trim() || item.name,
           priceA: parseN(a),
           priceB: hasTwoPrices ? parseN(b) : null,
+          ...(withCost ? { cost: parseN(c) } : {}),
+          ...(groupId !== item.groupId ? { groupId } : {}),
         },
       });
       setEditing(false);
@@ -498,8 +615,36 @@ function PriceItemRow({
             onChange={(e) => setName(e.target.value)}
             className="w-full rounded-[8px] border border-border bg-white px-2 py-1 text-[13px]"
           />
+          {moveTargets.length > 1 && (
+            <label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted">
+              Группа
+              <select
+                value={groupId}
+                onChange={(e) => setGroupId(Number(e.target.value))}
+                className="min-w-0 flex-1 rounded-[8px] border border-border bg-white px-1.5 py-0.5 text-[12px]"
+              >
+                {moveTargets.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </td>
-        <td className="px-3 py-1.5">
+        {withCost && (
+          <td className="px-3 py-1.5 align-top">
+            <input
+              value={c}
+              onChange={(e) => setC(e.target.value)}
+              inputMode="numeric"
+              placeholder="—"
+              aria-label="Закуп"
+              className="w-full rounded-[8px] border border-border bg-white px-2 py-1 text-right text-[13px] tabular-nums"
+            />
+          </td>
+        )}
+        <td className="px-3 py-1.5 align-top">
           <input
             value={a}
             onChange={(e) => setA(e.target.value)}
@@ -537,6 +682,8 @@ function PriceItemRow({
                 setName(item.name);
                 setA(item.priceA == null ? "" : String(item.priceA));
                 setB(item.priceB == null ? "" : String(item.priceB));
+                setC(item.cost == null ? "" : String(item.cost));
+                setGroupId(item.groupId);
               }}
               className="rounded-[8px] bg-surface-soft p-1.5 text-ink-2 hover:bg-surface"
               title="Отмена"
@@ -552,6 +699,9 @@ function PriceItemRow({
   return (
     <tr className="border-t border-border hover:bg-surface-soft/40">
       <td className="px-3 py-1.5 text-ink">{item.name}</td>
+      {withCost && (
+        <td className="px-3 py-1.5 text-right tabular-nums text-muted">{fmt(item.cost ?? null)}</td>
+      )}
       <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-ink">
         {fmt(item.priceA)}
       </td>
@@ -599,6 +749,7 @@ function PriceItemRow({
 /* =================== Формы =================== */
 
 function NewItemForm({
+  withCost,
   hasTwoPrices,
   priceALabel,
   priceBLabel,
@@ -606,6 +757,7 @@ function NewItemForm({
   onCancel,
   onSave,
 }: {
+  withCost: boolean;
   hasTwoPrices: boolean;
   priceALabel: string;
   priceBLabel: string | null;
@@ -615,9 +767,11 @@ function NewItemForm({
     name: string;
     priceA: number | null;
     priceB: number | null;
+    cost?: number | null;
   }) => void;
 }) {
   const [name, setName] = useState("");
+  const [cost, setCost] = useState("");
   const [a, setA] = useState("");
   const [b, setB] = useState("");
 
@@ -637,6 +791,15 @@ function NewItemForm({
         placeholder="Название позиции"
         className="min-w-[200px] flex-1 rounded-[8px] border border-border bg-white px-2 py-1 text-[13px]"
       />
+      {withCost && (
+        <input
+          value={cost}
+          onChange={(e) => setCost(e.target.value)}
+          inputMode="numeric"
+          placeholder="Закуп"
+          className="w-[100px] rounded-[8px] border border-border bg-white px-2 py-1 text-right text-[13px] tabular-nums"
+        />
+      )}
       <input
         value={a}
         onChange={(e) => setA(e.target.value)}
@@ -661,6 +824,7 @@ function NewItemForm({
             name: name.trim(),
             priceA: parseN(a),
             priceB: hasTwoPrices ? parseN(b) : null,
+            ...(withCost ? { cost: parseN(cost) } : {}),
           })
         }
         className="rounded-[8px] bg-ink px-3 py-1 text-[12px] font-bold text-white hover:bg-blue-600 disabled:opacity-50"
@@ -712,29 +876,29 @@ function GroupHeaderEdit({
         placeholder="Название группы"
         className="min-w-[180px] flex-1 rounded-[8px] border border-border bg-white px-2 py-1 text-[13px] font-semibold"
       />
-      <select
-        value={modelId == null ? "" : String(modelId)}
-        onChange={(e) =>
-          setModelId(e.target.value === "" ? null : Number(e.target.value))
-        }
-        className="rounded-[8px] border border-border bg-white px-2 py-1 text-[12px]"
-        title="Привязка к модели скутера"
-      >
-        <option value="">Без привязки (общая)</option>
-        {modelOptions.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.name}
-          </option>
-        ))}
-      </select>
-      <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-2">
-        <input
-          type="checkbox"
-          checked={twoPrices}
-          onChange={(e) => setTwoPrices(e.target.checked)}
-        />
-        две колонки цен
-      </label>
+      {group.kind === "damage" && (
+        <>
+          <select
+            value={modelId == null ? "" : String(modelId)}
+            onChange={(e) =>
+              setModelId(e.target.value === "" ? null : Number(e.target.value))
+            }
+            className="rounded-[8px] border border-border bg-white px-2 py-1 text-[12px]"
+            title="Привязка к модели скутера"
+          >
+            <option value="">Без привязки (общая)</option>
+            {modelOptions.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
+            <Switch checked={twoPrices} onChange={setTwoPrices} label="Две колонки цен" />
+            две колонки цен
+          </label>
+        </>
+      )}
       <input
         value={labelA}
         onChange={(e) => setLabelA(e.target.value)}
@@ -784,8 +948,8 @@ function NewGroupForm({
   onCancel,
   onSave,
 }: {
-  /** Вид прайса: у работ модели нет, поэтому селектор модели скрыт. */
-  kind?: "damage" | "service";
+  /** Вид прайса: у работ и запчастей модели нет, поэтому селектор модели скрыт. */
+  kind?: PriceKind;
   modelOptions: { id: number; name: string }[];
   allGroups: ApiPriceGroup[];
   busy: boolean;
@@ -798,7 +962,7 @@ function NewGroupForm({
     scooterModelId: number | null;
     copyItemsFromGroupId: number | null;
     copyWithPrices: boolean;
-    kind?: "damage" | "service";
+    kind?: PriceKind;
   }) => void;
 }) {
   const [name, setName] = useState("");
@@ -823,32 +987,32 @@ function NewGroupForm({
           placeholder="Название группы"
           className="min-w-[200px] flex-1 rounded-[8px] border border-border bg-white px-2 py-1 text-[13px] font-semibold"
         />
-        <select
-          value={modelId == null ? "" : String(modelId)}
-          onChange={(e) =>
-            setModelId(e.target.value === "" ? null : Number(e.target.value))
-          }
-          className="rounded-[8px] border border-border bg-white px-2 py-1 text-[12px]"
-          title="Привязка к модели скутера"
-        >
-          <option value="">Без привязки (общая)</option>
-          {modelOptions.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
+        {kind === "damage" && (
+          <select
+            value={modelId == null ? "" : String(modelId)}
+            onChange={(e) =>
+              setModelId(e.target.value === "" ? null : Number(e.target.value))
+            }
+            className="rounded-[8px] border border-border bg-white px-2 py-1 text-[12px]"
+            title="Привязка к модели скутера"
+          >
+            <option value="">Без привязки (общая)</option>
+            {modelOptions.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-2">
-          <input
-            type="checkbox"
-            checked={twoPrices}
-            onChange={(e) => setTwoPrices(e.target.checked)}
-          />
-          две колонки цен (legacy)
-        </label>
+        {kind === "damage" && (
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
+            <Switch checked={twoPrices} onChange={setTwoPrices} label="Две колонки цен" />
+            две колонки цен (legacy)
+          </label>
+        )}
         <input
           value={labelA}
           onChange={(e) => setLabelA(e.target.value)}
@@ -884,12 +1048,8 @@ function NewGroupForm({
           ))}
         </select>
         {copyFrom != null && (
-          <label className="inline-flex items-center gap-1.5 text-[12px] text-ink-2">
-            <input
-              type="checkbox"
-              checked={copyWithPrices}
-              onChange={(e) => setCopyWithPrices(e.target.checked)}
-            />
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
+            <Switch checked={copyWithPrices} onChange={setCopyWithPrices} label="Копировать с ценами" />
             копировать с ценами
           </label>
         )}
@@ -905,7 +1065,7 @@ function NewGroupForm({
               hasTwoPrices: twoPrices,
               priceALabel: labelA.trim() || "Цена",
               priceBLabel: twoPrices ? labelB.trim() || null : null,
-              scooterModelId: kind === "service" ? null : modelId,
+              scooterModelId: kind !== "damage" ? null : modelId,
               copyItemsFromGroupId: copyFrom,
               copyWithPrices,
               kind,

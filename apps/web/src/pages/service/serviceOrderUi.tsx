@@ -1,9 +1,20 @@
 import { cn } from "@/lib/utils";
-import type { ServiceOrderStatus } from "@/lib/api/service-orders";
+import type { ServiceOrder, ServiceOrderStatus } from "@/lib/api/service-orders";
 
 /** Общие мелочи блока сторонних ремонтов: статусы, деньги, период. */
 
 export const money = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} ₽`;
+
+export const orderNo = (n: number) => `№${String(n).padStart(4, "0")}`;
+
+export const fmtDay = (iso: string | null | undefined) =>
+  iso ? new Date(iso).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+
+export const METHOD_LABEL: Record<string, string> = {
+  cash: "наличные",
+  transfer: "перевод",
+  mixed: "смешанно",
+};
 
 export const STATUS_LABEL: Record<ServiceOrderStatus, string> = {
   in_work: "В работе",
@@ -39,6 +50,24 @@ export function StatusBadge({
   );
 }
 
+/**
+ * Денежное состояние наряда одной строкой — для списка и шапки карточки:
+ * «аванс 2 000 ₽ · остаток 2 450 ₽», «оплачен», «к оплате 4 450 ₽».
+ */
+export function moneyState(o: ServiceOrder): {
+  text: string;
+  tone: "muted" | "warn" | "good" | "bad";
+} {
+  const t = o.totals;
+  if (o.status === "cancelled")
+    return { text: t.paid < 0 ? "возврат" : "отменён", tone: "muted" };
+  if (o.status === "paid") return { text: "оплачен", tone: "good" };
+  if (t.overpaid > 0) return { text: `переплата ${money(t.overpaid)}`, tone: "bad" };
+  if (t.paid > 0) return { text: `аванс ${money(t.paid)} · остаток ${money(t.left)}`, tone: "warn" };
+  if (t.due > 0) return { text: `к оплате ${money(t.due)}`, tone: "muted" };
+  return { text: "без позиций", tone: "muted" };
+}
+
 export type ServicePeriod = "month" | "quarter" | "year" | "all";
 
 export const PERIOD_LABEL: Record<ServicePeriod, string> = {
@@ -71,3 +100,6 @@ export function periodBounds(
     label: `${now.getFullYear()} год`,
   };
 }
+
+/** Только цифры из ввода. */
+export const digits = (v: string) => v.replace(/[^\d]/g, "");

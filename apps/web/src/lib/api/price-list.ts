@@ -7,11 +7,18 @@ export type ApiPriceItem = {
   name: string;
   priceA: number | null;
   priceB: number | null;
+  /** Закуп за штуку (прайс запчастей). Без права на прибыль ремонтов не приходит. */
+  cost?: number | null;
+  /** Каталожный код и ключ картинки (прайс запчастей, 2.0.2). */
+  code?: string | null;
+  imageKey?: string | null;
   sortOrder: number;
   note: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+export type PriceKind = "damage" | "service" | "part";
 
 export type ApiPriceGroup = {
   id: number;
@@ -21,8 +28,8 @@ export type ApiPriceGroup = {
   priceALabel: string;
   priceBLabel: string | null;
   scooterModelId: number | null;
-  /** 'damage' — прайс ущерба, 'service' — прайс работ сторонних ремонтов. */
-  kind: "damage" | "service";
+  /** 'damage' — прайс ущерба, 'service' — работы, 'part' — запчасти сторонних ремонтов. */
+  kind: PriceKind;
   createdAt: string;
   updatedAt: string;
   items: ApiPriceItem[];
@@ -35,7 +42,7 @@ export type CreateGroupInput = {
   priceALabel?: string;
   priceBLabel?: string | null;
   scooterModelId?: number | null;
-  kind?: "damage" | "service";
+  kind?: PriceKind;
   /** При создании — скопировать позиции из другой группы. */
   copyItemsFromGroupId?: number | null;
   /** Копировать с ценами или только названия. */
@@ -47,9 +54,30 @@ export type CreateItemInput = {
   name: string;
   priceA?: number | null;
   priceB?: number | null;
+  cost?: number | null;
   sortOrder?: number;
   note?: string | null;
 };
+
+/**
+ * Группа прайса запчастей называется «Зона · Узел» (2.0.2): «Двигатель ·
+ * Головка и ГРМ». Зона — заголовок и кнопка быстрого перехода, узел —
+ * название группы.
+ */
+export function splitPriceGroup(name: string): { zone: string | null; sub: string } {
+  const i = name.indexOf(" · ");
+  return i > 0 ? { zone: name.slice(0, i), sub: name.slice(i + 3) } : { zone: null, sub: name };
+}
+
+/** Зоны в порядке групп (для кнопок быстрого перехода). */
+export function priceZones(groups: { name: string }[]): string[] {
+  const out: string[] = [];
+  for (const g of groups) {
+    const z = splitPriceGroup(g.name).zone;
+    if (z && !out.includes(z)) out.push(z);
+  }
+  return out;
+}
 
 export const priceListKeys = {
   all: ["price-list"] as const,
@@ -58,10 +86,10 @@ export const priceListKeys = {
 
 /**
  * Прайс одного вида: 'damage' — ущерб (по моделям нашей техники),
- * 'service' — работы для сторонних ремонтов. Без аргумента — весь прайс,
- * как было раньше.
+ * 'service' — работы, 'part' — запчасти для сторонних ремонтов. Без
+ * аргумента — весь прайс, как было раньше.
  */
-export function usePriceList(kind?: "damage" | "service") {
+export function usePriceList(kind?: PriceKind) {
   return useQuery({
     queryKey: [...priceListKeys.list(), kind ?? "all"],
     queryFn: () =>

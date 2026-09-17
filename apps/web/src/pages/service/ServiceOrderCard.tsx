@@ -1,43 +1,57 @@
-import { useState } from "react";
-import { useCan } from "@/lib/permissions";
+import { useEffect, useState } from "react";
 import {
   Banknote,
   Check,
-  Package,
-  Plus,
-  Trash2,
-  Wrench,
+  CheckCircle2,
+  HandCoins,
+  Pencil,
+  Phone,
+  Printer,
+  RotateCcw,
   X,
 } from "lucide-react";
+import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import { confirmDialog, toast } from "@/lib/toast";
+import type { ApiError } from "@/lib/api";
+import { confirmDialog, pickAction, toast } from "@/lib/toast";
 import {
+  serviceInvoiceUrl,
   useAddServiceOrderItem,
   useCancelServiceOrder,
   useCompleteServiceOrder,
   useDeleteServiceOrderItem,
+  usePatchServiceOrder,
   usePatchServiceOrderItem,
-  usePayServiceOrder,
+  useReopenServiceOrder,
+  useServiceAdvance,
+  useServiceRefund,
+  useSettleServiceOrder,
+  useUndoServicePayment,
   type ServiceOrder,
-  type ServiceOrderItem,
 } from "@/lib/api/service-orders";
-import { usePriceList } from "@/lib/api/price-list";
-import { PayMethodPicker, splitByMethod, type PayMethod } from "@/components/PayMethodPicker";
-import { money, StatusBadge } from "./serviceOrderUi";
+import { DocumentPreviewModal } from "@/pages/rentals/DocumentPreviewModal";
+import { ItemsSection, PricePicker, type ItemPatch, type NewRowValue } from "./ServiceItemsEditor";
+import type { SavedToPrice } from "@/lib/api/service-orders";
+import { ServicePaySheet, type PayMode, type PaySubmit } from "./ServicePaySheet";
+import { fmtDay, METHOD_LABEL, money, orderNo, StatusBadge, STATUS_LABEL } from "./serviceOrderUi";
 
 /**
- * Заказ-наряд стороннего ремонта (06.09).
+ * Заказ-наряд стороннего ремонта (06.09, переделан в 2.0.2).
  *
- * Экран сделан как счёт, который заполняют сверху вниз: сначала работы —
- * их берут из прайса одним кликом, цену можно поправить прямо в строке;
- * потом запчасти — там кроме цены клиенту есть закуп, из него и считается
- * прибыль. Внизу итог и две кнопки: «Готов к выдаче» и «Принять оплату».
+ * Сверху — кто и с чем (правится кнопкой «Изменить»), ниже работы и
+ * запчасти: каждая правка сохраняется сразу, в шапке загорается
+ * «Сохранено». Внизу деньги: к оплате, внесённый аванс, остаток. Ремонт
+ * остаётся «в работе» сколько угодно — список работ и запчастей меняют по
+ * ходу, пока ремонт не оплачен.
  */
 export function ServiceOrderCard({
   order,
+  touch,
   onClose,
 }: {
   order: ServiceOrder;
+  /** Телефон и планшет: крупные поля и кнопки. */
+  touch: boolean;
   onClose: () => void;
 }) {
   // 14.09: без права на прибыль ремонтов нет ни закупа запчастей, ни прибыли.
@@ -46,251 +60,431 @@ export function ServiceOrderCard({
   const patchItem = usePatchServiceOrderItem();
   const delItem = useDeleteServiceOrderItem();
   const complete = useCompleteServiceOrder();
-  const pay = usePayServiceOrder();
+  const advance = useServiceAdvance();
+  const settle = useSettleServiceOrder();
+  const refund = useServiceRefund();
+  const undoPay = useUndoServicePayment();
   const cancel = useCancelServiceOrder();
+  const reopen = useReopenServiceOrder();
 
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [payOpen, setPayOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState<"work" | "part" | null>(null);
+  const [pay, setPay] = useState<PayMode | null>(null);
+  const [docOpen, setDocOpen] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const locked = order.status === "paid" || order.status === "cancelled";
+  useEffect(() => {
+    if (savedAt == null) return;
+    const t = window.setTimeout(() => setSavedAt(null), 2500);
+    return () => window.clearTimeout(t);
+  }, [savedAt]);
+
+  const t = order.totals;
+  const active = order.status === "in_work" || order.status === "done";
+  const locked = !active;
   const works = order.items.filter((i) => i.kind === "work");
   const parts = order.items.filter((i) => i.kind === "part");
+  const no = orderNo(order.number);
+
+  /** Любая правка: ошибку — в уведомление, успех — «Сохранено». */
+  const run = async (p: Promise<unknown>): Promise<boolean> => {
+    try {
+      await p;
+      setSavedAt(Date.now());
+      return true;
+    } catch (e) {
+      const b = (e as ApiError)?.body as { message?: string } | undefined;
+      toast.error("Не сохранилось", b?.message ?? (e as Error).message);
+      return false;
+    }
+  };
+
+  const patch = (id: number, p: ItemPatch) => run(patchItem.mutateAsync({ itemId: id, ...p }));
+
+  /** Новая строка: из прайса — с его id, своя — с пометкой «сохранить в прайс». */
+  const addRow = async (kind: "work" | "part", v: NewRowValue) => {
+    try {
+      const r = await addItem.mutateAsync({
+        orderId: order.id,
+        kind,
+        name: v.name,
+        qty: v.qty,
+        price: v.price,
+        ...(kind === "part" && canRepairProfit ? { cost: v.cost } : {}),
+        priceItemId: v.priceItemId,
+        saveToPrice: v.saveToPrice,
+      });
+      setSavedAt(Date.now());
+      savedToast(r.savedToPrice);
+    } catch (e) {
+      const b = (e as ApiError)?.body as { message?: string } | undefined;
+      toast.error("Не сохранилось", b?.message ?? (e as Error).message);
+    }
+  };
+  const remove = (id: number) => run(delItem.mutateAsync(id));
+
+  const savedToast = (saved?: SavedToPrice[]) => {
+    for (const s of saved ?? []) {
+      toast.success(
+        s.kind === "part" ? "Запчасть сохранена в прайс" : "Работа сохранена в прайс",
+        `«${s.name}» — в следующий раз выберите её из списка`,
+      );
+    }
+  };
+
+  const undoToast = (title: string, message: string, paymentId?: number) => {
+    if (!paymentId) {
+      toast.success(title, message);
+      return;
+    }
+    toast.action({
+      title,
+      message,
+      onAction: async () => {
+        try {
+          await undoPay.mutateAsync(paymentId);
+          toast.success("Отменено", "Запись о деньгах убрана, ремонт вернулся как был.");
+        } catch (e) {
+          const b = (e as ApiError)?.body as { message?: string } | undefined;
+          toast.error("Не удалось отменить", b?.message ?? (e as Error).message);
+        }
+      },
+    });
+  };
+
+  const submitPay = async (v: PaySubmit) => {
+    if (v.mode === "advance") {
+      const r = await advance.mutateAsync({ id: order.id, amount: v.amount, method: v.method, cashAmount: v.cashAmount });
+      setPay(null);
+      undoToast(`Аванс ${money(v.amount)} принят`, `Ремонт ${no} · остаток ${money(r.order.totals.left)}`, r.paymentId);
+    } else if (v.mode === "settle") {
+      const r = await settle.mutateAsync({
+        id: order.id,
+        method: v.method,
+        cashAmount: v.cashAmount,
+        discount: v.discount,
+        expected: t.left,
+      });
+      setPay(null);
+      undoToast(
+        `Ремонт ${no} оплачен`,
+        [
+          v.amount > 0 ? `${money(v.amount)} · ${METHOD_LABEL[v.method]}` : null,
+          t.paid > 0 ? `с авансом ${money(r.order.totals.paid)}` : null,
+          v.discount > 0 ? `скидка ${money(v.discount)}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        r.paymentId,
+      );
+    } else {
+      const r = await refund.mutateAsync({ id: order.id, amount: v.amount, method: v.method, cashAmount: v.cashAmount });
+      setPay(null);
+      undoToast(`Возврат ${money(v.amount)} отмечен`, `Ремонт ${no}`, r.paymentId);
+    }
+  };
+
+  const doCancel = async () => {
+    const ok = await confirmDialog({
+      title: `Отменить ремонт ${no}?`,
+      message:
+        t.paid > 0
+          ? `Клиент вносил ${money(t.paid)}. Отмена отметит, что деньги ему вернули, — из выручки они уйдут. Ремонт останется в списке «Отменённые», его можно вернуть в работу.`
+          : "Ремонт останется в списке «Отменённые» и в статистику не попадёт. Его можно вернуть в работу.",
+      confirmText: t.paid > 0 ? "Вернули деньги — отменить" : "Отменить ремонт",
+      danger: true,
+    });
+    if (!ok) return;
+    if (await run(cancel.mutateAsync(order.id)))
+      toast.success(`Ремонт ${no} отменён`, "Вернуть его можно из списка «Отменённые».");
+  };
+
+  // Возврат аванса, записанный именно последней отменой (как на сервере).
+  const cancelledMs = order.cancelledAt ? new Date(order.cancelledAt).getTime() : null;
+  const cancelRefund = order.payments
+    .filter(
+      (p) =>
+        p.kind === "refund" &&
+        p.note === "аванс вернули при отмене" &&
+        cancelledMs != null &&
+        Math.abs(new Date(p.createdAt).getTime() - cancelledMs) < 60_000,
+    )
+    .reduce((s, p) => s - p.amount, 0);
+
+  const doReopen = async () => {
+    let keepAdvance: boolean | undefined;
+    if (cancelRefund > 0) {
+      const choice = await pickAction<"keep" | "gone">({
+        title: `Вернуть ремонт ${no} в работу`,
+        message: `При отмене аванс ${money(cancelRefund)} отметили как возвращённый клиенту. Где эти деньги?`,
+        options: [
+          { id: "keep", label: "Деньги у нас", hint: "Отменили по ошибке — аванс снова засчитан в ремонт", tone: "primary" },
+          { id: "gone", label: "Клиент их забрал", hint: "Остаток к оплате — полная сумма ремонта" },
+        ],
+      });
+      if (!choice) return;
+      keepAdvance = choice === "keep";
+    } else {
+      const ok = await confirmDialog({
+        title: `Вернуть ремонт ${no} в работу?`,
+        message: `Статус станет «${STATUS_LABEL[(order.statusBeforeCancel as "in_work" | "done") ?? "in_work"] ?? "В работе"}», работы и запчасти можно будет снова менять.`,
+        confirmText: "Вернуть в работу",
+      });
+      if (!ok) return;
+    }
+    setBusy(true);
+    const ok = await run(reopen.mutateAsync({ id: order.id, keepAdvance }));
+    setBusy(false);
+    if (ok) toast.success(`Ремонт ${no} снова в работе`);
+  };
+
+  const saveAndClose = () => {
+    toast.success(`Ремонт ${no} сохранён`, `${STATUS_LABEL[order.status]} · ${t.left > 0 ? `остаток ${money(t.left)}` : `к оплате ${money(t.due)}`}`);
+    onClose();
+  };
+
+  // Под палец — 48px и без переносов: на 360px «Готов к выдаче» влезает
+  // только с узкими полями.
+  const btn = touch ? "h-12 whitespace-nowrap !px-2 text-[14px]" : "h-10 text-[13px]";
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex shrink-0 items-start gap-3 border-b border-border px-4 py-3">
+    <div className="relative flex h-full min-h-0 flex-col" data-service-card={order.id}>
+      {/* ---- Шапка ---- */}
+      <header className="flex shrink-0 items-start gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-display text-[19px] font-extrabold text-ink">
-              Ремонт №{String(order.number).padStart(4, "0")}
-            </h2>
+            <h2 className="font-display text-[19px] font-extrabold text-ink">Ремонт {no}</h2>
             <StatusBadge status={order.status} />
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 text-[11.5px] font-semibold text-green-ink transition-opacity",
+                savedAt ? "opacity-100" : "opacity-0",
+              )}
+              aria-live="polite"
+            >
+              <CheckCircle2 size={13} /> Сохранено
+            </span>
           </div>
-          <div className="mt-0.5 truncate text-[13px] text-muted">
-            {order.vehicle}
-            {order.vehicleNumber ? ` · ${order.vehicleNumber}` : ""} ·{" "}
-            {order.customerName}
-            {order.customerPhone ? ` · ${order.customerPhone}` : ""}
+          <div className={cn("mt-0.5 text-[12.5px] text-muted", !touch && "truncate")}>
+            принят {fmtDay(order.acceptedAt)}
+            {order.completedAt && order.status !== "in_work" ? ` · готов ${fmtDay(order.completedAt)}` : ""}
+            {active ? " · правки сохраняются сразу" : ""}
           </div>
         </div>
         <button
           type="button"
-          onClick={onClose}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-2 hover:bg-surface-soft hover:text-ink"
+          onClick={() => setDocOpen(true)}
+          className={cn(
+            "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-surface-soft font-bold text-ink hover:bg-border",
+            touch ? "h-11 w-11" : "h-9 px-3 text-[12.5px]",
+          )}
+          title="Накладная по ремонту"
+          aria-label="Накладная"
         >
-          <X size={16} />
+          <Printer size={touch ? 18 : 15} />
+          {!touch && "Накладная"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Закрыть"
+          className={cn(
+            "flex shrink-0 items-center justify-center rounded-xl text-muted-2 hover:bg-surface-soft hover:text-ink",
+            touch ? "h-11 w-11" : "h-9 w-9",
+          )}
+        >
+          <X size={touch ? 20 : 17} />
         </button>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {order.complaint && (
-          <div className="mb-4 rounded-2xl bg-surface-soft px-3.5 py-3">
-            <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-              С чем приехали
+        {order.status === "cancelled" && (
+          <div
+            className={cn(
+              "mb-4 flex gap-3 rounded-2xl border border-border bg-surface-soft px-4 py-3",
+              touch ? "flex-col" : "flex-wrap items-center",
+            )}
+          >
+            <div className="min-w-0 flex-1 text-[13px] text-ink-2">
+              <b className="text-ink">Ремонт отменён{order.cancelledAt ? ` ${fmtDay(order.cancelledAt)}` : ""}.</b>{" "}
+              В статистику не идёт. Если отменили по ошибке или клиент вернулся — верните его в работу.
             </div>
-            <div className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">
-              {order.complaint}
-            </div>
+            <button
+              type="button"
+              onClick={doReopen}
+              disabled={busy}
+              className={cn(
+                "inline-flex items-center justify-center gap-1.5 rounded-xl bg-ink px-4 font-bold text-white disabled:opacity-50",
+                btn,
+              )}
+            >
+              <RotateCcw size={15} /> Вернуть в работу
+            </button>
           </div>
         )}
 
-        {/* ---- Работы ---- */}
-        <Section
-          icon={<Wrench size={13} />}
-          title="Работы"
-          sum={order.totals.works}
-          action={
-            !locked && (
-              <button
-                type="button"
-                onClick={() => setPickerOpen(true)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-full bg-ink px-3 text-[12px] font-bold text-white hover:bg-ink-2"
-              >
-                <Plus size={13} /> Из прайса
-              </button>
-            )
-          }
-        >
-          {works.length === 0 ? (
-            <Empty text="Работ пока нет. Возьмите их из прайса — цена подставится сама." />
-          ) : (
-            works.map((it) => (
-              <ItemRow
-                key={it.id}
-                item={it}
-                locked={locked}
-                onPatch={(b) => patchItem.mutate({ itemId: it.id, ...b })}
-                onDelete={() => delItem.mutate(it.id)}
-              />
-            ))
-          )}
-          {!locked && (
-            <FreeRow
-              placeholder="Своя работа — название"
-              withCost={false}
-              onAdd={(v) =>
-                addItem.mutate({
-                  orderId: order.id,
-                  kind: "work",
-                  name: v.name,
-                  qty: v.qty,
-                  price: v.price,
-                })
-              }
-            />
-          )}
-        </Section>
+        <ClientBlock order={order} touch={touch} editable={order.status !== "cancelled"} onSaved={() => setSavedAt(Date.now())} />
 
-        {/* ---- Запчасти ---- */}
-        <Section
-          icon={<Package size={13} />}
-          title="Запчасти"
-          sum={order.totals.parts}
-          hint="Закуп нужен, чтобы посчитать прибыль. Цена клиенту по умолчанию равна закупу."
-        >
-          {parts.length === 0 ? (
-            <Empty text="Запчастей нет — значит, ремонт только из работы." />
-          ) : (
-            parts.map((it) => (
-              <ItemRow
-                key={it.id}
-                item={it}
-                locked={locked}
-                withCost={canRepairProfit}
-                onPatch={(b) => patchItem.mutate({ itemId: it.id, ...b })}
-                onDelete={() => delItem.mutate(it.id)}
-              />
-            ))
-          )}
-          {!locked && (
-            <FreeRow
-              placeholder="Запчасть — наименование"
-              withCost={canRepairProfit}
-              onAdd={(v) =>
-                addItem.mutate({
-                  orderId: order.id,
-                  kind: "part",
-                  name: v.name,
-                  qty: v.qty,
-                  price: v.price,
-                  cost: v.cost,
-                })
-              }
-            />
-          )}
-        </Section>
+        <ItemsSection
+          kind="work"
+          items={works.map((i) => ({ key: i.id, name: i.name, qty: i.qty, price: i.price }))}
+          sum={t.works}
+          touch={touch}
+          locked={locked}
+          withCost={false}
+          onPatch={(k, p) => patch(Number(k), p)}
+          onRemove={(k) => remove(Number(k))}
+          onAdd={(v) => addRow("work", v)}
+          onPickFromPrice={() => setPickerOpen("work")}
+        />
+        <ItemsSection
+          kind="part"
+          items={parts.map((i) => ({ key: i.id, name: i.name, qty: i.qty, price: i.price, cost: i.cost }))}
+          sum={t.parts}
+          touch={touch}
+          locked={locked}
+          withCost={canRepairProfit}
+          onPatch={(k, p) => patch(Number(k), p)}
+          onRemove={(k) => remove(Number(k))}
+          onAdd={(v) => addRow("part", v)}
+          onPickFromPrice={() => setPickerOpen("part")}
+        />
 
-        {/* ---- Итог ---- */}
-        <div className="mt-4 rounded-2xl bg-surface-soft p-4">
-          <Row label="Работы" value={money(order.totals.works)} />
-          <Row label="Запчасти" value={money(order.totals.parts)} />
-          <div className="my-2 h-px bg-border" />
-          <Row label="Выручка" value={money(order.totals.revenue)} strong />
-          {canRepairProfit && (
-            <>
-              <Row
-                label="Себестоимость запчастей"
-                value={`− ${money(order.totals.cost)}`}
-                muted
-              />
-              <Row
-                label="Прибыль"
-                value={money(order.totals.profit)}
-                strong
-                tone={order.totals.profit >= 0 ? "good" : "bad"}
-              />
-            </>
-          )}
-          {order.status === "paid" && (
-            <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-[12.5px] font-semibold text-emerald-800">
-              Оплачено {money(order.paidAmount ?? order.totals.revenue)} ·{" "}
-              {order.paymentMethod === "mixed"
-                ? `наличные ${money(order.cashAmount)} + перевод ${money(order.transferAmount)}`
-                : order.paymentMethod === "transfer"
-                  ? "перевод"
-                  : "наличные"}
-              {order.paidAt
-                ? ` · ${new Date(order.paidAt).toLocaleDateString("ru-RU")}`
-                : ""}
-            </div>
-          )}
-        </div>
+        <MoneyBlock order={order} showProfit={canRepairProfit} onRefund={() => setPay("refund")} />
+
+        {active && (
+          <button
+            type="button"
+            onClick={doCancel}
+            className="mt-4 inline-flex h-11 items-center rounded-xl px-3 text-[13px] font-semibold text-muted hover:bg-red-soft hover:text-red-ink"
+          >
+            Отменить ремонт
+          </button>
+        )}
       </div>
 
       {/* ---- Действия ---- */}
-      {!locked && (
-        <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-4 py-3">
-          {order.status === "in_work" && (
+      {active ? (
+        <footer
+          data-toast-lift
+          className={cn(
+            "shrink-0 border-t border-border px-4 py-3",
+            touch ? "grid grid-cols-2 gap-2 pb-[calc(12px+env(safe-area-inset-bottom))]" : "flex flex-wrap items-center gap-2",
+          )}
+        >
+          <button
+            type="button"
+            onClick={() => setPay("advance")}
+            disabled={t.left <= 1}
+            className={cn("inline-flex items-center justify-center gap-1.5 rounded-xl bg-surface px-4 font-bold text-ink shadow-card-sm hover:bg-surface-soft disabled:opacity-40", btn)}
+          >
+            <HandCoins size={16} /> Аванс
+          </button>
+          {order.status === "in_work" ? (
             <button
               type="button"
-              onClick={async () => {
-                await complete.mutateAsync(order.id);
-                toast.success("Ремонт готов к выдаче");
-              }}
-              className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-surface px-4 text-[13px] font-bold text-ink shadow-card-sm hover:bg-surface-soft"
+              onClick={() =>
+                run(complete.mutateAsync(order.id)).then((ok) => ok && toast.success(`Ремонт ${no} готов к выдаче`))
+              }
+              className={cn("inline-flex items-center justify-center gap-1.5 rounded-xl bg-surface px-4 font-bold text-ink shadow-card-sm hover:bg-surface-soft", btn)}
             >
-              <Check size={15} /> Готов к выдаче
+              <Check size={16} /> Готов к выдаче
             </button>
+          ) : (
+            touch && <span />
           )}
+          <div className={cn(touch ? "col-span-2 grid grid-cols-[1fr_1.7fr] gap-2" : "contents")}>
+            <button
+              type="button"
+              onClick={saveAndClose}
+              className={cn(
+                "inline-flex items-center justify-center gap-1.5 rounded-xl bg-surface-soft px-4 font-bold text-ink-2 hover:bg-border",
+                touch ? "h-14 text-[14px]" : cn(btn, "ml-auto"),
+              )}
+            >
+              {touch ? "Сохранить" : "Сохранить и закрыть"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPay("settle")}
+              disabled={t.revenue <= 0 || t.overpaid > 0}
+              className={cn(
+                "inline-flex items-center justify-center gap-1.5 rounded-xl bg-green px-4 font-bold text-white disabled:opacity-40",
+                touch ? "h-14" : btn,
+              )}
+            >
+              {touch ? (
+                <span className="flex flex-col items-center leading-tight">
+                  <span className="text-[14.5px]">{t.left > 0 ? "Принять оплату" : "Закрыть — оплачен"}</span>
+                  {t.left > 0 && <span className="text-[12.5px] font-semibold text-white/85">{money(t.left)}</span>}
+                </span>
+              ) : (
+                <>
+                  <Banknote size={16} />
+                  {t.left > 0 ? `Принять оплату · ${money(t.left)}` : "Закрыть — оплачен"}
+                </>
+              )}
+            </button>
+          </div>
+        </footer>
+      ) : order.status === "paid" ? (
+        <footer data-toast-lift className="flex shrink-0 gap-2 border-t border-border px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
           <button
             type="button"
-            onClick={() => setPayOpen(true)}
-            disabled={order.totals.revenue <= 0}
-            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-green px-4 text-[13px] font-bold text-white disabled:opacity-40"
+            onClick={() => setDocOpen(true)}
+            className={cn("inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-ink px-4 font-bold text-white", btn)}
           >
-            <Banknote size={15} /> Принять оплату · {money(order.totals.revenue)}
+            <Printer size={16} /> Накладная
           </button>
           <button
             type="button"
-            onClick={async () => {
-              const ok = await confirmDialog({
-                title: "Отменить ремонт?",
-                message: "Заказ-наряд останется в списке, но в статистику не попадёт.",
-                confirmText: "Отменить ремонт",
-                danger: true,
-              });
-              if (ok) {
-                await cancel.mutateAsync(order.id);
-                toast.success("Ремонт отменён");
-              }
-            }}
-            className="ml-auto inline-flex h-10 items-center gap-1.5 rounded-xl px-3 text-[12.5px] font-semibold text-muted hover:bg-red-soft hover:text-red-ink"
+            onClick={onClose}
+            className={cn("flex-1 rounded-xl bg-surface-soft px-4 font-bold text-ink-2", btn)}
           >
-            Отменить
+            Закрыть
           </button>
         </footer>
-      )}
+      ) : null}
 
       {pickerOpen && (
-        <WorkPricePicker
-          onClose={() => setPickerOpen(false)}
-          onPick={(name, price, priceItemId) => {
-            addItem.mutate({
-              orderId: order.id,
-              kind: "work",
-              name,
-              price,
-              priceItemId,
-            });
-          }}
+        <PricePicker
+          kind={pickerOpen}
+          touch={touch}
+          withCost={canRepairProfit}
+          vehicle={order.vehicle}
+          onClose={() => setPickerOpen(null)}
+          onPick={(i) =>
+            run(
+              addItem.mutateAsync({
+                orderId: order.id,
+                kind: pickerOpen,
+                name: i.name,
+                price: i.priceA ?? 0,
+                ...(pickerOpen === "part" && canRepairProfit ? { cost: i.cost ?? 0 } : {}),
+                priceItemId: i.id,
+              }),
+            )
+          }
         />
       )}
 
-      {payOpen && (
-        <PayDialog
-          total={order.totals.revenue}
-          onClose={() => setPayOpen(false)}
-          onPay={async (amount, method, cashAmount) => {
-            await pay.mutateAsync({ id: order.id, amount, method, cashAmount });
-            setPayOpen(false);
-            const { cash, transfer } = splitByMethod(amount, method, cashAmount);
-            toast.success(
-              "Оплата подтверждена",
-              method === "mixed"
-                ? `${money(amount)} · наличные ${money(cash)} + перевод ${money(transfer)}`
-                : `${money(amount)} · ${method === "cash" ? "наличные" : "перевод"}`,
-            );
-          }}
+      {pay && (
+        <ServicePaySheet
+          order={order}
+          initialMode={pay}
+          touch={touch}
+          onClose={() => setPay(null)}
+          onSubmit={submitPay}
+        />
+      )}
+
+      {docOpen && (
+        <DocumentPreviewModal
+          title={`Накладная по ремонту ${no}`}
+          htmlUrl={serviceInvoiceUrl(order.id, "html")}
+          docxUrl={serviceInvoiceUrl(order.id, "docx")}
+          docxFilename={`Накладная по ремонту ${String(order.number).padStart(4, "0")}.doc`}
+          onClose={() => setDocOpen(false)}
         />
       )}
     </div>
@@ -299,42 +493,254 @@ export function ServiceOrderCard({
 
 /* ------------------------------------------------------------------ */
 
-function Section({
-  icon,
-  title,
-  sum,
-  hint,
-  action,
-  children,
+/** Кто и с чем: правка имени, телефона, техники и жалобы (2.0.2). */
+function ClientBlock({
+  order,
+  touch,
+  editable,
+  onSaved,
 }: {
-  icon: React.ReactNode;
-  title: string;
-  sum: number;
-  hint?: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
+  order: ServiceOrder;
+  touch: boolean;
+  editable: boolean;
+  onSaved: () => void;
 }) {
-  return (
-    <section className="mb-4">
-      <div className="mb-2 flex items-center gap-2">
-        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-          {icon} {title}
+  const patchOrder = usePatchServiceOrder();
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(() => formOf(order));
+  const [error, setError] = useState<string | null>(null);
+
+  const start = () => {
+    setForm(formOf(order));
+    setError(null);
+    setEditing(true);
+  };
+  const valid = form.customerName.trim() && form.vehicle.trim();
+  const save = async () => {
+    if (!valid) {
+      setError("Имя клиента и техника — обязательны");
+      return;
+    }
+    try {
+      await patchOrder.mutateAsync({
+        id: order.id,
+        customerName: form.customerName.trim(),
+        customerPhone: form.customerPhone.trim() || null,
+        vehicle: form.vehicle.trim(),
+        vehicleNumber: form.vehicleNumber.trim() || null,
+        complaint: form.complaint.trim() || null,
+      });
+      setEditing(false);
+      onSaved();
+    } catch (e) {
+      const b = (e as ApiError)?.body as { message?: string } | undefined;
+      setError(b?.message ?? (e as Error).message);
+    }
+  };
+
+  const input = cn(
+    "w-full rounded-xl border border-border bg-surface px-3 text-ink outline-none focus:border-blue-600",
+    touch ? "h-12 text-[16px]" : "h-10 text-[13.5px]",
+  );
+
+  if (editing) {
+    return (
+      <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50/40 p-3" data-client-edit>
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <Field label="Клиент">
+            <input
+              autoFocus={!touch}
+              value={form.customerName}
+              onChange={(e) => setForm({ ...form, customerName: e.target.value })}
+              autoComplete="off"
+              className={input}
+            />
+          </Field>
+          <Field label="Телефон">
+            <input
+              value={form.customerPhone}
+              onChange={(e) => setForm({ ...form, customerPhone: e.target.value })}
+              inputMode="tel"
+              autoComplete="off"
+              placeholder="+7 ..."
+              className={input}
+            />
+          </Field>
+          <Field label="Техника">
+            <input
+              value={form.vehicle}
+              onChange={(e) => setForm({ ...form, vehicle: e.target.value })}
+              className={input}
+            />
+          </Field>
+          <Field label="Номер или VIN">
+            <input
+              value={form.vehicleNumber}
+              onChange={(e) => setForm({ ...form, vehicleNumber: e.target.value })}
+              className={input}
+            />
+          </Field>
+          <div className="sm:col-span-2">
+            <Field label="С чем приехали">
+              <textarea
+                value={form.complaint}
+                onChange={(e) => setForm({ ...form, complaint: e.target.value })}
+                rows={3}
+                className={cn(input, "h-auto resize-none py-2")}
+              />
+            </Field>
+          </div>
         </div>
-        <span className="text-[13px] font-bold tabular-nums text-ink">
-          {money(sum)}
-        </span>
-        <div className="ml-auto">{action}</div>
+        {error && <div className="mt-2 text-[12.5px] font-semibold text-red-ink">{error}</div>}
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className={cn("flex-1 rounded-xl bg-surface font-bold text-muted shadow-card-sm", touch ? "h-12 text-[14px]" : "h-10 text-[13px]")}
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={patchOrder.isPending}
+            className={cn("flex-[1.6] rounded-xl bg-ink font-bold text-white disabled:opacity-50", touch ? "h-12 text-[14px]" : "h-10 text-[13px]")}
+          >
+            {patchOrder.isPending ? "Сохраняем…" : "Сохранить"}
+          </button>
+        </div>
       </div>
-      {hint && <div className="mb-2 text-[11.5px] text-muted-2">{hint}</div>}
-      <div className="flex flex-col gap-1.5">{children}</div>
-    </section>
+    );
+  }
+
+  return (
+    <div className="mb-5 rounded-2xl bg-surface-soft px-4 py-3" data-client-block>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[15px] font-bold text-ink">{order.customerName}</div>
+          {order.customerPhone ? (
+            <a
+              href={`tel:${order.customerPhone.replace(/[^\d+]/g, "")}`}
+              className="mt-0.5 inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-blue-700"
+            >
+              <Phone size={13} /> {order.customerPhone}
+            </a>
+          ) : (
+            <div className="mt-0.5 text-[12.5px] text-muted-2">телефон не указан</div>
+          )}
+          <div className="mt-1.5 text-[13px] text-ink-2">
+            {order.vehicle}
+            {order.vehicleNumber ? <span className="text-muted"> · {order.vehicleNumber}</span> : null}
+          </div>
+        </div>
+        {editable && (
+          <button
+            type="button"
+            onClick={start}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-surface px-3 font-bold text-ink shadow-card-sm hover:bg-border",
+              touch ? "h-11 text-[13.5px]" : "h-9 text-[12.5px]",
+            )}
+          >
+            <Pencil size={14} /> Изменить
+          </button>
+        )}
+      </div>
+      {order.complaint && (
+        <div className="mt-2.5 border-t border-border pt-2.5">
+          <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">С чем приехали</div>
+          <div className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-ink-2">{order.complaint}</div>
+        </div>
+      )}
+    </div>
   );
 }
 
-function Empty({ text }: { text: string }) {
+function formOf(o: ServiceOrder) {
+  return {
+    customerName: o.customerName,
+    customerPhone: o.customerPhone ?? "",
+    vehicle: o.vehicle,
+    vehicleNumber: o.vehicleNumber ?? "",
+    complaint: o.complaint ?? "",
+  };
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-border px-3 py-3 text-[12.5px] text-muted-2">
-      {text}
+    <label className="flex flex-col gap-1">
+      <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+/** Деньги: к оплате → аванс → остаток; прибыль — с правом. */
+function MoneyBlock({
+  order,
+  showProfit,
+  onRefund,
+}: {
+  order: ServiceOrder;
+  showProfit: boolean;
+  onRefund: () => void;
+}) {
+  const t = order.totals;
+  const pays = order.payments.filter((p) => p.amount !== 0 || p.discount > 0);
+  return (
+    <div className="rounded-2xl bg-surface-soft p-4" data-money-block>
+      <Row label="Работы" value={money(t.works)} />
+      <Row label="Запчасти" value={money(t.parts)} />
+      {t.discount > 0 && <Row label="Скидка" value={`− ${money(t.discount)}`} />}
+      <div className="my-2 h-px bg-border" />
+      <Row label="К оплате" value={money(t.due)} strong />
+      {pays.map((p) => (
+        <Row
+          key={p.id}
+          label={`${p.kind === "advance" ? "Аванс" : p.kind === "refund" ? "Возврат" : "Оплата"} · ${fmtDay(p.paidAt)} · ${METHOD_LABEL[p.method] ?? p.method}`}
+          value={`${p.amount < 0 ? "+ " : "− "}${money(Math.abs(p.amount))}`}
+          tone={p.amount < 0 ? "bad" : "good"}
+        />
+      ))}
+      {order.status === "paid" ? (
+        <div className="mt-2 flex items-center gap-2 rounded-xl bg-green-soft px-3 py-2 text-[13px] font-bold text-green-ink">
+          <CheckCircle2 size={16} /> Оплачено полностью · {money(t.paid)}
+          {order.paidAt ? ` · ${fmtDay(order.paidAt)}` : ""}
+        </div>
+      ) : order.status !== "cancelled" ? (
+        <div className="mt-2 flex items-baseline justify-between gap-3 rounded-xl bg-surface px-3 py-2.5 shadow-card-sm">
+          <span className="text-[13.5px] font-bold text-ink">Остаток к оплате</span>
+          <span
+            className={cn(
+              "font-display text-[22px] font-extrabold tabular-nums",
+              t.left > 0 ? "text-orange-ink" : "text-green-ink",
+            )}
+            data-left={t.left}
+          >
+            {money(t.left)}
+          </span>
+        </div>
+      ) : null}
+      {t.overpaid > 0 && order.status !== "cancelled" && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-red-soft px-3 py-2 text-[12.5px] text-red-ink">
+          <span className="min-w-0 flex-1">
+            Внесено больше суммы ремонта на <b>{money(t.overpaid)}</b> — позиции стали дешевле. Верните разницу клиенту.
+          </span>
+          <button
+            type="button"
+            onClick={onRefund}
+            className="h-10 rounded-xl bg-surface px-3 text-[12.5px] font-bold text-red-ink shadow-card-sm"
+          >
+            Вернул разницу
+          </button>
+        </div>
+      )}
+      {showProfit && t.cost !== undefined && t.profit !== undefined && (
+        <div className="mt-3 border-t border-border pt-2">
+          <Row label="Закуп запчастей" value={`− ${money(t.cost)}`} muted />
+          <Row label="Прибыль" value={money(t.profit)} strong tone={t.profit >= 0 ? "good" : "bad"} />
+        </div>
+      )}
     </div>
   );
 }
@@ -354,17 +760,13 @@ function Row({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-0.5">
-      <span
-        className={cn(
-          strong ? "text-[13px] font-bold text-ink" : "text-[12.5px] text-muted",
-        )}
-      >
+      <span className={cn("min-w-0", strong ? "text-[13.5px] font-bold text-ink" : "text-[12.5px] text-muted")}>
         {label}
       </span>
       <span
         className={cn(
-          "tabular-nums",
-          strong ? "text-[15px] font-extrabold" : "text-[13px]",
+          "shrink-0 tabular-nums",
+          strong ? "text-[15px] font-extrabold" : "text-[13px] font-semibold",
           muted && "text-muted-2",
           tone === "good" && "text-green-ink",
           tone === "bad" && "text-red-ink",
@@ -373,311 +775,6 @@ function Row({
       >
         {value}
       </span>
-    </div>
-  );
-}
-
-function ItemRow({
-  item,
-  locked,
-  withCost,
-  onPatch,
-  onDelete,
-}: {
-  item: ServiceOrderItem;
-  locked: boolean;
-  withCost?: boolean;
-  onPatch: (b: { qty?: number; price?: number; cost?: number }) => void;
-  onDelete: () => void;
-}) {
-  // На телефоне название занимает свою строку — иначе оно схлопывается
-  // в «Замена в…», и непонятно, за что деньги.
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl bg-surface px-3 py-2 shadow-card-sm">
-      <span className="w-full min-w-0 truncate text-[13px] font-semibold text-ink sm:w-auto sm:flex-1">
-        {item.name}
-      </span>
-      <NumInput
-        title="Количество"
-        value={item.qty}
-        disabled={locked}
-        width={52}
-        onChange={(v) => onPatch({ qty: Math.max(1, v) })}
-      />
-      {withCost && (
-        <NumInput
-          title="Закуп за штуку"
-          value={item.cost}
-          disabled={locked}
-          width={82}
-          suffix="закуп"
-          onChange={(v) => onPatch({ cost: v })}
-        />
-      )}
-      <NumInput
-        title="Цена клиенту за штуку"
-        value={item.price}
-        disabled={locked}
-        width={92}
-        suffix="₽"
-        onChange={(v) => onPatch({ price: v })}
-      />
-      <span className="ml-auto shrink-0 text-right text-[13px] font-bold tabular-nums text-ink sm:ml-0 sm:w-[92px]">
-        {money(item.price * item.qty)}
-      </span>
-      {!locked && (
-        <button
-          type="button"
-          title="Убрать"
-          onClick={onDelete}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-2 hover:bg-red-soft hover:text-red-ink"
-        >
-          <Trash2 size={13} />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function NumInput({
-  value,
-  onChange,
-  disabled,
-  width,
-  title,
-  suffix,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  disabled?: boolean;
-  width: number;
-  title: string;
-  suffix?: string;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  return (
-    <span className="relative shrink-0" style={{ width }}>
-      <input
-        title={title}
-        inputMode="numeric"
-        disabled={disabled}
-        value={draft ?? String(value)}
-        onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
-        onBlur={() => {
-          if (draft != null && draft !== String(value)) onChange(Number(draft || 0));
-          setDraft(null);
-        }}
-        className="h-8 w-full rounded-lg border border-border bg-surface px-2 text-right text-[12.5px] font-bold tabular-nums text-ink outline-none focus:border-blue-600 disabled:bg-surface-soft disabled:text-muted"
-      />
-      {suffix && (
-        <span className="pointer-events-none absolute -top-1.5 left-1.5 rounded bg-surface px-1 text-[9px] font-bold uppercase text-muted-2">
-          {suffix}
-        </span>
-      )}
-    </span>
-  );
-}
-
-/** Свободная строка: вписал название и цену — добавилось. */
-function FreeRow({
-  placeholder,
-  withCost,
-  onAdd,
-}: {
-  placeholder: string;
-  withCost: boolean;
-  onAdd: (v: { name: string; qty: number; price: number; cost: number }) => void;
-}) {
-  const [name, setName] = useState("");
-  const [qty, setQty] = useState("1");
-  const [cost, setCost] = useState("");
-  const [price, setPrice] = useState("");
-
-  const submit = () => {
-    if (!name.trim()) return;
-    const c = Number(cost || 0);
-    // Не поставили цену клиенту — значит, продаём по закупу.
-    const p = price ? Number(price) : withCost ? c : 0;
-    onAdd({ name: name.trim(), qty: Math.max(1, Number(qty || 1)), price: p, cost: c });
-    setName("");
-    setQty("1");
-    setCost("");
-    setPrice("");
-  };
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-dashed border-border px-3 py-2">
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && submit()}
-        placeholder={placeholder}
-        className="w-full min-w-0 bg-transparent text-[13px] text-ink outline-none placeholder:text-muted-2 sm:w-auto sm:flex-1"
-      />
-      <input
-        value={qty}
-        onChange={(e) => setQty(e.target.value.replace(/[^\d]/g, ""))}
-        title="Количество"
-        className="h-8 w-[52px] shrink-0 rounded-lg border border-border bg-surface px-2 text-right text-[12.5px] font-bold tabular-nums outline-none focus:border-blue-600"
-      />
-      {withCost && (
-        <input
-          value={cost}
-          onChange={(e) => setCost(e.target.value.replace(/[^\d]/g, ""))}
-          placeholder="закуп"
-          title="Закуп за штуку"
-          className="h-8 w-[82px] shrink-0 rounded-lg border border-border bg-surface px-2 text-right text-[12.5px] font-bold tabular-nums outline-none focus:border-blue-600"
-        />
-      )}
-      <input
-        value={price}
-        onChange={(e) => setPrice(e.target.value.replace(/[^\d]/g, ""))}
-        onKeyDown={(e) => e.key === "Enter" && submit()}
-        placeholder="₽"
-        title="Цена клиенту за штуку"
-        className="h-8 w-[92px] shrink-0 rounded-lg border border-border bg-surface px-2 text-right text-[12.5px] font-bold tabular-nums outline-none focus:border-blue-600"
-      />
-      <button
-        type="button"
-        onClick={submit}
-        disabled={!name.trim()}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ink text-white disabled:opacity-30"
-      >
-        <Plus size={14} />
-      </button>
-    </div>
-  );
-}
-
-/** Выбор работы из прайса — тот же прайс, что и у ущерба, только вид «работы». */
-function WorkPricePicker({
-  onClose,
-  onPick,
-}: {
-  onClose: () => void;
-  onPick: (name: string, price: number, priceItemId: number) => void;
-}) {
-  const { data } = usePriceList("service");
-  const [q, setQ] = useState("");
-  const groups = data?.groups ?? [];
-  const needle = q.trim().toLowerCase();
-
-  return (
-    <div className="absolute inset-0 z-30 flex flex-col bg-surface">
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
-        <input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Найти работу в прайсе"
-          className="h-9 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-[13px] outline-none focus:border-blue-600"
-        />
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-2 hover:bg-surface-soft hover:text-ink"
-        >
-          <X size={16} />
-        </button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {groups.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-[12.5px] text-muted">
-            Прайс работ пока пуст. Он заводится в «Документах» →
-            «Прейскурант» → «Прайс работ»: строка «что делали» и цена по
-            умолчанию.
-          </div>
-        )}
-        {groups.map((g) => {
-          const items = g.items.filter(
-            (i) => !needle || i.name.toLowerCase().includes(needle),
-          );
-          if (items.length === 0) return null;
-          return (
-            <div key={g.id} className="mb-4">
-              <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-                {g.name}
-              </div>
-              <div className="flex flex-col gap-1">
-                {items.map((i) => (
-                  <button
-                    key={i.id}
-                    type="button"
-                    onClick={() => {
-                      onPick(i.name, i.priceA ?? 0, i.id);
-                      onClose();
-                    }}
-                    className="flex items-center gap-2 rounded-xl px-3 py-2 text-left hover:bg-blue-50"
-                  >
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
-                      {i.name}
-                    </span>
-                    <span className="shrink-0 text-[13px] font-bold tabular-nums text-ink-2">
-                      {money(i.priceA ?? 0)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function PayDialog({
-  total,
-  onClose,
-  onPay,
-}: {
-  total: number;
-  onClose: () => void;
-  onPay: (amount: number, method: PayMethod, cashAmount: number) => void;
-}) {
-  const [amount, setAmount] = useState(String(total));
-  const [method, setMethod] = useState<PayMethod>("cash");
-  const [cash, setCash] = useState(0);
-  const sum = Number(amount || 0);
-  return (
-    <div className="absolute inset-0 z-40 flex items-end justify-center bg-ink/30 p-4 sm:items-center">
-      <div className="w-full max-w-[400px] rounded-3xl bg-surface p-4 shadow-card-lg">
-        <div className="font-display text-[17px] font-extrabold text-ink">
-          Подтвердить оплату
-        </div>
-        <div className="mt-1 text-[12.5px] text-muted">
-          Отметим, что деньги за ремонт получены. Сумма попадёт в выручку блока,
-          доли наличных и перевода — в статистику.
-        </div>
-        <input
-          autoFocus
-          inputMode="numeric"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
-          className="mt-3 h-12 w-full rounded-xl border border-border bg-surface px-3 text-right font-display text-[22px] font-extrabold tabular-nums outline-none focus:border-blue-600"
-        />
-        {/* Способ расчёта — тот же компонент, что в выкупах, продажах и выплатах */}
-        <div className="mt-3">
-          <PayMethodPicker total={sum} method={method} onMethod={setMethod} cash={cash} onCash={setCash} />
-        </div>
-        <div className="mt-3 flex gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-11 flex-1 rounded-xl bg-surface-soft text-[13px] font-bold text-muted hover:text-ink"
-          >
-            Отмена
-          </button>
-          <button
-            type="button"
-            onClick={() => onPay(sum, method, cash)}
-            disabled={sum <= 0}
-            className="h-11 flex-[1.4] rounded-xl bg-green text-[13px] font-bold text-white disabled:opacity-40"
-          >
-            Оплата прошла
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import {
   MODEL_LABEL,
   PAYMENT_LABEL,
+  rentalPaymentLabel,
   ratePeriodForDays,
   TARIFF_PERIOD_LABEL,
   type Rental,
@@ -477,7 +478,7 @@ export function TermsTab({
           <InfoCell
             icon={CreditCard}
             label="Оплата"
-            value={PAYMENT_LABEL[rental.paymentMethod]}
+            value={rentalPaymentLabel(rental)}
           />
           {/* v0.5.6: залог — кастомная ячейка вместо InfoCell, потому
               что нужно:

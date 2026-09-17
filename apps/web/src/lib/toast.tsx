@@ -18,6 +18,7 @@ import {
 } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   Info,
   Undo2,
@@ -39,6 +40,8 @@ export type ToastAction = {
    *  (напр. реальное удаление файла с сервера). Учитывает паузу таймера на
    *  hover, т.к. срабатывает на фактическом закрытии тоста. */
   onExpire?: () => void | Promise<void>;
+  /** «open» — переход («Открыть»), а не отмена. */
+  kind?: "undo" | "open";
 };
 
 export type Toast = {
@@ -96,11 +99,14 @@ export const toast = {
     /** Окно отмены прошло (таймер/крестик, не «Отменить») — коммит операции. */
     onExpire?: () => void | Promise<void>;
     ttl?: number;
+    /** «open» — кнопка перехода («Открыть»): без значка отмены (2.0.2). */
+    actionKind?: "undo" | "open";
   }) =>
     push(opts.kind ?? "success", opts.title, opts.message, opts.ttl ?? 10000, {
       label: opts.actionLabel ?? "Отменить",
       onAct: opts.onAction,
       onExpire: opts.onExpire,
+      kind: opts.actionKind,
     }),
   dismiss,
 };
@@ -120,8 +126,11 @@ export function useToasts(): Toast[] {
 export function ToastContainer() {
   const toasts = useToasts();
   return (
-    <div className="pointer-events-none fixed left-3 right-3 top-3 z-[1000] flex flex-col gap-2 sm:bottom-5 sm:left-auto sm:right-5 sm:top-auto sm:w-full sm:max-w-[440px] sm:gap-3">
+    <div className="toast-stack pointer-events-none fixed left-3 right-3 top-3 z-[1000] flex flex-col gap-2 sm:bottom-5 sm:left-auto sm:right-5 sm:top-auto sm:w-full sm:max-w-[440px] sm:gap-3">
       <style>{`
+/* 2.0.2: у открытой панели с кнопками внизу (карточка ремонта) уведомление
+   встаёт над её кнопками, а не закрывает «Принять оплату» на 10 секунд. */
+@media(min-width:640px){body:has([data-toast-lift]) .toast-stack{bottom:84px}}
 @keyframes toastSpringIn{0%{opacity:0;transform:translateY(18px) scale(.9)}55%{opacity:1;transform:translateY(-3px) scale(1.015)}100%{transform:translateY(0) scale(1)}}
 @keyframes toastSpringInTop{0%{opacity:0;transform:translateY(-18px) scale(.94)}55%{opacity:1;transform:translateY(3px) scale(1.012)}100%{transform:translateY(0) scale(1)}}
 @keyframes toastBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}
@@ -256,7 +265,15 @@ function ToastRow({ toast: t }: { toast: Toast }) {
               disabled={busy}
               className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-surface-soft px-3 py-1.5 text-[12.5px] font-bold text-ink ring-1 ring-inset ring-border transition-colors hover:bg-border hover:text-ink active:scale-[0.98] disabled:opacity-60 sm:mt-2.5 sm:px-3.5 sm:py-2 sm:text-[13.5px]"
             >
-              <Undo2 size={15} /> {busy ? "Отменяем…" : t.action.label}
+              {t.action.kind === "open" ? (
+                <>
+                  {t.action.label} <ArrowRight size={15} />
+                </>
+              ) : (
+                <>
+                  <Undo2 size={15} /> {busy ? "Отменяем…" : t.action.label}
+                </>
+              )}
             </button>
           )}
         </div>

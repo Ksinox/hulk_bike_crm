@@ -25,6 +25,7 @@ import {
 import { toast } from "@/lib/toast";
 import {
   PAYMENT_LABEL,
+  rentalPaymentLabel,
   STATUS_LABEL as RENTAL_STATUS_LABEL,
   type Rental,
 } from "@/lib/mock/rentals";
@@ -191,7 +192,7 @@ export function RentalsTab({ client }: { client: Client }) {
                   {r.deposit > 0 ? `${fmt(r.deposit)} ₽` : "—"}
                 </td>
                 <td className="px-3 py-2 text-muted">
-                  {PAYMENT_LABEL[r.paymentMethod]}
+                  {r.paymentSplit ? "смешанно" : PAYMENT_LABEL[r.paymentMethod]}
                 </td>
               </tr>
             );
@@ -251,7 +252,7 @@ function MobileRentalRow({ r }: { r: Rental }) {
       {open && (
         <div className="space-y-2 border-t border-border px-3 py-2.5">
           <DetailLine label="Залог" value={r.deposit > 0 ? `${fmt(r.deposit)} ₽` : "—"} />
-          <DetailLine label="Оплата" value={PAYMENT_LABEL[r.paymentMethod]} />
+          <DetailLine label="Оплата" value={rentalPaymentLabel(r)} />
           {r.note && <DetailLine label="Заметка" value={r.note} />}
           <button
             type="button"

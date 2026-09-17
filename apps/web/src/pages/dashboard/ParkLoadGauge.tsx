@@ -266,7 +266,7 @@ export function ParkLoadGauge({
           </span>
           <span className="relative mt-1 block text-[12.5px] font-bold leading-tight text-ink">
             {active} в аренде
-            <span className="block text-[10.5px] font-medium text-muted-2">
+            <span className="block text-[10.5px] font-medium text-muted-2" title="В парке — техника аренды, в том числе в ремонте и после ДТП. Разборка не считается.">
               из {rentable} в парке
             </span>
           </span>
@@ -433,9 +433,10 @@ export function ParkLoadGauge({
               "mt-0.5 text-muted-2",
               compact ? "text-[10px]" : "text-[11px]",
             )}
+            title="В парке — техника аренды, в том числе в ремонте и после ДТП. Разборка не считается."
           >
             {/* Правка 31.08: подпись «всего в парке» вместо «доступных» —
-                знаменатель теперь вся техника арендного режима. */}
+                знаменатель — техника арендного режима (без разборки, 2.0.2). */}
             из {rentable} в парке
           </div>
           {/* Пункт 11: разделение активных на скутеры и электро. */}

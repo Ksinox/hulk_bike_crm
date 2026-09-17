@@ -564,6 +564,11 @@ export const rentals = pgTable(
     sum: integer("sum").notNull(), // rate * days
 
     paymentMethod: paymentMethodEnum("payment_method").notNull(),
+    /**
+     * Смешанная оплата при открытии (2.0.2): доли наличных и перевода.
+     * paymentMethod при этом — способ большей доли (его берут продления).
+     */
+    paymentSplit: jsonb("payment_split").$type<{ cash: number; transfer: number } | null>(),
 
     // Контроль выдачи
     contractUploaded: boolean("contract_uploaded").notNull().default(false),
@@ -1184,7 +1189,8 @@ export const priceGroups = pgTable(
     hasTwoPrices: boolean("has_two_prices").notNull().default(false),
     /**
      * 'damage' — прайс ущерба (по моделям нашей техники),
-     * 'service' — прайс работ для сторонних ремонтов (модели не нужны).
+     * 'service' — прайс работ для сторонних ремонтов (модели не нужны),
+     * 'part' — прайс запчастей для сторонних ремонтов (2.0.2, с закупом).
      */
     kind: text("kind").notNull().default("damage"),
     priceALabel: text("price_a_label").notNull().default("Цена"),
@@ -1212,6 +1218,12 @@ export const priceItems = pgTable(
     /** Цена в ₽. Nullable если для конкретной модели позиция не применяется. */
     priceA: integer("price_a"),
     priceB: integer("price_b"),
+    /** Закуп за штуку — у позиций прайса запчастей (2.0.2). */
+    cost: integer("cost"),
+    /** Каталожный код (2.0.2) — постоянный, одинаковый на всех базах. */
+    code: text("code"),
+    /** Ключ картинки детали: /parts/<imageKey>.webp (генерация по плану). */
+    imageKey: text("image_key"),
     sortOrder: integer("sort_order").notNull().default(0),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -2553,6 +2565,11 @@ export const serviceOrders = pgTable(
       () => users.id,
       { onDelete: "set null" },
     ),
+    /** Скидка при расчёте (2.0.2): к оплате = работы + запчасти − скидка. */
+    discount: integer("discount").notNull().default(0),
+    /** Статус до отмены — «Вернуть в работу» возвращает его (2.0.2). */
+    statusBeforeCancel: text("status_before_cancel"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdByUserId: bigint("created_by_user_id", { mode: "number" }).references(
       () => users.id,
       { onDelete: "set null" },
@@ -2598,6 +2615,44 @@ export const serviceOrderItems = pgTable(
   },
   (t) => ({
     orderIdx: index("service_order_items_order_idx").on(t.orderId),
+  }),
+);
+
+/**
+ * Деньги по стороннему ремонту (2.0.2): аванс, расчёт при выдаче, возврат.
+ * Выручка блока — сумма этих строк по дате оплаты, а не цена наряда.
+ */
+export const serviceOrderPayments = pgTable(
+  "service_order_payments",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    orderId: bigint("order_id", { mode: "number" })
+      .notNull()
+      .references(() => serviceOrders.id, { onDelete: "cascade" }),
+    /** 'advance' | 'payment' | 'refund' (у возврата сумма отрицательная) */
+    kind: text("kind").notNull(),
+    amount: integer("amount").notNull(),
+    /** 'cash' | 'transfer' | 'mixed' */
+    method: text("method").notNull(),
+    cashAmount: integer("cash_amount").notNull().default(0),
+    transferAmount: integer("transfer_amount").notNull().default(0),
+    /** Скидка, данная этим расчётом, — снимается при отмене расчёта. */
+    discount: integer("discount").notNull().default(0),
+    paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
+    note: text("note"),
+    /** Статус наряда до платежа — отмена платежа возвращает его. */
+    prevStatus: text("prev_status"),
+    createdByUserId: bigint("created_by_user_id", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    orderIdx: index("service_order_payments_order_idx").on(t.orderId),
+    paidIdx: index("service_order_payments_paid_idx").on(t.paidAt),
   }),
 );
 
