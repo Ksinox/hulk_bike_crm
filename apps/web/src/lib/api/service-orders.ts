@@ -108,7 +108,9 @@ export function useServiceOrders() {
  */
 function useSettle() {
   const qc = useQueryClient();
-  return (order?: ServiceOrder | null) => {
+  return (order?: ServiceOrder | null, savedToPrice?: SavedToPrice[]) => {
+    // Своя позиция ушла в прайс — список прайса обновить.
+    if (savedToPrice?.length) void qc.invalidateQueries({ queryKey: ["price-list"] });
     if (order) {
       qc.setQueryData<{ orders: ServiceOrder[] }>(key, (prev) => {
         if (!prev) return prev;
@@ -135,6 +137,8 @@ export type NewServiceItem = {
   price?: number;
   cost?: number;
   priceItemId?: number | null;
+  /** Своя позиция — сохранить в прайс работ или запчастей (2.0.2). */
+  saveToPrice?: boolean;
 };
 
 export type NewServiceOrder = {
@@ -150,13 +154,15 @@ export type NewServiceOrder = {
   advance?: { amount: number; method: PayMethodValue; cashAmount?: number };
 };
 
-type OrderResp = { order: ServiceOrder; paymentId?: number };
+export type SavedToPrice = { name: string; kind: "service" | "part"; created: boolean };
+
+type OrderResp = { order: ServiceOrder; paymentId?: number; savedToPrice?: SavedToPrice[] };
 
 export function useCreateServiceOrder() {
   const settle = useSettle();
   return useMutation({
     mutationFn: (body: NewServiceOrder) => api.post<OrderResp>("/api/service-orders", body),
-    onSuccess: (r) => settle(r.order),
+    onSuccess: (r) => settle(r.order, r.savedToPrice),
   });
 }
 
@@ -174,7 +180,7 @@ export function useAddServiceOrderItem() {
   return useMutation({
     mutationFn: ({ orderId, ...body }: { orderId: number } & NewServiceItem) =>
       api.post<OrderResp>(`/api/service-orders/${orderId}/items`, body),
-    onSuccess: (r) => settle(r.order),
+    onSuccess: (r) => settle(r.order, r.savedToPrice),
   });
 }
 

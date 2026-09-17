@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import { Minus, Package, Plus, Search, Trash2, Wrench, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { BookmarkPlus, Minus, Package, Plus, Search, Trash2, Wrench, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { usePriceList } from "@/lib/api/price-list";
+import { priceZones, splitPriceGroup, usePriceList, type ApiPriceItem } from "@/lib/api/price-list";
+import { matchWords, suggestKey, SuggestInput } from "@/components/SuggestInput";
+import { Switch } from "@/components/ui/switch";
 import { digits, money } from "./serviceOrderUi";
 
 /**
@@ -12,7 +14,21 @@ import { digits, money } from "./serviceOrderUi";
  * Под палец (телефон, планшет): название на всю ширину, ниже — количество
  * кнопками − / +, закуп и цена полями высотой 44px. На компьютере строка
  * одна и плотная: вводят с клавиатуры, Enter — в следующее поле.
+ *
+ * 2.0.2: и работы, и запчасти берутся из своего прайса («Из прайса» или
+ * подсказкой по первым буквам названия). Своя позиция по умолчанию
+ * сохраняется в прайс — в следующий раз её выберут из списка.
  */
+
+/** Новая строка: что добавить и надо ли сохранить её в прайс. */
+export type NewRowValue = {
+  name: string;
+  qty: number;
+  price: number;
+  cost: number;
+  priceItemId: number | null;
+  saveToPrice: boolean;
+};
 
 export type EditorItem = {
   key: string | number;
@@ -44,7 +60,7 @@ export function ItemsSection({
   withCost: boolean;
   onPatch: (key: EditorItem["key"], patch: ItemPatch) => void;
   onRemove: (key: EditorItem["key"]) => void;
-  onAdd: (v: { name: string; qty: number; price: number; cost: number }) => void;
+  onAdd: (v: NewRowValue) => void;
   onPickFromPrice?: () => void;
 }) {
   const isWork = kind === "work";
@@ -94,9 +110,10 @@ export function ItemsSection({
         ))}
         {!locked && (
           <AddRow
+            kind={kind}
             touch={touch}
             withCost={costOn}
-            placeholder={isWork ? "Своя работа — название" : "Запчасть — наименование"}
+            placeholder={isWork ? "Своя работа — название" : "Запчасть — начните писать название"}
             onAdd={onAdd}
           />
         )}
@@ -214,21 +231,46 @@ function ItemRow({
 }
 
 function AddRow({
+  kind,
   touch,
   withCost,
   placeholder,
   onAdd,
 }: {
+  kind: "work" | "part";
   touch: boolean;
   withCost: boolean;
   placeholder: string;
-  onAdd: (v: { name: string; qty: number; price: number; cost: number }) => void;
+  onAdd: (v: NewRowValue) => void;
 }) {
   const [name, setName] = useState("");
   const [qty, setQty] = useState(1);
   const [cost, setCost] = useState("");
   const [price, setPrice] = useState("");
+  const [save, setSave] = useState(true);
   const nameRef = useRef<HTMLInputElement>(null);
+
+  // Прайс того же вида: подсказки по названию и цена по выбору.
+  const priceKind = kind === "work" ? "service" : "part";
+  const { data } = usePriceList(priceKind);
+  const byKey = useMemo(() => {
+    const m = new Map<string, ApiPriceItem>();
+    for (const g of data?.groups ?? []) for (const i of g.items) if (!m.has(suggestKey(i.name))) m.set(suggestKey(i.name), i);
+    return m;
+  }, [data]);
+  const names = useMemo(() => [...byKey.values()].map((i) => i.name), [byKey]);
+  const match = name.trim() ? byKey.get(suggestKey(name)) ?? null : null;
+  const isNew = name.trim().length > 0 && !match;
+
+  const pickName = (v: string) => {
+    setName(v);
+    const hit = byKey.get(suggestKey(v));
+    // Выбрали из прайса — цена и закуп подставляются, их можно поправить.
+    if (hit && v !== name) {
+      if (hit.priceA != null) setPrice(String(hit.priceA));
+      if (withCost && hit.cost != null) setCost(String(hit.cost));
+    }
+  };
 
   const ready = name.trim().length > 0;
   const submit = () => {
@@ -239,7 +281,14 @@ function AddRow({
     const c = Number(cost || 0);
     // Не поставили цену клиенту — значит, продаём по закупу.
     const p = price ? Number(price) : withCost ? c : 0;
-    onAdd({ name: name.trim(), qty: Math.max(1, qty), price: p, cost: c });
+    onAdd({
+      name: match?.name ?? name.trim(),
+      qty: Math.max(1, qty),
+      price: p,
+      cost: c,
+      priceItemId: match?.id ?? null,
+      saveToPrice: isNew && save,
+    });
     setName("");
     setQty(1);
     setCost("");
@@ -259,19 +308,62 @@ function AddRow({
       ? "h-11 px-2.5 text-right text-[15px] font-bold placeholder:text-[13px]"
       : "h-9 px-3 text-right text-[12.5px] font-bold",
   );
+  const priceName = kind === "work" ? "прайс работ" : "прайс запчастей";
+
+  const nameInput = (
+    <SuggestInput
+      ref={nameRef}
+      value={name}
+      onValueChange={pickName}
+      suggestions={names}
+      touch={touch}
+      minChars={1}
+      limit={touch ? 6 : 8}
+      heading={kind === "work" ? "Из прайса работ" : "Из прайса запчастей"}
+      meta={(s) => {
+        const hit = byKey.get(suggestKey(s));
+        return hit?.priceA != null ? money(hit.priceA) : null;
+      }}
+      onKeyDown={enter}
+      placeholder={placeholder}
+      enterKeyHint="next"
+      data-add-name={kind}
+      className={
+        touch
+          ? "h-11 w-full rounded-xl border border-border bg-surface px-3 text-[15px] text-ink outline-none placeholder:text-muted-2 focus:border-blue-600"
+          : "h-9 min-w-0 flex-1 bg-transparent px-1 text-[13px] text-ink outline-none placeholder:text-muted-2"
+      }
+    />
+  );
+
+  // Строка-состояние под полем: из прайса или новая (и сохранять ли её).
+  const status = !ready ? null : match ? (
+    <div className="mt-1.5 flex items-center gap-1.5 px-1 text-[12px] font-semibold text-blue-700">
+      <BookmarkPlus size={13} /> Из {priceName}
+    </div>
+  ) : (
+    <label
+      className={cn("mt-1.5 flex cursor-pointer items-center gap-2 px-1 text-[12px] text-ink-2", touch && "min-h-11")}
+      data-save-to-price
+    >
+      <Switch checked={save} onChange={setSave} label={`Сохранить в ${priceName}`} />
+      <span>
+        {save ? (
+          <>
+            Новая — сохраним в <b>{priceName}</b>
+          </>
+        ) : (
+          <>Только в этот ремонт</>
+        )}
+      </span>
+    </label>
+  );
 
   if (touch) {
     return (
-      <div className="rounded-2xl border border-dashed border-border-strong p-2.5">
-        <input
-          ref={nameRef}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={enter}
-          placeholder={placeholder}
-          enterKeyHint="next"
-          className="h-11 w-full rounded-xl border border-border bg-surface px-3 text-[15px] text-ink outline-none placeholder:text-muted-2 focus:border-blue-600"
-        />
+      <div className="rounded-2xl border border-dashed border-border-strong p-2.5" data-add-row={kind}>
+        {nameInput}
+        {status}
         <div
           className={cn(
             "mt-2 grid items-end gap-2",
@@ -318,47 +410,43 @@ function AddRow({
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-xl border border-dashed border-border-strong px-2.5 py-1.5">
-      <input
-        ref={nameRef}
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={enter}
-        placeholder={placeholder}
-        className="h-9 min-w-0 flex-1 bg-transparent px-1 text-[13px] text-ink outline-none placeholder:text-muted-2"
-      />
-      <Stepper value={qty} onChange={setQty} />
-      {withCost && (
+    <div className="rounded-xl border border-dashed border-border-strong px-2.5 py-1.5" data-add-row={kind}>
+      <div className="flex items-center gap-2">
+        {nameInput}
+        <Stepper value={qty} onChange={setQty} />
+        {withCost && (
+          <input
+            inputMode="numeric"
+            value={cost}
+            onChange={(e) => setCost(digits(e.target.value))}
+            onKeyDown={enter}
+            placeholder="закуп"
+            title="Закуп за штуку"
+            className={cn(inputCls, "w-[88px]")}
+          />
+        )}
         <input
           inputMode="numeric"
-          value={cost}
-          onChange={(e) => setCost(digits(e.target.value))}
+          value={price}
+          onChange={(e) => setPrice(digits(e.target.value))}
           onKeyDown={enter}
-          placeholder="закуп"
-          title="Закуп за штуку"
-          className={cn(inputCls, "w-[88px]")}
+          placeholder="цена"
+          title="Цена клиенту за штуку"
+          className={cn(inputCls, "w-[96px]")}
         />
-      )}
-      <input
-        inputMode="numeric"
-        value={price}
-        onChange={(e) => setPrice(digits(e.target.value))}
-        onKeyDown={enter}
-        placeholder="цена"
-        title="Цена клиенту за штуку"
-        className={cn(inputCls, "w-[96px]")}
-      />
-      <span className="w-[92px] shrink-0" />
-      <button
-        type="button"
-        onClick={submit}
-        disabled={!ready}
-        title="Добавить"
-        aria-label="Добавить"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ink text-white disabled:opacity-30"
-      >
-        <Plus size={15} />
-      </button>
+        <span className="w-[92px] shrink-0" />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!ready}
+          title="Добавить"
+          aria-label="Добавить"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ink text-white disabled:opacity-30"
+        >
+          <Plus size={15} />
+        </button>
+      </div>
+      {status}
     </div>
   );
 }
@@ -524,23 +612,31 @@ function TextField({
 }
 
 /**
- * Выбор работы из прайса — тот же прейскурант, что у ущерба, вид «работы».
- * Накрывает панель целиком; на телефоне строки по 52px.
+ * Выбор из прайса — работы или запчасти (2.0.2). Накрывает панель целиком;
+ * на телефоне строки по 52px. Можно выбрать несколько подряд.
  */
-export function WorkPricePicker({
+export function PricePicker({
+  kind,
   touch,
+  withCost,
   onClose,
   onPick,
 }: {
+  kind: "work" | "part";
   touch: boolean;
+  /** Показать закуп (запчасти, есть право на прибыль ремонтов). */
+  withCost?: boolean;
   onClose: () => void;
-  onPick: (name: string, price: number, priceItemId: number) => void;
+  onPick: (item: ApiPriceItem) => void;
 }) {
-  const { data, isLoading } = usePriceList("service");
+  const { data, isLoading } = usePriceList(kind === "work" ? "service" : "part");
   const [q, setQ] = useState("");
+  const [zone, setZone] = useState<string | null>(null);
   const [picked, setPicked] = useState<number[]>([]);
   const groups = data?.groups ?? [];
-  const needle = q.trim().toLowerCase();
+  const needle = suggestKey(q);
+  const isWork = kind === "work";
+  const zones = useMemo(() => priceZones(groups), [groups]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -553,8 +649,18 @@ export function WorkPricePicker({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
 
+  // Поиск ищет по всему прайсу; зона сужает список, пока поиск пуст.
+  const shown = groups
+    .filter((g) => needle || !zone || splitPriceGroup(g.name).zone === zone)
+    .map((g) => ({
+      g,
+      items: g.items.filter((i) => !needle || matchWords(`${i.name} ${g.name}`, needle)),
+    }))
+    .filter((x) => x.items.length > 0);
+  let lastZone: string | null = null;
+
   return (
-    <div className="absolute inset-0 z-30 flex flex-col bg-surface" data-price-picker>
+    <div className="absolute inset-0 z-30 flex flex-col bg-surface" data-price-picker={kind}>
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
         <div className="relative min-w-0 flex-1">
           <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2" />
@@ -562,7 +668,7 @@ export function WorkPricePicker({
             autoFocus={!touch}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Найти работу в прайсе"
+            placeholder={isWork ? "Найти работу в прайсе" : "Найти запчасть: ремень, колодки, Gear…"}
             className={cn(
               "w-full rounded-xl border border-border bg-surface pl-9 pr-3 outline-none focus:border-blue-600",
               touch ? "h-11 text-[15px]" : "h-10 text-[13px]",
@@ -581,55 +687,87 @@ export function WorkPricePicker({
           {picked.length ? `Готово · ${picked.length}` : <X size={18} />}
         </button>
       </header>
+      {zones.length > 1 && !needle && (
+        <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-border px-4 py-2" data-zone-chips>
+          {[null, ...zones].map((zn) => (
+            <button
+              key={zn ?? "all"}
+              type="button"
+              onClick={() => setZone(zn)}
+              className={cn(
+                "shrink-0 whitespace-nowrap rounded-full px-3 font-semibold",
+                touch ? "h-10 text-[13.5px]" : "h-8 text-[12.5px]",
+                zone === zn ? "bg-ink text-white" : "bg-surface-soft text-ink-2 hover:bg-border",
+              )}
+            >
+              {zn ?? "Все"}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {!isLoading && groups.length === 0 && (
           <div className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-[12.5px] text-muted">
-            Прайс работ пока пуст. Он заводится в «Документах» → «Прейскурант» →
-            «Прайс работ»: строка «что делали» и цена по умолчанию.
+            {isWork ? "Прайс работ" : "Прайс запчастей"} пока пуст. Он ведётся в «Документах» →
+            «Прейскурант». Свою позицию можно вписать в строке внизу — она сохранится в прайс.
           </div>
         )}
-        {groups.map((g) => {
-          const items = g.items.filter((i) => !needle || i.name.toLowerCase().includes(needle));
-          if (items.length === 0) return null;
+        {groups.length > 0 && shown.length === 0 && (
+          <div className="px-1 py-6 text-center text-[13px] text-muted">
+            Не нашли «{q}». Закройте список и впишите позицию сами — она сохранится в прайс.
+          </div>
+        )}
+        {shown.map(({ g, items }) => {
+          const { zone: gz, sub } = splitPriceGroup(g.name);
+          const zoneHead = gz && gz !== lastZone ? gz : null;
+          lastZone = gz;
           return (
-            <div key={g.id} className="mb-4">
-              <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-                {g.name}
+          <div key={g.id} className="mb-4">
+            {zoneHead && (
+              <div className="mb-2 mt-1 font-display text-[16px] font-extrabold text-ink" data-zone-head>
+                {zoneHead}
               </div>
-              <div className="flex flex-col gap-1">
-                {items.map((i) => {
-                  const n = picked.filter((x) => x === i.id).length;
-                  return (
-                    <button
-                      key={i.id}
-                      type="button"
-                      onClick={() => {
-                        onPick(i.name, i.priceA ?? 0, i.id);
-                        setPicked((p) => [...p, i.id]);
-                      }}
-                      className={cn(
-                        "flex items-center gap-2 rounded-xl px-3 text-left",
-                        touch ? "min-h-[52px] active:bg-blue-50" : "py-2 hover:bg-blue-50",
-                        n > 0 && "bg-blue-50",
-                      )}
-                    >
-                      <span className={cn("min-w-0 flex-1 font-semibold text-ink", touch ? "text-[15px]" : "text-[13px]")}>
-                        {i.name}
+            )}
+            <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-2">{sub}</div>
+            <div className="flex flex-col gap-1">
+              {items.map((i) => {
+                const n = picked.filter((x) => x === i.id).length;
+                return (
+                  <button
+                    key={i.id}
+                    type="button"
+                    onClick={() => {
+                      onPick(i);
+                      setPicked((p) => [...p, i.id]);
+                    }}
+                    className={cn(
+                      "flex items-center gap-2 rounded-xl px-3 text-left",
+                      touch ? "min-h-[52px] py-1.5 active:bg-blue-50" : "py-2 hover:bg-blue-50",
+                      n > 0 && "bg-blue-50",
+                    )}
+                  >
+                    <span className={cn("min-w-0 flex-1 font-semibold text-ink", touch ? "text-[15px]" : "text-[13px]")}>
+                      {i.name}
+                    </span>
+                    {n > 0 && (
+                      <span className="shrink-0 rounded-full bg-blue-600 px-2 py-0.5 text-[11px] font-bold text-white">
+                        добавлено{n > 1 ? ` ×${n}` : ""}
                       </span>
-                      {n > 0 && (
-                        <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[11px] font-bold text-white">
-                          добавлено{n > 1 ? ` ×${n}` : ""}
-                        </span>
-                      )}
-                      <span className={cn("shrink-0 font-bold tabular-nums text-ink-2", touch ? "text-[15px]" : "text-[13px]")}>
+                    )}
+                    <span className="flex shrink-0 flex-col items-end leading-tight">
+                      <span className={cn("font-bold tabular-nums text-ink-2", touch ? "text-[15px]" : "text-[13px]")}>
                         {money(i.priceA ?? 0)}
                       </span>
-                      <Plus size={16} className="shrink-0 text-blue-600" />
-                    </button>
-                  );
-                })}
-              </div>
+                      {withCost && i.cost != null && (
+                        <span className="text-[11px] tabular-nums text-muted-2">закуп {money(i.cost)}</span>
+                      )}
+                    </span>
+                    <Plus size={16} className="shrink-0 text-blue-600" />
+                  </button>
+                );
+              })}
             </div>
+          </div>
           );
         })}
       </div>

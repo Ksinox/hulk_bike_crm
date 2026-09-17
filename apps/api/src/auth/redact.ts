@@ -40,6 +40,8 @@ const FIELD_RULES: FieldRule[] = [
   },
   { prefix: "/api/scooters", perm: "data.partnerShares", keys: ["partnerShare"] },
   { prefix: "/api/service-orders", perm: "data.repairProfit", keys: ["cost", "profit"] },
+  // 2.0.2: закуп в прайсе запчастей.
+  { prefix: "/api/price-list", perm: "data.repairProfit", keys: ["cost"] },
 ];
 
 /** Разделы, закрытые целиком. */

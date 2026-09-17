@@ -4,6 +4,7 @@ import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   clients,
+  priceGroups,
   priceItems,
   serviceOrderItems,
   serviceOrderPayments,
@@ -41,6 +42,11 @@ const ItemBody = z.object({
   qty: z.number().int().min(1).max(999).optional(),
   price: z.number().int().min(0).max(10_000_000).optional(),
   cost: z.number().int().min(0).max(10_000_000).optional(),
+  /**
+   * Своя позиция (не из прайса) — сохранить в прайс работ или запчастей,
+   * чтобы в следующий раз выбрать из списка (2.0.2).
+   */
+  saveToPrice: z.boolean().optional(),
 });
 
 const PayBody = z.object({
@@ -237,6 +243,74 @@ function conflict(reply: FastifyReply, error: string, message: string) {
 
 const ACTIVE = new Set(["in_work", "done"]);
 
+/** Вид прайса для позиции ремонта. */
+const priceKindOf = (k: string) => (k === "work" ? "service" : "part");
+const PRICE_INBOX = "Добавлено из ремонтов";
+
+type SavedToPrice = { name: string; kind: "service" | "part"; created: boolean };
+
+/**
+ * Своя позиция → прайс (2.0.2). Такая же позиция (без учёта регистра и «ё»)
+ * уже есть — просто привязываем к ней, цену в прайсе не трогаем. Нет —
+ * заводим в группе «Добавлено из ремонтов» с ценой и закупом из строки;
+ * директор потом разнесёт по группам. Сохраняет любой, кто ведёт ремонт.
+ */
+async function ensurePriceItem(
+  tx: Tx | typeof db,
+  item: { kind: string; name: string; price: number; cost: number },
+): Promise<{ priceItemId: number; saved: SavedToPrice }> {
+  const kind = priceKindOf(item.kind) as "service" | "part";
+  const key = item.name.trim().toLowerCase().replace(/ё/g, "е");
+  const [found] = await tx
+    .select({ id: priceItems.id, name: priceItems.name })
+    .from(priceItems)
+    .innerJoin(priceGroups, eq(priceGroups.id, priceItems.groupId))
+    .where(
+      and(
+        eq(priceGroups.kind, kind),
+        sql`replace(lower(trim(${priceItems.name})), 'ё', 'е') = ${key}`,
+      ),
+    )
+    .limit(1);
+  if (found) return { priceItemId: found.id, saved: { name: found.name, kind, created: false } };
+  let [group] = await tx
+    .select({ id: priceGroups.id })
+    .from(priceGroups)
+    .where(and(eq(priceGroups.kind, kind), eq(priceGroups.name, PRICE_INBOX)))
+    .limit(1);
+  if (!group) {
+    [group] = await tx
+      .insert(priceGroups)
+      .values({ name: PRICE_INBOX, kind, sortOrder: 999, priceALabel: "Цена" })
+      .returning({ id: priceGroups.id });
+  }
+  const [mx] = await tx
+    .select({ max: sql<number>`coalesce(max(${priceItems.sortOrder}), -1)` })
+    .from(priceItems)
+    .where(eq(priceItems.groupId, group!.id));
+  const [row] = await tx
+    .insert(priceItems)
+    .values({
+      groupId: group!.id,
+      name: item.name.trim(),
+      priceA: item.price,
+      cost: kind === "part" ? item.cost : null,
+      sortOrder: Number(mx?.max ?? -1) + 1,
+    })
+    .returning({ id: priceItems.id });
+  return { priceItemId: row!.id, saved: { name: item.name.trim(), kind, created: true } };
+}
+
+async function logSavedToPrice(req: FastifyRequest, saved: SavedToPrice[], orderNumber: number) {
+  for (const s of saved.filter((x) => x.created)) {
+    await logActivity(req, {
+      entity: "price_item",
+      action: "created",
+      summary: `${s.kind === "part" ? "Прайс запчастей" : "Прайс работ"}: добавлена «${s.name}» из ремонта ${num(orderNumber)}`,
+    });
+  }
+}
+
 export async function serviceOrderRoutes(app: FastifyInstance) {
   /** Список заказ-нарядов. ?status=in_work|done|paid|cancelled, ?from/?to (ISO). */
   app.get("/", async (req) => {
@@ -307,26 +381,28 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     const items = body.items ?? [];
 
     // Цены из прайса — значение по умолчанию, если в строке цену не задали.
-    const priceIds = items
-      .filter((i) => i.priceItemId && i.price === undefined)
-      .map((i) => i.priceItemId!);
-    const priceMap = new Map<number, number>();
+    const priceIds = items.filter((i) => i.priceItemId).map((i) => i.priceItemId!);
+    const priceMap = new Map<number, { price: number; cost: number }>();
     if (priceIds.length) {
       const rows = await db
-        .select({ id: priceItems.id, priceA: priceItems.priceA })
+        .select({ id: priceItems.id, priceA: priceItems.priceA, cost: priceItems.cost })
         .from(priceItems)
         .where(inArray(priceItems.id, priceIds));
-      for (const r of rows) priceMap.set(r.id, r.priceA ?? 0);
+      for (const r of rows) priceMap.set(r.id, { price: r.priceA ?? 0, cost: r.cost ?? 0 });
     }
-    const prepared = items.map((i, idx) => ({
-      kind: i.kind,
-      priceItemId: i.priceItemId ?? null,
-      name: i.name,
-      qty: i.qty ?? 1,
-      price: i.price ?? (i.priceItemId ? priceMap.get(i.priceItemId) ?? 0 : 0),
-      cost: i.kind === "part" ? (i.cost ?? 0) : 0,
-      sortOrder: idx + 1,
-    }));
+    const prepared = items.map((i, idx) => {
+      const fromPrice = i.priceItemId ? priceMap.get(i.priceItemId) : undefined;
+      return {
+        kind: i.kind,
+        priceItemId: i.priceItemId ?? null,
+        name: i.name,
+        qty: i.qty ?? 1,
+        price: i.price ?? fromPrice?.price ?? 0,
+        cost: i.kind === "part" ? (i.cost ?? fromPrice?.cost ?? 0) : 0,
+        sortOrder: idx + 1,
+        saveToPrice: !i.priceItemId && i.saveToPrice === true,
+      };
+    });
     const t = totalsOf(prepared);
     const adv = body.advance && body.advance.amount > 0 ? body.advance : null;
     if (adv && adv.amount >= t.due) {
@@ -346,6 +422,13 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         .select({ max: sql<number>`coalesce(max(${serviceOrders.number}), 0)` })
         .from(serviceOrders);
       const number = Number(mx?.max ?? 0) + 1;
+      const saved: SavedToPrice[] = [];
+      for (const p of prepared) {
+        if (!p.saveToPrice) continue;
+        const r = await ensurePriceItem(tx, p);
+        p.priceItemId = r.priceItemId;
+        saved.push(r.saved);
+      }
       const [row] = await tx
         .insert(serviceOrders)
         .values({
@@ -365,7 +448,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       if (prepared.length) {
         await tx
           .insert(serviceOrderItems)
-          .values(prepared.map((p) => ({ ...p, orderId: row!.id })));
+          .values(prepared.map(({ saveToPrice: _s, ...p }) => ({ ...p, orderId: row!.id })));
       }
       let advPart: { cash: number; transfer: number } | null = null;
       if (adv) {
@@ -383,8 +466,9 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         });
         await syncPaidAggregate(tx, row!.id);
       }
-      return { row: row!, advPart };
+      return { row: row!, advPart, saved };
     });
+    await logSavedToPrice(req, created.saved, created.row.number);
 
     const parts = [
       `${body.vehicle}, ${body.customerName}`,
@@ -403,7 +487,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         : undefined,
     });
     const order = await loadOne(created.row.id);
-    return reply.code(201).send({ order });
+    return reply.code(201).send({ order, savedToPrice: created.saved.filter((s) => s.created) });
   });
 
   /** Изменить шапку: клиента, телефон, технику, жалобу. */
@@ -908,11 +992,21 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     const order = await editableOrder(reply, id);
     if (!order) return;
 
-    // Цена из прайса — значение по умолчанию: в наряде её можно поменять.
+    // Цена (и закуп запчасти) из прайса — значение по умолчанию: в наряде
+    // её можно поменять.
     let price = body.price ?? 0;
-    if (body.priceItemId && body.price === undefined) {
+    let cost = body.cost ?? 0;
+    let priceItemId = body.priceItemId ?? null;
+    if (body.priceItemId) {
       const [pi] = await db.select().from(priceItems).where(eq(priceItems.id, body.priceItemId));
-      price = pi?.priceA ?? 0;
+      if (body.price === undefined) price = pi?.priceA ?? 0;
+      if (body.cost === undefined) cost = pi?.cost ?? 0;
+    }
+    let saved: SavedToPrice | null = null;
+    if (!priceItemId && body.saveToPrice) {
+      const r = await ensurePriceItem(db, { kind: body.kind, name: body.name, price, cost });
+      priceItemId = r.priceItemId;
+      saved = r.saved;
     }
     const [maxRow] = await db
       .select({ max: sql<number>`coalesce(max(${serviceOrderItems.sortOrder}), 0)` })
@@ -923,11 +1017,11 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       .values({
         orderId: id,
         kind: body.kind,
-        priceItemId: body.priceItemId ?? null,
+        priceItemId,
         name: body.name,
         qty: body.qty ?? 1,
         price,
-        cost: body.kind === "part" ? (body.cost ?? 0) : 0,
+        cost: body.kind === "part" ? cost : 0,
         sortOrder: Number(maxRow?.max ?? 0) + 1,
       })
       .returning();
@@ -937,7 +1031,10 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       entity: "service_order",
       entityId: id,
     });
-    return reply.code(201).send({ item: row!, order: await loadOne(id) });
+    if (saved) await logSavedToPrice(req, [saved], order.number);
+    return reply
+      .code(201)
+      .send({ item: row!, order: await loadOne(id), savedToPrice: saved?.created ? [saved] : [] });
   });
 
   app.patch("/items/:itemId", async (req, reply) => {

@@ -277,8 +277,13 @@ export function ServiceOrders() {
         <ServiceOrderForm
           touch={isMobile}
           onClose={() => setCreating(false)}
-          onCreated={(o) => {
+          onCreated={(o, saved) => {
             setCreating(false);
+            if (saved.length)
+              toast.success(
+                "Сохранено в прайс",
+                saved.map((x) => `«${x.name}»`).join(", ") + " — в следующий раз выберите из списка",
+              );
             setFilter("all");
             const t = o.totals;
             toast.action({

@@ -1189,7 +1189,8 @@ export const priceGroups = pgTable(
     hasTwoPrices: boolean("has_two_prices").notNull().default(false),
     /**
      * 'damage' — прайс ущерба (по моделям нашей техники),
-     * 'service' — прайс работ для сторонних ремонтов (модели не нужны).
+     * 'service' — прайс работ для сторонних ремонтов (модели не нужны),
+     * 'part' — прайс запчастей для сторонних ремонтов (2.0.2, с закупом).
      */
     kind: text("kind").notNull().default("damage"),
     priceALabel: text("price_a_label").notNull().default("Цена"),
@@ -1217,6 +1218,12 @@ export const priceItems = pgTable(
     /** Цена в ₽. Nullable если для конкретной модели позиция не применяется. */
     priceA: integer("price_a"),
     priceB: integer("price_b"),
+    /** Закуп за штуку — у позиций прайса запчастей (2.0.2). */
+    cost: integer("cost"),
+    /** Каталожный код (2.0.2) — постоянный, одинаковый на всех базах. */
+    code: text("code"),
+    /** Ключ картинки детали: /parts/<imageKey>.webp (генерация по плану). */
+    imageKey: text("image_key"),
     sortOrder: integer("sort_order").notNull().default(0),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true })

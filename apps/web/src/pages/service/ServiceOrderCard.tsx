@@ -30,7 +30,8 @@ import {
   type ServiceOrder,
 } from "@/lib/api/service-orders";
 import { DocumentPreviewModal } from "@/pages/rentals/DocumentPreviewModal";
-import { ItemsSection, WorkPricePicker, type ItemPatch } from "./ServiceItemsEditor";
+import { ItemsSection, PricePicker, type ItemPatch, type NewRowValue } from "./ServiceItemsEditor";
+import type { SavedToPrice } from "@/lib/api/service-orders";
 import { ServicePaySheet, type PayMode, type PaySubmit } from "./ServicePaySheet";
 import { fmtDay, METHOD_LABEL, money, orderNo, StatusBadge, STATUS_LABEL } from "./serviceOrderUi";
 
@@ -66,7 +67,7 @@ export function ServiceOrderCard({
   const cancel = useCancelServiceOrder();
   const reopen = useReopenServiceOrder();
 
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState<"work" | "part" | null>(null);
   const [pay, setPay] = useState<PayMode | null>(null);
   const [docOpen, setDocOpen] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -99,7 +100,37 @@ export function ServiceOrderCard({
   };
 
   const patch = (id: number, p: ItemPatch) => run(patchItem.mutateAsync({ itemId: id, ...p }));
+
+  /** Новая строка: из прайса — с его id, своя — с пометкой «сохранить в прайс». */
+  const addRow = async (kind: "work" | "part", v: NewRowValue) => {
+    try {
+      const r = await addItem.mutateAsync({
+        orderId: order.id,
+        kind,
+        name: v.name,
+        qty: v.qty,
+        price: v.price,
+        ...(kind === "part" && canRepairProfit ? { cost: v.cost } : {}),
+        priceItemId: v.priceItemId,
+        saveToPrice: v.saveToPrice,
+      });
+      setSavedAt(Date.now());
+      savedToast(r.savedToPrice);
+    } catch (e) {
+      const b = (e as ApiError)?.body as { message?: string } | undefined;
+      toast.error("Не сохранилось", b?.message ?? (e as Error).message);
+    }
+  };
   const remove = (id: number) => run(delItem.mutateAsync(id));
+
+  const savedToast = (saved?: SavedToPrice[]) => {
+    for (const s of saved ?? []) {
+      toast.success(
+        s.kind === "part" ? "Запчасть сохранена в прайс" : "Работа сохранена в прайс",
+        `«${s.name}» — в следующий раз выберите её из списка`,
+      );
+    }
+  };
 
   const undoToast = (title: string, message: string, paymentId?: number) => {
     if (!paymentId) {
@@ -303,8 +334,8 @@ export function ServiceOrderCard({
           withCost={false}
           onPatch={(k, p) => patch(Number(k), p)}
           onRemove={(k) => remove(Number(k))}
-          onAdd={(v) => run(addItem.mutateAsync({ orderId: order.id, kind: "work", name: v.name, qty: v.qty, price: v.price }))}
-          onPickFromPrice={() => setPickerOpen(true)}
+          onAdd={(v) => addRow("work", v)}
+          onPickFromPrice={() => setPickerOpen("work")}
         />
         <ItemsSection
           kind="part"
@@ -315,9 +346,8 @@ export function ServiceOrderCard({
           withCost={canRepairProfit}
           onPatch={(k, p) => patch(Number(k), p)}
           onRemove={(k) => remove(Number(k))}
-          onAdd={(v) =>
-            run(addItem.mutateAsync({ orderId: order.id, kind: "part", name: v.name, qty: v.qty, price: v.price, cost: v.cost }))
-          }
+          onAdd={(v) => addRow("part", v)}
+          onPickFromPrice={() => setPickerOpen("part")}
         />
 
         <MoneyBlock order={order} showProfit={canRepairProfit} onRefund={() => setPay("refund")} />
@@ -417,11 +447,22 @@ export function ServiceOrderCard({
       ) : null}
 
       {pickerOpen && (
-        <WorkPricePicker
+        <PricePicker
+          kind={pickerOpen}
           touch={touch}
-          onClose={() => setPickerOpen(false)}
-          onPick={(name, price, priceItemId) =>
-            run(addItem.mutateAsync({ orderId: order.id, kind: "work", name, price, priceItemId }))
+          withCost={canRepairProfit}
+          onClose={() => setPickerOpen(null)}
+          onPick={(i) =>
+            run(
+              addItem.mutateAsync({
+                orderId: order.id,
+                kind: pickerOpen,
+                name: i.name,
+                price: i.priceA ?? 0,
+                ...(pickerOpen === "part" && canRepairProfit ? { cost: i.cost ?? 0 } : {}),
+                priceItemId: i.id,
+              }),
+            )
           }
         />
       )}

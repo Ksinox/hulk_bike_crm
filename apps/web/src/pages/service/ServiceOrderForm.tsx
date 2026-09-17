@@ -7,8 +7,8 @@ import { usePersistedFormState } from "@/lib/usePersistedState";
 import { Switch } from "@/components/ui/switch";
 import { PayMethodPicker, splitByMethod, type PayMethod } from "@/components/PayMethodPicker";
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
-import { useCreateServiceOrder, type ServiceOrder } from "@/lib/api/service-orders";
-import { ItemsSection, WorkPricePicker, type ItemPatch } from "./ServiceItemsEditor";
+import { useCreateServiceOrder, type SavedToPrice, type ServiceOrder } from "@/lib/api/service-orders";
+import { ItemsSection, PricePicker, type ItemPatch, type NewRowValue } from "./ServiceItemsEditor";
 import { digits, money } from "./serviceOrderUi";
 
 /**
@@ -31,6 +31,8 @@ type DraftItem = {
   price: number;
   cost: number;
   priceItemId: number | null;
+  /** Своя позиция — сохранить в прайс при сохранении ремонта. */
+  saveToPrice?: boolean;
 };
 
 type Draft = {
@@ -72,13 +74,13 @@ export function ServiceOrderForm({
 }: {
   touch: boolean;
   onClose: () => void;
-  onCreated: (order: ServiceOrder) => void;
+  onCreated: (order: ServiceOrder, savedToPrice: SavedToPrice[]) => void;
 }) {
   const canRepairProfit = useCan("data.repairProfit");
   const create = useCreateServiceOrder();
   const [draft, setDraft, clearDraft] = usePersistedFormState<Draft>("service-order-new", fresh);
   const [restored, setRestored] = useState(() => hasData(draft));
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState<"work" | "part" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tried, setTried] = useState(false);
 
@@ -102,12 +104,21 @@ export function ServiceOrderForm({
     return { works, parts, due: works + parts };
   }, [draft.items]);
 
-  const addItem = (kind: DraftItem["kind"], v: { name: string; qty: number; price: number; cost: number; priceItemId?: number | null }) =>
+  const addItem = (kind: DraftItem["kind"], v: Omit<NewRowValue, "saveToPrice"> & { saveToPrice?: boolean }) =>
     setDraft((d) => ({
       ...d,
       items: [
         ...d.items,
-        { key: newKey(), kind, name: v.name, qty: v.qty, price: v.price, cost: kind === "part" ? v.cost : 0, priceItemId: v.priceItemId ?? null },
+        {
+          key: newKey(),
+          kind,
+          name: v.name,
+          qty: v.qty,
+          price: v.price,
+          cost: kind === "part" ? v.cost : 0,
+          priceItemId: v.priceItemId ?? null,
+          saveToPrice: v.saveToPrice ?? false,
+        },
       ],
     }));
   const patchItem = (key: string | number, p: ItemPatch) =>
@@ -148,11 +159,12 @@ export function ServiceOrderForm({
           price: i.price,
           cost: i.kind === "part" && canRepairProfit ? i.cost : undefined,
           priceItemId: i.priceItemId,
+          saveToPrice: i.saveToPrice ?? false,
         })),
         advance: advance > 0 ? { amount: advance, method: draft.advMethod, cashAmount: advSplit.cash } : undefined,
       });
       clearDraft();
-      onCreated(r.order);
+      onCreated(r.order, r.savedToPrice ?? []);
     } catch (e) {
       const b = (e as ApiError)?.body as { message?: string } | undefined;
       setError(b?.message ?? (e as Error).message ?? "Не удалось сохранить");
@@ -272,7 +284,7 @@ export function ServiceOrderForm({
           onPatch={patchItem}
           onRemove={removeItem}
           onAdd={(v) => addItem("work", v)}
-          onPickFromPrice={() => setPickerOpen(true)}
+          onPickFromPrice={() => setPickerOpen("work")}
         />
         <ItemsSection
           kind="part"
@@ -284,6 +296,7 @@ export function ServiceOrderForm({
           onPatch={patchItem}
           onRemove={removeItem}
           onAdd={(v) => addItem("part", v)}
+          onPickFromPrice={() => setPickerOpen("part")}
         />
 
         <div className="rounded-2xl bg-surface-soft p-4" data-form-money>
@@ -415,10 +428,14 @@ export function ServiceOrderForm({
       </footer>
       {/* Выбор из прайса накрывает всю панель, а не прокручиваемую часть. */}
       {pickerOpen && (
-        <WorkPricePicker
+        <PricePicker
+          kind={pickerOpen}
           touch={touch}
-          onClose={() => setPickerOpen(false)}
-          onPick={(name, price, priceItemId) => addItem("work", { name, qty: 1, price, cost: 0, priceItemId })}
+          withCost={canRepairProfit}
+          onClose={() => setPickerOpen(null)}
+          onPick={(i) =>
+            addItem(pickerOpen, { name: i.name, qty: 1, price: i.priceA ?? 0, cost: i.cost ?? 0, priceItemId: i.id })
+          }
         />
       )}
     </>
