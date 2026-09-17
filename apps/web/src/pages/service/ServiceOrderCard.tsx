@@ -451,6 +451,7 @@ export function ServiceOrderCard({
           kind={pickerOpen}
           touch={touch}
           withCost={canRepairProfit}
+          vehicle={order.vehicle}
           onClose={() => setPickerOpen(null)}
           onPick={(i) =>
             run(

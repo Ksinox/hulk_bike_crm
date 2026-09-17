@@ -339,7 +339,7 @@ function AddRow({
   // Строка-состояние под полем: из прайса или новая (и сохранять ли её).
   const status = !ready ? null : match ? (
     <div className="mt-1.5 flex items-center gap-1.5 px-1 text-[12px] font-semibold text-blue-700">
-      <BookmarkPlus size={13} /> Из {priceName}
+      <BookmarkPlus size={13} /> Из {kind === "work" ? "прайса работ" : "прайса запчастей"}
     </div>
   ) : (
     <label
@@ -612,6 +612,34 @@ function TextField({
 }
 
 /**
+ * Модели для фильтра прайса запчастей: по каким словам в названии позиции
+ * понять, что она подходит. «Все модели» подходят всегда.
+ */
+const PART_MODELS: { id: string; label: string; words: string[]; guess: RegExp }[] = [
+  { id: "gear", label: "Gear", words: ["gear"], guess: /gear/i },
+  { id: "ay01", label: "Jog AY01", words: ["ay01"], guess: /ay01/i },
+  { id: "jog", label: "Jog, Vino", words: ["jog 4t", "jog,", "jog (", "vino"], guess: /jog|vino|джог|вино/i },
+  { id: "dio", label: "Dio", words: ["dio"], guess: /dio|дио/i },
+  { id: "tank", label: "Tank, GY6 150", words: ["tank", "gy6", "китайские 1"], guess: /tank|танк|gy6|150|китай/i },
+  { id: "ev", label: "Электро", words: ["электро"], guess: /aima|электр|u-5|u-2/i },
+];
+
+function fitsModel(name: string, modelId: string | null): boolean {
+  if (!modelId) return true;
+  const m = PART_MODELS.find((x) => x.id === modelId);
+  if (!m) return true;
+  const n = name.toLowerCase();
+  if (n.includes("все модели")) return true;
+  return m.words.some((w) => n.includes(w));
+}
+
+/** Модель из поля «Техника» ремонта: «Yamaha Gear 4T» → Gear. */
+export function guessPartModel(vehicle?: string | null): string | null {
+  if (!vehicle) return null;
+  return PART_MODELS.find((m) => m.guess.test(vehicle))?.id ?? null;
+}
+
+/**
  * Выбор из прайса — работы или запчасти (2.0.2). Накрывает панель целиком;
  * на телефоне строки по 52px. Можно выбрать несколько подряд.
  */
@@ -619,11 +647,14 @@ export function PricePicker({
   kind,
   touch,
   withCost,
+  vehicle,
   onClose,
   onPick,
 }: {
   kind: "work" | "part";
   touch: boolean;
+  /** Техника из ремонта — фильтр моделей выбирается сам. */
+  vehicle?: string | null;
   /** Показать закуп (запчасти, есть право на прибыль ремонтов). */
   withCost?: boolean;
   onClose: () => void;
@@ -632,6 +663,7 @@ export function PricePicker({
   const { data, isLoading } = usePriceList(kind === "work" ? "service" : "part");
   const [q, setQ] = useState("");
   const [zone, setZone] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(() => (kind === "part" ? guessPartModel(vehicle) : null));
   const [picked, setPicked] = useState<number[]>([]);
   const groups = data?.groups ?? [];
   const needle = suggestKey(q);
@@ -654,7 +686,9 @@ export function PricePicker({
     .filter((g) => needle || !zone || splitPriceGroup(g.name).zone === zone)
     .map((g) => ({
       g,
-      items: g.items.filter((i) => !needle || matchWords(`${i.name} ${g.name}`, needle)),
+      items: g.items.filter(
+        (i) => fitsModel(i.name, isWork ? null : model) && (!needle || matchWords(`${i.name} ${g.name}`, needle)),
+      ),
     }))
     .filter((x) => x.items.length > 0);
   let lastZone: string | null = null;
@@ -687,6 +721,25 @@ export function PricePicker({
           {picked.length ? `Готово · ${picked.length}` : <X size={18} />}
         </button>
       </header>
+      {!isWork && (
+        <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-4 py-2" data-model-chips>
+          <span className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-muted-2">Для</span>
+          {[{ id: null, label: "Все модели" } as { id: string | null; label: string }, ...PART_MODELS].map((m) => (
+            <button
+              key={m.id ?? "all"}
+              type="button"
+              onClick={() => setModel(m.id)}
+              className={cn(
+                "shrink-0 whitespace-nowrap rounded-full px-3 font-semibold",
+                touch ? "h-10 text-[13.5px]" : "h-8 text-[12.5px]",
+                model === m.id ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-700 hover:bg-blue-100",
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
       {zones.length > 1 && !needle && (
         <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-border px-4 py-2" data-zone-chips>
           {[null, ...zones].map((zn) => (

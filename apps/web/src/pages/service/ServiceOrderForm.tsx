@@ -432,6 +432,7 @@ export function ServiceOrderForm({
           kind={pickerOpen}
           touch={touch}
           withCost={canRepairProfit}
+          vehicle={draft.vehicle}
           onClose={() => setPickerOpen(null)}
           onPick={(i) =>
             addItem(pickerOpen, { name: i.name, qty: 1, price: i.priceA ?? 0, cost: i.cost ?? 0, priceItemId: i.id })
