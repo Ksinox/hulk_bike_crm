@@ -53,8 +53,11 @@ def stacked(name: str, parts: list[tuple[int, int, int, int]]) -> Image.Image:
 
 
 def phone_crop(name: str, box: tuple[int, int, int, int], out: str) -> None:
-    """Кусок кадра телефона — когда нужное место не в начале экрана."""
-    im = Image.open(SRC / f"{name}.jpg").convert("RGB").crop(box)
+    """Кусок кадра телефона — когда нужное место не в начале экрана. Белые
+    поля: слайд телефона почти квадратный и режет края, а сверху — метка «Было»."""
+    part = Image.open(SRC / f"{name}.jpg").convert("RGB").crop(box)
+    im = Image.new("RGB", (part.width + 80, part.height + 100), (255, 255, 255))
+    im.paste(part, (40, 50))
     im.save(OUT / f"{out}.jpg", quality=84, optimize=True)
     print(out, im.size)
 
