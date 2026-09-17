@@ -90,3 +90,6 @@ scripts/shots/out/
 
 # локальный адрес API для съёмки кадров «было» (vite-прокси)
 apps/web/.shot-proxy
+
+# исходники картинок деталей (docs/parts-catalog/README.md)
+parts-images/

@@ -26,6 +26,7 @@ Tank T150 (китайский 150 см³, мотор GY6 157QMJ), электро
 пишет apps/api/drizzle/0093_repair_price_seed.sql и docs/parts-catalog/*.csv
 """
 import csv
+import json
 import math
 from pathlib import Path
 
@@ -797,6 +798,7 @@ for z in CATALOG:
                 "part_en": en,
                 "where_en": g["where"],
                 "zone_en": z["en"],
+                "scene": "none" if z["code"] == "CONS" else "electric" if z["code"] == "EV" else "petrol",
                 "applies_to": "; ".join(v for v, _ in variants),
                 "variants": len(variants),
             })
@@ -885,12 +887,89 @@ with open(DOC_DIR / "catalog.csv", "w", encoding="utf-8-sig", newline="") as f:
     w.writerow(["code", "image_key", "zone", "group", "part", "applies_to", "name_in_crm", "cost_rub", "price_rub"])
     for i in parts:
         w.writerow([i["code"], i["image_key"], i["zone"], i["subgroup"], i["part"], i["applies_to"], i["name"], i["cost"], i["price"]])
+# Картинки деталей — промпты собраны тут, описание стиля — docs/parts-catalog/README.md
+SCOOTER = {
+    "petrol": "a generic 50-150cc step-through city scooter (small wheels, floorboard, engine and CVT under the seat)",
+    "electric": "a generic electric city scooter (hub motor in the rear wheel, battery pack under the seat)",
+}
+LOCATION_PROMPT = (
+    "Technical X-ray illustration, one image of a consistent series. Solid deep navy background #0E1726. "
+    "{scooter}, strict side view, nose pointing right, centered, the whole scooter visible and filling about 80% of the width, "
+    "no brand, no logos. The scooter is drawn as a semi-transparent X-ray / blueprint: thin light steel-blue outlines "
+    "(#9FB4C8, about 40% opacity), inner parts faintly visible through the body. "
+    "Only one part is solid and highlighted: {part} ({where}). Render it in brand green #6CAD2F with a soft green glow "
+    "and a thin white edge, at its real position and real scale on the scooter. "
+    "If the part is small (a bulb, a seal, a bolt, a sensor), keep it at its real place and add a soft glowing green ring around it so it is easy to spot. "
+    "Everything else stays dim. "
+    "No text, no labels, no arrows, no numbers, no watermark. Square 1:1."
+)
+PRODUCT_PROMPT = (
+    "Studio product photo, one image of a consistent e-commerce series. A single scooter spare part: {part}. "
+    "Isolated on a pure white seamless background #FFFFFF, centered, three-quarter view from the front-left and slightly above, "
+    "the part fills about 70% of the frame, soft even studio light, subtle contact shadow under the part, "
+    "realistic materials (black ABS plastic, painted plastic, aluminium, steel, rubber — whatever the real part is made of). "
+    "New part, clean, no brand names, no logos, no packaging, no hands, no text, no watermark. Square 1:1."
+)
+PRODUCT_PROMPT_CONSUMABLE = (
+    "Studio product photo, one image of a consistent e-commerce series. {part} for scooter service, "
+    "in a plain unbranded container with a blank label (no readable text). "
+    "Isolated on a pure white seamless background #FFFFFF, centered, three-quarter view, fills about 70% of the frame, "
+    "soft even studio light, subtle contact shadow. No logos, no text, no watermark. Square 1:1."
+)
+image_rows = []
+for im in images:
+    ps = [i["price"] for i in parts if i["image_key"] == im["image_key"]]
+    scene = im["scene"]
+    image_rows.append({
+        "image_key": im["image_key"],
+        "zone": im["zone"],
+        "group": im["group"],
+        "part_ru": im["part_ru"],
+        "part_en": im["part_en"],
+        "location_en": im["where_en"],
+        "scene": scene,
+        "applies_to": im["applies_to"],
+        "price_from_rub": min(ps),
+        "price_to_rub": max(ps),
+        "file_product": f"{im['image_key']}.webp",
+        "file_location": "" if scene == "none" else f"{im['image_key']}-where.webp",
+        "prompt_product": (PRODUCT_PROMPT_CONSUMABLE if scene == "none" else PRODUCT_PROMPT).format(part=im["part_en"]),
+        "prompt_location": "" if scene == "none" else LOCATION_PROMPT.format(
+            scooter=SCOOTER[scene][0].upper() + SCOOTER[scene][1:], part=im["part_en"], where=im["where_en"]
+        ),
+    })
 with open(DOC_DIR / "images.csv", "w", encoding="utf-8-sig", newline="") as f:
-    w = csv.writer(f, delimiter=";")
-    w.writerow(["image_key", "zone", "group", "part_ru", "part_en", "location_en", "applies_to", "price_from_rub", "price_to_rub"])
-    for im in images:
-        ps = [i["price"] for i in parts if i["image_key"] == im["image_key"]]
-        w.writerow([im["image_key"], im["zone"], im["group"], im["part_ru"], im["part_en"], im["where_en"], im["applies_to"], min(ps), max(ps)])
+    w = csv.DictWriter(f, fieldnames=list(image_rows[0].keys()), delimiter=";")
+    w.writeheader()
+    w.writerows(image_rows)
+with open(DOC_DIR / "images.jsonl", "w", encoding="utf-8", newline="\n") as f:
+    for r in image_rows:
+        f.write(json.dumps(r, ensure_ascii=False) + "\n")
+# Список деталей для глаз: зона → узел → деталь
+md = [
+    "# Детали скутера для картинок — по зонам",
+    "",
+    f"{len(image_rows)} деталей: у каждой крупный план `{{key}}.webp`, у всех, кроме расходников, ещё «где стоит» `{{key}}-where.webp`.",
+    "Файл собирает `scripts/seed/repair-price-catalog.py` — руками не править. Задание и стиль — в [README.md](README.md).",
+    "",
+]
+by_zone = {}
+for r in image_rows:
+    by_zone.setdefault(r["zone"], {}).setdefault((r["group"], r["location_en"]), []).append(r)
+for zname, groups in by_zone.items():
+    total = sum(len(v) for v in groups.values())
+    md += [f"## {zname} — {total}", ""]
+    for (gname, where), rows in groups.items():
+        md += [f"### {gname}", f"_Где на скутере: {where}_", "",
+               "| image_key | Деталь | English | Модели | Цена, ₽ |", "|---|---|---|---|---|"]
+        for r in rows:
+            price = f"{r['price_from_rub']:,}".replace(",", " ")
+            if r["price_to_rub"] != r["price_from_rub"]:
+                price += "–" + f"{r['price_to_rub']:,}".replace(",", " ")
+            md.append(f"| `{r['image_key']}` | {r['part_ru']} | {r['part_en']} | {r['applies_to']} | {price} |")
+        md.append("")
+(DOC_DIR / "PARTS.md").write_text("\n".join(md), encoding="utf-8", newline="\n")
+
 with open(DOC_DIR / "works.csv", "w", encoding="utf-8-sig", newline="") as f:
     w = csv.writer(f, delimiter=";")
     w.writerow(["code", "group", "work", "price_rub"])
