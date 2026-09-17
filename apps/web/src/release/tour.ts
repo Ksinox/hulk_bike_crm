@@ -69,6 +69,13 @@ export type TourItem = {
   /** «Где найти» — первая подсказка по кнопке «Показать где» у нового раздела. */
   path?: Partial<Record<TourDevice, { anchor: TourAnchor; text: string }>>;
   hints?: Partial<Record<TourDevice, TourHint[]>>;
+  /**
+   * Слайд добавлен в уже вышедший показ (17.09, «Прайс запчастей» в 2.0.2).
+   * Кто досмотрел выпуск раньше этого момента, при следующем входе увидит
+   * только такие слайды — «Дополнение к 2.0.2», без повтора остальных.
+   * Время с поясом: «2026-09-17T14:30:00+03:00».
+   */
+  addedAt?: string;
 };
 
 export type ReleaseTourConfig = {
@@ -642,6 +649,7 @@ const RELEASE_2_0_2: ReleaseTourConfig = {
     {
       id: "repair-parts",
       kind: "new",
+      addedAt: "2026-09-17T14:30:00+03:00",
       title: "Прайс запчастей",
       route: "service",
       headline: "766 запчастей по узлам скутера — выбираются в ремонте, как работы. Своя деталь сама сохраняется в прайс.",

@@ -87,8 +87,9 @@ export function useReleaseAction() {
         const v = { ...views[i]! };
         if (a.action === "postpone" && v.status !== "completed") v.postponedCount += 1;
         if (a.action === "complete") {
+          // Дата — всегда новая: слайды, добавленные раньше, считаются просмотренными.
           v.status = "completed";
-          v.completedAt = v.completedAt ?? new Date().toISOString();
+          v.completedAt = new Date().toISOString();
         }
         if ("cardsSeen" in a && a.cardsSeen != null) v.cardsSeen = Math.max(v.cardsSeen, a.cardsSeen);
         if (a.action === "hint" && !v.hintsDone.includes(a.hint)) v.hintsDone = [...v.hintsDone, a.hint];
