@@ -464,8 +464,8 @@ const RELEASE_2_0_2: ReleaseTourConfig = {
   label: "2.0.2",
   major: false,
   date: "2026-09-17",
-  maxCards: 8,
-  subtitle: "Ремонты: аванс, остаток и накладная; смешанная оплата аренды; загрузка парка без разборки.",
+  maxCards: 9,
+  subtitle: "Ремонты: аванс, остаток, накладная и прайс запчастей; смешанная оплата аренды; загрузка парка без разборки.",
   items: [
     {
       id: "repair-form",
@@ -638,6 +638,29 @@ const RELEASE_2_0_2: ReleaseTourConfig = {
         phone: { before: `${P}/v202-rent-pay-m-was.jpg`, after: `${P}/v202-rent-pay-m-now.jpg` },
       },
       imgPos: { desktop: "center center", phone: "center 45%" },
+    },
+    {
+      id: "repair-parts",
+      kind: "new",
+      title: "Прайс запчастей",
+      route: "service",
+      headline: "766 запчастей по узлам скутера — выбираются в ремонте, как работы. Своя деталь сама сохраняется в прайс.",
+      why:
+        "Запчасти вписывали вручную и каждый раз вспоминали цену и закуп. Теперь любая деталь — от клюва до сальника — находится за пару нажатий.",
+      points: [
+        "Зоны: кузов, двигатель, трансмиссия, тормоза… Модель подставляется из ремонта",
+        "Поиск по словам: «ремень gear»; подсказки с ценой при вводе",
+        "Новая деталь — в «Добавлено из ремонтов»; цены правятся в «Документах»",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R202}/d-repair-parts-was.jpg`, phone: `${R202}/m-repair-parts-was.jpg` },
+      img: { desktop: `${R202}/d-repair-parts-now.jpg`, phone: `${R202}/m-repair-parts-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v202-sv-card-was.jpg`, after: `${P}/v202-parts-picker-now.jpg` },
+        phone: { before: `${P}/v202-sv-card-m-was.jpg`, after: `${P}/v202-parts-picker-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center 30%" },
     },
     {
       id: "park-load",

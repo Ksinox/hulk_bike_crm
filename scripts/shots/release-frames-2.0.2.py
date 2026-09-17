@@ -83,6 +83,7 @@ pair("v202-sv-card-was", "v202-sv-edit-now", DRAWER, "d-repair-client")
 pair("v202-sv-cancelled-was", "v202-sv-cancelled-now", DRAWER, "d-repair-reopen")
 pair("v202-rent-pay-was", "v202-rent-pay-now", RENT, "d-rent-split")
 pair("v202-load-was", "v202-load-now", LOAD, "d-park-load")
+pair("v202-sv-card-was", "v202-parts-picker-now", DRAWER, "d-repair-parts")
 
 for was, now, out in [
     ("v202-sv-new-m-was", "v202-sv-form-m-now", "m-repair-form"),
@@ -93,6 +94,7 @@ for was, now, out in [
     ("v202-sv-cancelled-m-was", "v202-sv-cancelled-m-now", "m-repair-reopen"),
     ("v202-rent-pay-m-was", "v202-rent-pay-m-now", "m-rent-split"),
     ("v202-load-m-was", "v202-load-m-now", "m-park-load"),
+    ("v202-sv-card-m-was", "v202-parts-picker-m-now", "m-repair-parts"),
 ]:
     phone(was, f"{out}-was")
     phone(now, f"{out}-now")
