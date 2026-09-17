@@ -195,6 +195,22 @@ export async function run(page, ctx) {
   await page.evaluate(() => document.querySelector('[data-section="part"]')?.scrollIntoView({ block: "start" }));
   await sleep(400);
   await S("parts-in-card");
+  // Правка названия: тап по названию → поле → Enter
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('[data-section="part"] [data-item-row] button')].find((x) => x.textContent === "ТЕСТ Кронштейн особый");
+    b?.click();
+  });
+  await sleep(300);
+  await page.keyboard.type(" 2", { delay: 25 });
+  await page.keyboard.press("Enter");
+  await sleep(1500);
+  const renamed = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-section="part"] [data-item-row]')].map((r) => {
+      const n = r.querySelector("button, span");
+      return { name: n?.textContent, h: Math.round(n?.getBoundingClientRect().height ?? 0) };
+    }),
+  );
+  console.log("названия:", JSON.stringify(renamed));
 
   // Уборка
   const pl = await call("GET", "/api/price-list?kind=part");

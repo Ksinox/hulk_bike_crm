@@ -146,7 +146,7 @@ function ItemRow({
             value={item.name}
             disabled={locked}
             onCommit={(name) => onPatch({ name })}
-            className="h-11 min-w-0 flex-1 text-[15px] font-semibold"
+            className="min-h-11 min-w-0 flex-1 text-[15px] font-semibold"
           />
           {!locked && (
             <button
@@ -191,7 +191,7 @@ function ItemRow({
         value={item.name}
         disabled={locked}
         onCommit={(name) => onPatch({ name })}
-        className="h-9 min-w-0 flex-1 text-[13px] font-semibold"
+        className="min-h-9 min-w-0 flex-1 text-[13px] font-semibold"
       />
       <Stepper value={item.qty} disabled={locked} onChange={(qty) => onPatch({ qty })} />
       {withCost && (
@@ -587,20 +587,39 @@ function TextField({
     if (draft != null && v && v !== value) onCommit(v);
     setDraft(null);
   };
+  // Длинные названия из прайса («Ремень вариатора — 810×17,5 — Yamaha Gear 4T»)
+  // показываем целиком в две-три строки; поле ввода — только пока правят.
+  const text = "py-1 text-left leading-snug [overflow-wrap:anywhere]";
   if (disabled) {
-    return <span className={cn("flex items-center truncate px-1 text-ink", className)}>{value}</span>;
+    return <span className={cn("flex items-center px-1 text-ink", className, text)}>{value}</span>;
+  }
+  if (draft == null) {
+    return (
+      <button
+        type="button"
+        title="Изменить название"
+        onClick={() => setDraft(value)}
+        className={cn(
+          "flex items-center rounded-lg border border-transparent px-1.5 text-ink hover:border-border",
+          className,
+          text,
+        )}
+      >
+        {value}
+      </button>
+    );
   }
   return (
     <input
-      value={draft ?? value}
+      value={draft}
       title={value}
+      autoFocus
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
         if (e.key === "Escape") {
           setDraft(null);
-          (e.currentTarget as HTMLInputElement).blur();
         }
       }}
       className={cn(
