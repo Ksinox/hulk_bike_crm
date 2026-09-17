@@ -52,6 +52,13 @@ def stacked(name: str, parts: list[tuple[int, int, int, int]]) -> Image.Image:
     return out
 
 
+def phone_crop(name: str, box: tuple[int, int, int, int], out: str) -> None:
+    """Кусок кадра телефона — когда нужное место не в начале экрана."""
+    im = Image.open(SRC / f"{name}.jpg").convert("RGB").crop(box)
+    im.save(OUT / f"{out}.jpg", quality=84, optimize=True)
+    print(out, im.size)
+
+
 def pair(was: str, now: str, box, out: str, box_now=None) -> None:
     square(was, box, f"{out}-was")
     square(now, box_now or box, f"{out}-now")
@@ -94,7 +101,11 @@ for was, now, out in [
     ("v202-sv-cancelled-m-was", "v202-sv-cancelled-m-now", "m-repair-reopen"),
     ("v202-rent-pay-m-was", "v202-rent-pay-m-now", "m-rent-split"),
     ("v202-load-m-was", "v202-load-m-now", "m-park-load"),
-    ("v202-sv-card-m-was", "v202-parts-picker-m-now", "m-repair-parts"),
 ]:
     phone(was, f"{out}-was")
     phone(now, f"{out}-now")
+
+# Прайс запчастей: «было» — раздел «Запчасти» старой карточки (без «Из
+# прайса»), «стало» — начало окна выбора: поиск, модели, зоны.
+phone_crop("v202-sv-card-m2-was", (0, 365, 780, 1065), "m-repair-parts-was")
+phone_crop("v202-parts-picker-m-now", (0, 0, 780, 700), "m-repair-parts-now")

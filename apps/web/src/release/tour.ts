@@ -658,9 +658,9 @@ const RELEASE_2_0_2: ReleaseTourConfig = {
       img: { desktop: `${R202}/d-repair-parts-now.jpg`, phone: `${R202}/m-repair-parts-now.jpg` },
       zoom: {
         desktop: { before: `${P}/v202-sv-card-was.jpg`, after: `${P}/v202-parts-picker-now.jpg` },
-        phone: { before: `${P}/v202-sv-card-m-was.jpg`, after: `${P}/v202-parts-picker-m-now.jpg` },
+        phone: { before: `${P}/v202-sv-card-m2-was.jpg`, after: `${P}/v202-parts-picker-m-now.jpg` },
       },
-      imgPos: { desktop: "center center", phone: "center 30%" },
+      imgPos: { desktop: "center center", phone: "center top" },
     },
     {
       id: "park-load",
