@@ -23,7 +23,7 @@ import { useBuyoutDeals } from "@/lib/api/buyout";
 import { modelForRent, modelForSale, useApiScooterModels } from "@/lib/api/scooter-models";
 import { useEditBatch, useRentalSlots, type BatchEditInput, type BatchTarget } from "@/lib/api/scooters";
 import type { ApiScooter } from "@/lib/api/types";
-import { ScooterName } from "@/components/ScooterName";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { suggestKey } from "@/components/SuggestInput";
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 import { digitsOnly, fmtMoney, plural } from "./addScooterDraft";
@@ -205,7 +205,7 @@ export function BatchEditSheet({
           : null;
 
   const unitLine = (u: ApiScooter) =>
-    `${u.rentalSlot != null ? `№${u.rentalSlot} · ` : ""}${unitHint(u)}`;
+    `${scooterModelName(u.name)}${u.rentalSlot != null ? ` №${u.rentalSlot}` : ""} · ${unitHint(u)}`;
 
   const save = async () => {
     if (!changes.length || problem) return;
@@ -245,7 +245,13 @@ export function BatchEditSheet({
     } catch (e) {
       const err = e as ApiError;
       if (err?.status === 428) {
-        setSubmitError("Статус не изменён: нужен ключ директора. Остальное тоже не сохранено — нажмите «Сохранить» ещё раз.");
+        // Сохранение идёт целиком: без ключа не сохранилось и остальное.
+        const other = changes.length > 1;
+        setSubmitError(
+          other
+            ? "Ничего не сохранено: смена статуса — по ключу директора. Нажмите «Сохранить» ещё раз и введите ключ или отправьте запрос директору."
+            : "Статус не изменён: нужен ключ директора. Нажмите «Сохранить» ещё раз и введите ключ или отправьте запрос директору.",
+        );
         return;
       }
       const bb = (err?.body ?? null) as { rows?: { id: number; message: string }[] } | null;
