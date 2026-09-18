@@ -78,6 +78,44 @@ export function useAddScootersBatch() {
   });
 }
 
+/** Куда можно перевести единицы партии (2.0.3) — как категории мастера. */
+export type BatchTarget = "rental_pool" | "for_sale" | "buyout" | "ready";
+
+/**
+ * Правка партии после создания (2.0.3). `ids` — все единицы партии, как их
+ * видит окно; поля, которых нет, не меняются.
+ */
+export type BatchEditInput = {
+  ids: number[];
+  batch: string;
+  rename?: string;
+  purchaseDate?: string | null;
+  purchasePrice?: number | null;
+  salePrice?: number | null;
+  status?: { to: BatchTarget; ids: number[] };
+  enableModelPurpose?: boolean;
+};
+
+export type BatchEditResult = {
+  items: ApiScooter[];
+  changed: number;
+  statusChanged: number;
+  /** Арендные номера, выданные при переводе в аренду. */
+  slots: number[];
+};
+
+export function useEditBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: BatchEditInput) => api.post<BatchEditResult>("/api/scooters/batch/edit", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: scootersKeys.all });
+      qc.invalidateQueries({ queryKey: ["scooter-models"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
 /**
  * «Отменить» после добавления партии — только свою и в первые 10 минут.
  * Обычная функция, не хук: к нажатию «Отменить» окно уже закрыто.
