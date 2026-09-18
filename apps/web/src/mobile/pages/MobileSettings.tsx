@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { LogOut, Save, Pencil } from "lucide-react";
+import { LogOut, Save, Pencil, HardDrive, SlidersHorizontal } from "lucide-react";
+import { SectionTabs } from "@/components/SectionTabs";
+import { useSettingsTab, type SettingsTab } from "@/app/sectionTabs";
+import { StoragePage } from "@/pages/storage/StoragePage";
 import { useAppSettings, useSetAppSetting } from "@/lib/api/app-settings";
 import {
   useSwitchBillingPeriod,
@@ -39,6 +42,22 @@ export function MobileSettings() {
 
   const isAdmin =
     me?.role === "director" || me?.role === "creator" || me?.role === "admin";
+  // 18.09: «Хранилище» — вкладка настроек (раньше — пункт «Ещё»),
+  // только директору и создателю.
+  const canStorage = me?.role === "director" || me?.role === "creator";
+  const [tab, setTab] = useSettingsTab();
+  const tabs = (
+    <SectionTabs<SettingsTab>
+      attr="settings-tab"
+      touch
+      value={tab}
+      onChange={setTab}
+      tabs={[
+        { id: "main", label: "Основные", icon: SlidersHorizontal },
+        { id: "storage", label: "Хранилище", icon: HardDrive },
+      ]}
+    />
+  );
 
   const map = new Map((settingsQ.data ?? []).map((s) => [s.key, s.value]));
   const transitionActive = currentInfoQ.data?.transitionActive ?? false;
@@ -113,8 +132,18 @@ export function MobileSettings() {
     .map((p) => p[0]?.toUpperCase() ?? "")
     .join("");
 
+  if (canStorage && tab === "storage") {
+    return (
+      <div className="flex flex-col gap-4 pb-4">
+        {tabs}
+        <StoragePage embedded />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      {canStorage && tabs}
       {/* Профиль */}
       <div className="flex items-center gap-3 rounded-2xl bg-surface p-4 shadow-card">
         <div

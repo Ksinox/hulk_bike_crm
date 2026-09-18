@@ -1,3 +1,5 @@
+import { saveDevTab, saveSettingsTab } from "./sectionTabs";
+
 export type RouteId =
   | "dashboard"
   | "clients"
@@ -23,6 +25,22 @@ export type RouteId =
 
 const KEY = "hulk-route";
 
+/**
+ * 18.09: «Что нового» — вкладка «Развития», «Хранилище» — вкладка
+ * «Настроек». Старые ссылки, сохранённый раздел и кнопки ведут туда.
+ */
+export function normalizeRoute(r: RouteId): RouteId {
+  if (r === "whats-new") {
+    saveDevTab("done");
+    return "progress";
+  }
+  if (r === "storage") {
+    saveSettingsTab("storage");
+    return "settings";
+  }
+  return r;
+}
+
 const READY: RouteId[] = [
   "dashboard",
   "clients",
@@ -44,7 +62,7 @@ const READY: RouteId[] = [
 export function loadRoute(): RouteId {
   try {
     const v = localStorage.getItem(KEY) as RouteId | null;
-    if (v && READY.includes(v)) return v;
+    if (v && READY.includes(v)) return normalizeRoute(v);
   } catch {}
   return "dashboard";
 }

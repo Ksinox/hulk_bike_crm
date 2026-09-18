@@ -51,3 +51,9 @@ square("v203-edit-spread-now", (320, 36, 1120, 864), "d-batch-edit-now")
 # Телефон 780×1688: «было» — сводка партии и единицы, «стало» — статус в окне.
 phone_crop("v203-batch-units-m-was", (0, 780, 780, 1480), "m-batch-edit-was")
 phone_crop("v203-edit-spread-m-now", (0, 140, 780, 840), "m-batch-edit-now")
+
+# Меню: компьютер — боковая панель с началом страницы, телефон — шторка «Ещё».
+square("v203-nav-was", (0, 0, 640, 900), "d-menu-was")
+square("v203-nav-now", (0, 0, 640, 900), "d-menu-now")
+phone_crop("v203-more-m-was", (0, 880, 780, 1688), "m-menu-was")
+phone_crop("v203-more-m-now", (0, 880, 780, 1688), "m-menu-now")

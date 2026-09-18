@@ -3,7 +3,6 @@ import {
   Handshake,
   Bike,
   FileText,
-  HardDrive,
   Home,
   LayoutGrid,
   LogOut,
@@ -11,7 +10,6 @@ import {
   Scale,
   Settings,
   ShoppingBag,
-  Sparkles,
   TrendingUp,
   UserCog,
   Users,
@@ -59,15 +57,9 @@ export function buildMoreItems(canManageStaff: boolean): MobileNavItem[] {
   ];
   if (canManageStaff) {
     items.push({ id: "staff", label: "Сотрудники", icon: UserCog, ready: true });
-    items.push({
-      id: "storage",
-      label: "Хранилище",
-      icon: HardDrive,
-      ready: true,
-    });
   }
+  // 18.09: «Что нового» — вкладка «Развития», «Хранилище» — «Настроек».
   items.push(
-    { id: "whats-new", label: "Что нового", icon: Sparkles, ready: true },
     { id: "progress", label: "Развитие", icon: TrendingUp, ready: true },
     { id: "settings", label: "Настройки", icon: Settings, ready: false },
   );

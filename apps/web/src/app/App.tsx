@@ -12,10 +12,8 @@ import { Garage } from "@/pages/fleet/Garage";
 import { Service } from "@/pages/service/Service";
 import { Settings } from "@/pages/settings/Settings";
 import { Staff } from "@/pages/staff/Staff";
-import { StoragePage } from "@/pages/storage/StoragePage";
 import { Analytics } from "@/pages/analytics/Analytics";
 import { AnalyticsWall } from "@/pages/analytics/AnalyticsWall";
-import { WhatsNew } from "@/pages/whats-new/WhatsNew";
 import { Progress } from "@/pages/progress/Progress";
 import { Partners } from "@/pages/partners/Partners";
 import { Sales } from "@/pages/sales/Sales";
@@ -25,6 +23,7 @@ import { UpdateToast } from "./UpdateToast";
 import { TitleBar } from "./TitleBar";
 import { startWebVersionCheck } from "@/lib/version-check";
 import { APP_VERSION } from "@/data/releases";
+import { normalizeRoute } from "./route";
 import { isElectron } from "@/platform";
 import { loadRoute, saveRoute, type RouteId } from "./route";
 import { onNavigate } from "./navigationStore";
@@ -117,14 +116,16 @@ export function App() {
 
   useEffect(() => {
     return onNavigate((req) => {
-      setRoute(req.route);
-      saveRoute(req.route);
+      const r = normalizeRoute(req.route);
+      setRoute(r);
+      saveRoute(r);
     });
   }, []);
 
   const onSelect = (id: RouteId) => {
-    setRoute(id);
-    saveRoute(id);
+    const r = normalizeRoute(id);
+    setRoute(r);
+    saveRoute(r);
   };
 
   // Пока проверяем сессию — показываем заглушку.
@@ -155,32 +156,21 @@ export function App() {
     return <ForceChangePassword />;
   }
 
-  // Тост «Доступна новая версия» — ОБЩИЙ для мобилы и десктопа (раньше жил
-  // только внутри AppShell → на мобиле не показывался вовсе). Версия в
-  // заголовке + кнопка «Что нового» (перезагрузка в раздел релизов).
+  // Тост «Доступна новая версия» — ОБЩИЙ для мобилы и десктопа. Одна
+  // кнопка «Обновить» (18.09, заказчик): после обновления и так открывается
+  // полноэкранный показ того, что изменилось, — «Что нового» было лишним.
   const updateToastNode = webUpdate ? (
-    webUpdate.same ? (
-      <UpdateToast
-        title="Доступно обновление"
-        description="Вышли исправления — обновите страницу, чтобы их получить."
-        actionLabel="Обновить"
-        onAction={() => window.location.reload()}
-        onClose={() => setWebUpdate(null)}
-      />
-    ) : (
-      <UpdateToast
-        title={`Доступна версия ${webUpdate.version}`}
-        description="Обновите страницу — или посмотрите, что изменилось."
-        actionLabel="Обновить"
-        onAction={() => window.location.reload()}
-        secondaryLabel="Что нового"
-        onSecondary={() => {
-          saveRoute("whats-new");
-          window.location.reload();
-        }}
-        onClose={() => setWebUpdate(null)}
-      />
-    )
+    <UpdateToast
+      title={webUpdate.same ? "Доступно обновление" : `Доступна версия ${webUpdate.version}`}
+      description={
+        webUpdate.same
+          ? "Вышли исправления — обновите страницу, чтобы их получить."
+          : "Обновите страницу и посмотрите, что изменилось."
+      }
+      actionLabel="Обновить"
+      onAction={() => window.location.reload()}
+      onClose={() => setWebUpdate(null)}
+    />
   ) : null;
 
   // Мобильный слой — отдельная оболочка (нижний таб-бар + свои экраны).
@@ -344,9 +334,7 @@ function AppShell({
       <Staff />
     ) : route === "docs" ? (
       <Documents />
-    ) : route === "whats-new" ? (
-      <WhatsNew />
-    ) : route === "progress" ? (
+    ) : route === "progress" || route === "whats-new" ? (
       <Progress />
     ) : route === "partners" ? (
       <Partners />
@@ -354,10 +342,8 @@ function AppShell({
       <Sales />
     ) : route === "rassrochki" ? (
       <Buyout />
-    ) : route === "settings" ? (
+    ) : route === "settings" || route === "storage" ? (
       <Settings />
-    ) : route === "storage" ? (
-      <StoragePage />
     ) : route === "analytics" ? (
       <Analytics />
     ) : (

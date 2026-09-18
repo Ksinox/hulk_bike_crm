@@ -701,7 +701,7 @@ const RELEASE_2_0_3: ReleaseTourConfig = {
   label: "2.0.3",
   major: false,
   date: "2026-09-18",
-  subtitle: "Партии техники: номер, дата, закуп и статус — сразу у всей партии.",
+  subtitle: "Правка партии целиком; меню короче — «Что нового» теперь в «Развитии».",
   items: [
     {
       id: "batch-edit",
@@ -722,6 +722,28 @@ const RELEASE_2_0_3: ReleaseTourConfig = {
       zoom: {
         desktop: { before: `${P}/v203-batch-units-was.jpg`, after: `${P}/v203-edit-spread-now.jpg` },
         phone: { before: `${P}/v203-batch-units-m-was.jpg`, after: `${P}/v203-edit-spread-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "menu-shorter",
+      kind: "changed",
+      title: "Меню короче",
+      route: "progress",
+      headline: "«Что нового» — вкладка «Что уже сделано» в «Развитии», «Хранилище» — вкладка «Настроек».",
+      why: "В меню — то, чем пользуются каждый день; справочное — внутри разделов.",
+      points: [
+        "«Развитие»: «Текущие работы» и «Что уже сделано»",
+        "«Выкуп» и «Аналитика» вернулись из «Ещё»",
+        "Уведомление о новой версии — одна кнопка «Обновить»",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R203}/d-menu-was.jpg`, phone: `${R203}/m-menu-was.jpg` },
+      img: { desktop: `${R203}/d-menu-now.jpg`, phone: `${R203}/m-menu-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v203-nav-was.jpg`, after: `${P}/v203-nav-now.jpg` },
+        phone: { before: `${P}/v203-more-m-was.jpg`, after: `${P}/v203-more-m-now.jpg` },
       },
       imgPos: { desktop: "center center", phone: "center top" },
     },
