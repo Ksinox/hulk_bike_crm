@@ -101,6 +101,12 @@ const BatchBody = z
  * видит окно (сверяем, что партию не меняли параллельно); `batch` — её
  * текущее название. Поля, которых нет в запросе, не трогаем.
  */
+const BatchMove = z.object({
+  to: z.enum(["rental_pool", "for_sale", "buyout", "ready"]),
+  ids: z.array(z.number().int().positive()).min(1).max(200),
+});
+type BatchMoveTo = z.infer<typeof BatchMove>["to"];
+
 const BatchEditBody = z
   .object({
     ids: z.array(z.number().int().positive()).min(1).max(200),
@@ -115,12 +121,14 @@ const BatchEditBody = z
     purchasePrice: z.number().int().min(0).max(100_000_000).nullable().optional(),
     /** Цена продажи — тем, кто после правки на витрине. */
     salePrice: z.number().int().min(0).max(100_000_000).nullable().optional(),
-    status: z
-      .object({
-        to: z.enum(["rental_pool", "for_sale", "buyout", "ready"]),
-        ids: z.array(z.number().int().positive()).min(1).max(200),
-      })
-      .optional(),
+    /**
+     * Раскладка по статусам (18.09, заказчик: «двое в аренду, пятеро на
+     * продажу, двое в выкуп» — за одно сохранение). Единица — в одном
+     * направлении.
+     */
+    moves: z.array(BatchMove).max(4).optional(),
+    /** Одно направление — как было в первой версии окна. */
+    status: BatchMove.optional(),
     enableModelPurpose: z.boolean().optional(),
   })
   .strict();
@@ -1003,17 +1011,25 @@ export async function scootersRoutes(app: FastifyInstance) {
     if (inBatch !== ids.length) return reply.code(409).send(changedMsg);
 
     const rename = body.rename && body.rename !== body.batch.trim() ? body.rename : null;
-    const target = body.status?.to ?? null;
-    const moveIds = new Set(body.status?.ids ?? []);
-    if ([...moveIds].some((id) => !ids.includes(id))) {
-      return reply.code(400).send({ error: "validation", message: "Статус меняется только у техники этой партии." });
+    // Куда переводим: партия может разойтись по нескольким статусам сразу.
+    const targetOf = new Map<number, BatchMoveTo>();
+    for (const m of [...(body.moves ?? []), ...(body.status ? [body.status] : [])]) {
+      for (const id of m.ids) {
+        if (!ids.includes(id) || targetOf.has(id)) {
+          return reply.code(400).send({
+            error: "validation",
+            message: "Статус меняется только у техники этой партии, у каждой единицы — одно направление.",
+          });
+        }
+        targetOf.set(id, m.to);
+      }
     }
-    const moving = target ? units.filter((u) => moveIds.has(u.id)) : [];
+    const moving = units.filter((u) => targetOf.has(u.id));
 
     // ── Кому статус здесь менять нельзя — и почему ──
     type RowError = { id: number; message: string };
     const rowErrors: RowError[] = [];
-    if (target && moving.length) {
+    if (moving.length) {
       const movingIds = moving.map((u) => u.id);
       const liveRentals = await db
         .select({ id: rentals.id, scooterId: rentals.scooterId })
@@ -1034,6 +1050,7 @@ export async function scootersRoutes(app: FastifyInstance) {
         disassembly: "в разборке — статус меняется в карточке",
       };
       for (const u of moving) {
+        const target = targetOf.get(u.id)!;
         const rent = liveRentals.find((r) => r.scooterId === u.id);
         const buy = liveBuyouts.find((b) => b.scooterId === u.id);
         const msg = u.archivedAt
@@ -1070,20 +1087,29 @@ export async function scootersRoutes(app: FastifyInstance) {
     }
 
     // ── Модель должна подходить под категорию (как при добавлении) ──
-    const needRent = target === "rental_pool";
-    const needSale = target === "for_sale";
-    const modelIds = [...new Set(moving.map((u) => u.modelId).filter((x): x is number => x != null))];
+    const modelsOf = (to: BatchMoveTo) =>
+      new Set(
+        moving
+          .filter((u) => targetOf.get(u.id) === to)
+          .map((u) => u.modelId)
+          .filter((x): x is number => x != null),
+      );
+    const rentModelIds = modelsOf("rental_pool");
+    const saleModelIds = modelsOf("for_sale");
+    const modelIds = [...new Set([...rentModelIds, ...saleModelIds])];
     const models = modelIds.length
       ? await db.select().from(scooterModels).where(inArray(scooterModels.id, modelIds))
       : [];
-    const missingPurpose = models.filter((m) => (needRent && !m.forRent) || (needSale && !m.forSale));
-    if (missingPurpose.length) {
+    const missingRent = models.filter((m) => rentModelIds.has(m.id) && !m.forRent);
+    const missingSale = models.filter((m) => saleModelIds.has(m.id) && !m.forSale);
+    if (missingRent.length || missingSale.length) {
       const canEditModel = role === "director" || role === "admin" || role === "creator";
       if (!body.enableModelPurpose || !canEditModel) {
-        const names = missingPurpose.map((m) => `«${m.name}»`).join(", ");
+        const rent = missingRent.length > 0;
+        const names = (rent ? missingRent : missingSale).map((m) => `«${m.name}»`).join(", ");
         return reply.code(409).send({
-          error: needRent ? "model_not_for_rent" : "model_not_for_sale",
-          message: needRent
+          error: rent ? "model_not_for_rent" : "model_not_for_sale",
+          message: rent
             ? `Модель ${names} не отмечена для аренды. Отметьте «Сдаём в аренду» в «Модели».`
             : `Модель ${names} не отмечена для продажи. Отметьте «Продаём» в «Модели».`,
         });
@@ -1105,8 +1131,10 @@ export async function scootersRoutes(app: FastifyInstance) {
       await tx.execute(sql`select pg_advisory_xact_lock(815001)`);
 
       const slotFor = new Map<number, number>();
-      if (target && holdsSlot(target)) {
-        const entering = moving.filter((u) => !holdsSlot(u.baseStatus)).sort((a, b) => a.id - b.id);
+      {
+        const entering = moving
+          .filter((u) => holdsSlot(targetOf.get(u.id)!) && !holdsSlot(u.baseStatus))
+          .sort((a, b) => a.id - b.id);
         if (entering.length) {
           const [totalRow] = await tx
             .select({ value: appSettings.value })
@@ -1135,11 +1163,17 @@ export async function scootersRoutes(app: FastifyInstance) {
         }
       }
 
-      if (missingPurpose.length) {
+      if (missingRent.length) {
         await tx
           .update(scooterModels)
-          .set(needRent ? { forRent: true, updatedAt: new Date() } : { forSale: true, updatedAt: new Date() })
-          .where(inArray(scooterModels.id, missingPurpose.map((m) => m.id)));
+          .set({ forRent: true, updatedAt: new Date() })
+          .where(inArray(scooterModels.id, missingRent.map((m) => m.id)));
+      }
+      if (missingSale.length) {
+        await tx
+          .update(scooterModels)
+          .set({ forSale: true, updatedAt: new Date() })
+          .where(inArray(scooterModels.id, missingSale.map((m) => m.id)));
       }
 
       const changed: { before: Row; after: Row }[] = [];
@@ -1152,7 +1186,8 @@ export async function scootersRoutes(app: FastifyInstance) {
         if (canProfit && body.purchasePrice !== undefined && u.purchasePrice !== body.purchasePrice) {
           set.purchasePrice = body.purchasePrice;
         }
-        if (moveIds.has(u.id) && target) {
+        const target = targetOf.get(u.id);
+        if (target) {
           set.baseStatus = target;
           const was = holdsSlot(u.baseStatus);
           const will = holdsSlot(target);
@@ -1184,13 +1219,16 @@ export async function scootersRoutes(app: FastifyInstance) {
 
     if (!result.ok) return reply.code(result.code).send(result.payload);
 
-    if (missingPurpose.length) {
-      for (const m of missingPurpose) {
+    for (const [list, what] of [
+      [missingRent, "сдаём в аренду"],
+      [missingSale, "продаём"],
+    ] as const) {
+      for (const m of list) {
         await logActivity(req, {
           entity: "model",
           entityId: m.id,
           action: "updated",
-          summary: `Модель «${m.name}» отмечена: ${needRent ? "сдаём в аренду" : "продаём"} — при правке партии`,
+          summary: `Модель «${m.name}» отмечена: ${what} — при правке партии`,
         });
       }
     }

@@ -92,7 +92,8 @@ export type BatchEditInput = {
   purchaseDate?: string | null;
   purchasePrice?: number | null;
   salePrice?: number | null;
-  status?: { to: BatchTarget; ids: number[] };
+  /** Раскладка по статусам: у каждой единицы — одно направление. */
+  moves?: { to: BatchTarget; ids: number[] }[];
   enableModelPurpose?: boolean;
 };
 

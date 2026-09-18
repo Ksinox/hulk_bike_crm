@@ -152,8 +152,10 @@ export async function run(page, ctx) {
       h?.closest("section")?.querySelector("[data-batch-edit-open]")?.click();
     });
     await sleep(900);
-    await click(/^На продажу/, "[data-batch-targets]");
-    await sleep(500);
+    await page.evaluate(() => document.querySelector('[data-bin="for_sale"]')?.click());
+    await sleep(400);
+    await click(/^Все сюда/, "[data-batch-edit]");
+    await sleep(700);
     await click(/^Сохранить$/, "[data-batch-edit]");
     await sleep(2500);
     const gate = await page.evaluate(() => {
@@ -185,12 +187,24 @@ export async function run(page, ctx) {
   const state = () =>
     page.evaluate(() => ({
       summary: document.querySelector("[data-batch-summary]")?.textContent?.trim(),
-      picked: [...document.querySelectorAll('[data-batch-units] [role="checkbox"]')].map((b) => b.getAttribute("aria-checked") + (b.disabled ? "/нельзя" : "")),
-      notes: [...document.querySelectorAll("[data-batch-status] .rounded-xl.border")].map((n) => n.textContent?.trim()).filter(Boolean),
-      overflow: document.querySelector("[data-batch-edit]")
-        ? [...document.querySelectorAll("[data-batch-edit] *")].filter((e) => e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX === "visible" && e.children.length === 0).length
-        : null,
+      bins: [...document.querySelectorAll("[data-bin]")].map((b) => `${b.getAttribute("data-bin")}:${b.querySelector("[data-bin-count]")?.textContent ?? 0}`),
+      notes: [...document.querySelectorAll("[data-batch-status] .rounded-xl.border")].map((n) => n.textContent?.trim().slice(0, 90)).filter(Boolean),
     }));
+  const bin = async (t) => {
+    await page.evaluate((t) => document.querySelector(`[data-bin="${t}"]`)?.click(), t);
+    await sleep(350);
+  };
+  const tapUnit = async (n) => {
+    await page.evaluate((n) => {
+      const b = [...document.querySelectorAll('[data-batch-units] [role="checkbox"]')][n - 1];
+      b?.scrollIntoView({ block: "center" });
+      b?.click();
+    }, n);
+  };
+  const toUnits = async () => {
+    await page.evaluate(() => document.querySelector("[data-batch-status]")?.scrollIntoView({ block: "start" }));
+    await sleep(300);
+  };
   const openEdit = async () => {
     await page.evaluate(() => {
       const h = [...document.querySelectorAll("h3")].find((x) => /ТЕСТ партия/.test(x.textContent || ""));
@@ -198,6 +212,8 @@ export async function run(page, ctx) {
     });
     await sleep(900);
   };
+  const toastNow = () =>
+    page.evaluate(() => [...document.querySelectorAll('[role="alert"]')].map((a) => a.innerText.replace(/\n/g, " ")).join(" | "));
 
   await openEdit();
   console.log("окно открыто:", JSON.stringify(await state()));
@@ -207,20 +223,54 @@ export async function run(page, ctx) {
   await setDate("2026-09-12");
   if (await page.$("[data-batch-cost]")) await typeInto("[data-batch-cost]", "58000");
   await sleep(400);
-  console.log("общее:", JSON.stringify(await state()));
   await S("edit-fields");
 
-  await click(/^На продажу/, "[data-batch-targets]");
-  await sleep(500);
-  // четвёртую оставляем «не решили»
-  await page.evaluate(() => [...document.querySelectorAll('[data-batch-units] [role="checkbox"]')][3]?.click());
+  // Все четверо в аренду — номеров не хватает → «Добавить номера»
+  await toUnits();
+  await bin("rental_pool");
+  await click(/^Все сюда/, "[data-batch-edit]");
+  await sleep(900);
+  console.log("все в аренду:", JSON.stringify(await state()));
+  await S("edit-rent-short");
+  const hasAdd = await page.evaluate(() => !!document.querySelector("[data-add-slots]"));
+  if (hasAdd) {
+    await page.evaluate(() => document.querySelector("[data-add-slots]")?.click());
+    await sleep(700);
+    console.log("окно номеров:", await page.evaluate(() => document.querySelector("[data-add-slots-dialog]")?.innerText.replace(/\n+/g, " | ")));
+    await S("add-slots");
+    if (process.env.ADD_SLOTS === "1") {
+      await click(/^Добавить \d+$/, "[data-add-slots-dialog]");
+      await sleep(1800);
+      console.log("номера добавлены:", await toastNow(), JSON.stringify(await state()));
+      await toUnits();
+      await S("edit-rent-added");
+      await quiet();
+    } else {
+      await click(/^Отмена$/, "[data-add-slots-dialog]");
+      await sleep(400);
+    }
+  }
+  // Раскладка: 4-я — в аренду, 1–2 — на продажу, 3-я — в выкуп
+  await click(/^Вернуть · \d+$/, "[data-batch-edit]");
   await sleep(300);
+  await tapUnit(4);
+  await sleep(700);
+  await bin("for_sale");
+  await tapUnit(1);
+  await sleep(160);
+  await S("edit-fly");
+  await sleep(600);
+  await tapUnit(2);
+  await sleep(700);
+  await bin("buyout");
+  await tapUnit(3);
+  await sleep(800);
+  await toUnits();
+  console.log("раскладка:", JSON.stringify(await state()));
+  await S("edit-spread");
+
   await typeInto("[data-batch-sale-input]", "95000");
   await sleep(400);
-  await page.evaluate(() => document.querySelector("[data-batch-status]")?.scrollIntoView({ block: "start" }));
-  await sleep(300);
-  console.log("на продажу:", JSON.stringify(await state()));
-  await S("edit-status");
   await page.evaluate(() => document.querySelector("[data-batch-sale]")?.scrollIntoView({ block: "end" }));
   await sleep(300);
   await S("edit-sale");
@@ -229,21 +279,18 @@ export async function run(page, ctx) {
     if (!res.url().includes("/batch/edit")) return;
     let t = "";
     try {
-      t = (await res.text()).slice(0, 300);
+      t = (await res.text()).slice(0, 200);
     } catch {}
     console.log("ответ сервера:", res.status(), t);
   });
-  const saveBtn = await page.evaluate(() => {
-    const b = [...document.querySelectorAll("[data-batch-edit] button")].find((x) => (x.textContent || "").trim() === "Сохранить");
-    return b ? { disabled: b.disabled } : null;
-  });
-  console.log("кнопка «Сохранить»:", JSON.stringify(saveBtn));
   await click(/^Сохранить$/, "[data-batch-edit]");
   await sleep(2500);
-  const toastText = await page.evaluate(() => [...document.querySelectorAll('[role="alert"]')].map((a) => a.innerText.replace(/\n/g, " ")).join(" | "));
-  const stillOpen = await page.evaluate(() => document.querySelector("[data-batch-edit]")?.innerText.slice(-400) ?? null);
-  console.log("уведомление:", toastText, "| окно:", stillOpen ? "открыто — " + stillOpen.replace(/\n+/g, " / ") : "закрыто");
-  if (stillOpen) await S("save-error");
+  const stillOpen = await page.evaluate(() => !!document.querySelector("[data-batch-edit]"));
+  console.log("уведомление:", await toastNow(), "| окно:", stillOpen ? "открыто" : "закрыто");
+  if (stillOpen) {
+    await S("save-error");
+    return;
+  }
   await typeInto('input[placeholder^="Партия, модель или рама"]', "ТЕСТ партия");
   await sleep(700);
   await S("saved");
@@ -253,31 +300,6 @@ export async function run(page, ctx) {
     return h?.closest("section")?.innerText.replace(/\n+/g, " | ").slice(0, 320);
   });
   console.log("карточка после:", card2);
-
-  // В аренду — оставшуюся
-  await openEdit();
-  await click(/^В аренду/, "[data-batch-targets]");
-  await sleep(500);
-  await page.evaluate(() => document.querySelector("[data-batch-status]")?.scrollIntoView({ block: "start" }));
-  await sleep(300);
-  console.log("в аренду, все:", JSON.stringify(await state()));
-  await S("edit-rent-short");
-  // оставляем одну — четвёртую, «не решили»
-  await click(/^Снять все$/, "[data-batch-edit]");
-  await sleep(200);
-  await page.evaluate(() => [...document.querySelectorAll('[data-batch-units] [role="checkbox"]')][3]?.click());
-  await sleep(400);
-  console.log("в аренду, одна:", JSON.stringify(await state()));
-  await S("edit-rent");
-  await click(/^Сохранить$/, "[data-batch-edit]");
-  await sleep(2200);
-  console.log(
-    "уведомление:",
-    await page.evaluate(() => [...document.querySelectorAll('[role="alert"]')].map((a) => a.innerText.replace(/\n/g, " ")).join(" | ")),
-  );
-  await quiet();
-  await typeInto('input[placeholder^="Партия, модель или рама"]', "ТЕСТ партия");
-  await sleep(600);
   await click(/^Единицы · 4$/);
   await sleep(600);
   await S("after-units");

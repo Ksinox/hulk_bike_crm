@@ -94,6 +94,27 @@ r = await call("POST", "/api/scooters/batch/edit", {
 u = await units();
 ok(r.status === 200 && u[2].rentalSlot == null && u[2].exRentalSlot === slot, "из аренды на продажу — номер освободился", `был ${slot}, ex ${u[2].exRentalSlot}`);
 
+// 6б. Раскладка за один раз: одну — в выкуп, другую — «не решили»
+r = await call("POST", "/api/scooters/batch/edit", {
+  ids,
+  batch: "ТЕСТ партия shotbot 2",
+  moves: [
+    { to: "buyout", ids: [ids[2]] },
+    { to: "ready", ids: [ids[1]] },
+  ],
+});
+u = await units();
+ok(r.status === 200 && r.data.statusChanged === 2 && u[2].baseStatus === "buyout" && u[1].baseStatus === "ready", "раскладка по двум статусам одним запросом", `${u.map((s) => s.baseStatus).join(",")}`);
+r = await call("POST", "/api/scooters/batch/edit", {
+  ids,
+  batch: "ТЕСТ партия shotbot 2",
+  moves: [
+    { to: "buyout", ids: [ids[1]] },
+    { to: "for_sale", ids: [ids[1]] },
+  ],
+});
+ok(r.status === 400, "одна единица в двух направлениях — 400");
+
 // 7. Проданная — статус не меняется
 await call("PATCH", `/api/scooters/${ids[3]}`, { baseStatus: "sold" });
 r = await call("POST", "/api/scooters/batch/edit", {
