@@ -123,7 +123,7 @@ function flyDot(from: Element | null, to: Element | null, dotClass: string) {
 }
 
 /** Счётчик на корзине: подпрыгивает, когда туда прилетела единица. */
-function CountBadge({ n, tone }: { n: number; tone: BatchTarget }) {
+function CountBadge({ n, tone, corner }: { n: number; tone: BatchTarget; corner?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   const prev = useRef(n);
   useEffect(() => {
@@ -142,6 +142,8 @@ function CountBadge({ n, tone }: { n: number; tone: BatchTarget }) {
       className={cn(
         "flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full px-1.5 text-[12px] font-extrabold tabular-nums text-white",
         TONE[tone].dot,
+        // Телефон: кружок в углу корзины — название получает всю ширину.
+        corner && "absolute -right-1.5 -top-1.5 ring-2 ring-surface",
       )}
     >
       {n}
@@ -420,7 +422,7 @@ export function BatchEditSheet({
               aria-pressed={on}
               onClick={() => setActive(on ? null : t.id)}
               className={cn(
-                "flex min-w-0 items-center gap-2 rounded-2xl border-2 text-left transition-colors",
+                "relative flex min-w-0 items-center gap-2 rounded-2xl border-2 text-left transition-colors",
                 touch ? "min-h-[60px] px-2.5 py-2" : "min-h-[56px] px-2 py-1.5",
                 on
                   ? cn(TONE[t.id].border, TONE[t.id].soft)
@@ -442,7 +444,7 @@ export function BatchEditSheet({
                 <span
                   className={cn(
                     "block font-extrabold leading-tight",
-                    touch ? "text-[14px]" : "text-[12.5px]",
+                    touch ? "text-[14px]" : "text-[13px]",
                     on ? TONE[t.id].text : "text-ink",
                   )}
                 >
@@ -452,7 +454,7 @@ export function BatchEditSheet({
                   {n > 0 ? `${n} ${units3(n)}` : can ? `можно ${can}` : "некого"}
                 </span>
               </span>
-              {n > 0 && <CountBadge n={n} tone={t.id} />}
+              {n > 0 && <CountBadge n={n} tone={t.id} corner={touch} />}
             </button>
           );
         })}
@@ -853,7 +855,7 @@ export function BatchEditSheet({
       }}
       data-batch-edit
     >
-      <div className="flex max-h-[92vh] w-full max-w-[720px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg animate-modal-in">
+      <div className="flex max-h-[92vh] w-full max-w-[800px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg animate-modal-in">
         <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-6 py-4">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
             <Layers size={18} />
