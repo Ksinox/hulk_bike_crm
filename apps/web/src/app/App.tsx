@@ -24,6 +24,7 @@ import { Applications } from "@/pages/applications/Applications";
 import { UpdateToast } from "./UpdateToast";
 import { TitleBar } from "./TitleBar";
 import { startWebVersionCheck } from "@/lib/version-check";
+import { APP_VERSION } from "@/data/releases";
 import { isElectron } from "@/platform";
 import { loadRoute, saveRoute, type RouteId } from "./route";
 import { onNavigate } from "./navigationStore";
@@ -86,7 +87,13 @@ export function App() {
   // их с сервера и прокидывает в lib/billingPeriod, перетирая плоское
   // значение app_settings. Так смена дня старта не переписывает прошлое.
   useBillingPeriodAnchors({ enabled: !!me });
-  const [webUpdate, setWebUpdate] = useState<string | null>(null);
+  /**
+   * Новая сборка на сервере. `version` — номер для людей (2.0.3); `same` —
+   * номер тот же, что у открытой страницы: вышли исправления без новой
+   * версии (18.09: на превью и после хотфиксов тост писал «Доступна
+   * версия 2.0.2», хотя человек уже на 2.0.2).
+   */
+  const [webUpdate, setWebUpdate] = useState<{ version: string; same: boolean } | null>(null);
   const [route, setRoute] = useState<RouteId>(() => loadRoute());
 
   // Синхронизация роли в UI-сторе (lib/role) с реальной ролью из сессии.
@@ -104,7 +111,7 @@ export function App() {
     // В webUpdate кладём пользовательскую версию (1.0.0) для тоста; если её нет
     // в version.json (старая сборка) — падаем на build-id.
     return startWebVersionCheck((next, _cur, appVersion) =>
-      setWebUpdate(appVersion ?? next),
+      setWebUpdate({ version: appVersion ?? next, same: appVersion === APP_VERSION }),
     );
   }, []);
 
@@ -152,18 +159,28 @@ export function App() {
   // только внутри AppShell → на мобиле не показывался вовсе). Версия в
   // заголовке + кнопка «Что нового» (перезагрузка в раздел релизов).
   const updateToastNode = webUpdate ? (
-    <UpdateToast
-      title={`Доступна версия ${webUpdate}`}
-      description="Обновите страницу — или посмотрите, что изменилось."
-      actionLabel="Обновить"
-      onAction={() => window.location.reload()}
-      secondaryLabel="Что нового"
-      onSecondary={() => {
-        saveRoute("whats-new");
-        window.location.reload();
-      }}
-      onClose={() => setWebUpdate(null)}
-    />
+    webUpdate.same ? (
+      <UpdateToast
+        title="Доступно обновление"
+        description="Вышли исправления — обновите страницу, чтобы их получить."
+        actionLabel="Обновить"
+        onAction={() => window.location.reload()}
+        onClose={() => setWebUpdate(null)}
+      />
+    ) : (
+      <UpdateToast
+        title={`Доступна версия ${webUpdate.version}`}
+        description="Обновите страницу — или посмотрите, что изменилось."
+        actionLabel="Обновить"
+        onAction={() => window.location.reload()}
+        secondaryLabel="Что нового"
+        onSecondary={() => {
+          saveRoute("whats-new");
+          window.location.reload();
+        }}
+        onClose={() => setWebUpdate(null)}
+      />
+    )
   ) : null;
 
   // Мобильный слой — отдельная оболочка (нижний таб-бар + свои экраны).
