@@ -46,8 +46,8 @@ def phone_crop(name: str, box: tuple[int, int, int, int], out: str) -> None:
 # Компьютер 1440×900: «было» — карточка партии (без «Изменить»),
 # «стало» — окно правки партии со статусом.
 square("v203-batch-units-was", (86, 252, 748, 816), "d-batch-edit-was")
-square("v203-edit-status-now", (360, 36, 1080, 864), "d-batch-edit-now")
+square("v203-edit-spread-now", (320, 36, 1120, 864), "d-batch-edit-now")
 
 # Телефон 780×1688: «было» — сводка партии и единицы, «стало» — статус в окне.
 phone_crop("v203-batch-units-m-was", (0, 780, 780, 1480), "m-batch-edit-was")
-phone_crop("v203-edit-status-m-now", (0, 140, 780, 840), "m-batch-edit-now")
+phone_crop("v203-edit-spread-m-now", (0, 140, 780, 840), "m-batch-edit-now")
