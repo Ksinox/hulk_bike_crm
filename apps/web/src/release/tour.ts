@@ -694,8 +694,43 @@ const RELEASE_2_0_2: ReleaseTourConfig = {
   ],
 };
 
+const R203 = "/release/2.0.3";
+
+const RELEASE_2_0_3: ReleaseTourConfig = {
+  version: "2.0.3",
+  label: "2.0.3",
+  major: false,
+  date: "2026-09-18",
+  subtitle: "Партии техники: номер, дата, закуп и статус — сразу у всей партии.",
+  items: [
+    {
+      id: "batch-edit",
+      kind: "new",
+      title: "Партию можно изменить",
+      route: "fleet",
+      headline: "«Скутеры → Партии» → «Изменить»: номер, дата, закуп и статус — сразу у всей партии.",
+      why:
+        "Раньше партию после создания меняли по одной единице, а статус — ещё и с ключом директора на каждую. Партию «Пока не решили» нельзя было разом выставить на продажу.",
+      points: [
+        "Статус — у выбранных единиц: проданные и занятые остаются, окно пишет почему",
+        "Ключ директора — один раз на всю партию",
+        "В аренду — с первыми свободными номерами, на продажу — одна цена на всех",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R203}/d-batch-edit-was.jpg`, phone: `${R203}/m-batch-edit-was.jpg` },
+      img: { desktop: `${R203}/d-batch-edit-now.jpg`, phone: `${R203}/m-batch-edit-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v203-batch-units-was.jpg`, after: `${P}/v203-edit-status-now.jpg` },
+        phone: { before: `${P}/v203-batch-units-m-was.jpg`, after: `${P}/v203-edit-status-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+  ],
+};
+
 /** Все выпуски с показом — от старого к новому. */
-export const RELEASE_TOURS: ReleaseTourConfig[] = [RELEASE_2_0, RELEASE_2_0_1, RELEASE_2_0_2];
+export const RELEASE_TOURS: ReleaseTourConfig[] = [RELEASE_2_0, RELEASE_2_0_1, RELEASE_2_0_2, RELEASE_2_0_3];
 
 /** Последний выпуск — для «кто посмотрел» и меток. */
 export const RELEASE_TOUR: ReleaseTourConfig = RELEASE_TOURS[RELEASE_TOURS.length - 1]!;

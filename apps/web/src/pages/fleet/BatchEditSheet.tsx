@@ -330,7 +330,11 @@ export function BatchEditSheet({
               data-batch-cost
             />
             <span className="mt-1 block text-[11.5px] text-muted-2">
-              {costC.same
+              {costChanged
+                ? cost
+                  ? `Станет у всех ${units.length}: ${fmtMoney(Number(cost))}. В проданных сделках закуп свой, он не меняется.`
+                  : `У всех ${units.length} закуп станет «не указан».`
+                : costC.same
                 ? costC.value != null
                   ? `У всех ${units.length} — ${fmtMoney(costC.value)}. В проданных сделках закуп свой, он не меняется.`
                   : "Не указан ни у одной единицы."
@@ -571,7 +575,11 @@ export function BatchEditSheet({
             />
           </label>
           <p className="text-[11.5px] text-muted-2">
-            {!saleC.same
+            {saleChanged
+              ? sale
+                ? `Станет у всех ${showcase.length} на витрине: ${fmtMoney(Number(sale))}. Проданные не меняются.`
+                : `У всех ${showcase.length} на витрине цена станет «не указана».`
+              : !saleC.same
               ? "Сейчас цены разные — впишите, и она станет у всех на витрине. Не трогайте — останутся свои."
               : noPrice
                 ? `Без цены: ${noPrice}. Цена видна в «Продажах».`
