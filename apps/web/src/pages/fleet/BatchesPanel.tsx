@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, Layers, Search, X } from "lucide-react";
+import { ChevronDown, Layers, Pencil, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCan } from "@/lib/permissions";
 import { useRole } from "@/lib/role";
@@ -10,6 +10,8 @@ import type { ApiScooter } from "@/lib/api/types";
 import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { suggestKey } from "@/components/SuggestInput";
 import { fmtMoney, plural } from "./addScooterDraft";
+import { GROUP_LABEL, GROUP_TONE, groupOf, unitHint, type Group } from "./batchGroups";
+import { BatchEditSheet } from "./BatchEditSheet";
 
 /**
  * «Партии» (2.0.1) — как отбилась поставка: сколько единиц на витрине,
@@ -18,34 +20,7 @@ import { fmtMoney, plural } from "./addScooterDraft";
  * Прибыль считается как в «Продажах»: цена сделки − закуп из сделки.
  */
 
-type Group = "sale" | "sold" | "rent" | "buyout" | "other" | "archive";
-
-const GROUP_LABEL: Record<Group, string> = {
-  sale: "На витрине",
-  sold: "Продано",
-  rent: "В аренде",
-  buyout: "В выкупе",
-  other: "Не распределены",
-  archive: "В архиве",
-};
-
-const GROUP_TONE: Record<Group, string> = {
-  sale: "bg-emerald-50 text-emerald-800",
-  sold: "bg-blue-50 text-blue-800",
-  rent: "bg-surface-soft text-ink-2",
-  buyout: "bg-purple-soft text-purple-ink",
-  other: "bg-surface-soft text-muted",
-  archive: "bg-surface-soft text-muted-2",
-};
-
-export function groupOf(s: ApiScooter): Group {
-  if (s.baseStatus === "sold") return "sold";
-  if (s.archivedAt) return "archive";
-  if (s.baseStatus === "for_sale") return "sale";
-  if (s.baseStatus === "buyout") return "buyout";
-  if (s.baseStatus === "rental_pool" || s.baseStatus === "repair" || s.baseStatus === "dtp") return "rent";
-  return "other";
-}
+export { groupOf };
 
 export type BatchSummary = {
   key: string;
@@ -137,6 +112,8 @@ export function BatchesPanel({
   const deals = dealsQ.data?.items ?? [];
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  /** Партия в окне правки (2.0.3) — по ключу, чтобы окно видело свежие данные. */
+  const [editKey, setEditKey] = useState<string | null>(null);
 
   const modelName = (s: ApiScooter) =>
     models.find((m) => m.id === s.modelId)?.name ?? scooterModelName(s.name);
@@ -185,7 +162,7 @@ export function BatchesPanel({
         <div className="text-[12.5px] text-muted">
           {isLoading
             ? "Загружаем…"
-            : `${batches.length} ${plural(batches.length, ["партия", "партии", "партий"])} · номер партии указывают при добавлении техники`}
+            : `${batches.length} ${plural(batches.length, ["партия", "партии", "партий"])} · номер, дату, закуп и статус меняют кнопкой «Изменить»`}
         </div>
       </div>
 
@@ -213,9 +190,20 @@ export function BatchesPanel({
             open={open === b.key}
             onToggle={() => setOpen((k) => (k === b.key ? null : b.key))}
             onOpenScooter={onOpenScooter}
+            onEdit={() => setEditKey(b.key)}
           />
         ))}
       </div>
+
+      {editKey && batches.find((x) => x.key === editKey) && (
+        <BatchEditSheet
+          key={editKey}
+          batch={batches.find((x) => x.key === editKey)!}
+          batches={batches}
+          touch={touch}
+          onClose={() => setEditKey(null)}
+        />
+      )}
     </div>
   );
 }
@@ -227,6 +215,7 @@ function BatchCard({
   open,
   onToggle,
   onOpenScooter,
+  onEdit,
 }: {
   b: BatchSummary;
   touch: boolean;
@@ -234,6 +223,7 @@ function BatchCard({
   open: boolean;
   onToggle: () => void;
   onOpenScooter?: (s: ApiScooter) => void;
+  onEdit: () => void;
 }) {
   const total = b.units.length;
   const soldPct = total ? Math.round((b.counts.sold / total) * 100) : 0;
@@ -314,17 +304,30 @@ function BatchCard({
         )}
       </dl>
 
-      <button
-        type="button"
-        onClick={onToggle}
-        className={cn(
-          "mt-3 inline-flex items-center gap-1.5 self-start rounded-full px-1 font-semibold text-blue-700 hover:text-blue-800",
-          touch ? "h-10 text-[14px]" : "h-7 text-[12.5px]",
-        )}
-      >
-        <ChevronDown size={15} className={cn("transition-transform", open && "rotate-180")} />
-        {open ? "Скрыть единицы" : `Единицы · ${total}`}
-      </button>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggle}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full px-1 font-semibold text-blue-700 hover:text-blue-800",
+            touch ? "h-11 text-[14px]" : "h-8 text-[12.5px]",
+          )}
+        >
+          <ChevronDown size={15} className={cn("transition-transform", open && "rotate-180")} />
+          {open ? "Скрыть единицы" : `Единицы · ${total}`}
+        </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          data-batch-edit-open
+          className={cn(
+            "ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-white font-semibold text-ink-2 hover:border-blue-600/50 hover:text-blue-700",
+            touch ? "h-11 px-4 text-[14px]" : "h-8 px-3 text-[12.5px]",
+          )}
+        >
+          <Pencil size={touch ? 15 : 13} /> Изменить
+        </button>
+      </div>
 
       {open && (
         <ul className="mt-1 divide-y divide-border overflow-hidden rounded-xl border border-border">
@@ -346,15 +349,27 @@ function BatchCard({
                   )}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2 text-[13.5px] font-bold text-ink">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] font-bold text-ink">
                       <ScooterName name={u.name} number={u.rentalSlot} size="sm" />
+                      {touch && (
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-bold", GROUP_TONE[g])}>
+                          {g === "sold" && deal ? "Продан" : GROUP_LABEL[g]}
+                        </span>
+                      )}
                     </span>
-                    <span className="block truncate font-mono text-[11.5px] text-muted">{u.vin || "без рамы"}</span>
+                    <span className="block truncate text-[11.5px] text-muted">{unitHint(u)}</span>
                   </span>
-                  <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-bold", GROUP_TONE[g])}>
-                    {g === "sold" && deal ? "Продан" : GROUP_LABEL[g]}
-                  </span>
-                  <span className="w-[116px] shrink-0 whitespace-nowrap text-right text-[12.5px] tabular-nums">
+                  {!touch && (
+                    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-bold", GROUP_TONE[g])}>
+                      {g === "sold" && deal ? "Продан" : GROUP_LABEL[g]}
+                    </span>
+                  )}
+                  <span
+                    className={cn(
+                      "shrink-0 whitespace-nowrap text-right text-[12.5px] tabular-nums",
+                      touch ? "w-auto" : "w-[116px]",
+                    )}
+                  >
                     {price != null ? (
                       <span className="font-semibold text-ink">{fmtMoney(price)}</span>
                     ) : (

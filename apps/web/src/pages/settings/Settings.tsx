@@ -9,7 +9,10 @@
  * приедут другие глобальные параметры (тарифы, штрафы, etc).
  */
 import { useMemo, useState } from "react";
-import { Save, Settings as SettingsIcon, Lock, AlertTriangle, CalendarClock } from "lucide-react";
+import { Save, Settings as SettingsIcon, Lock, AlertTriangle, CalendarClock, HardDrive, SlidersHorizontal } from "lucide-react";
+import { SectionTabs } from "@/components/SectionTabs";
+import { useSettingsTab, type SettingsTab } from "@/app/sectionTabs";
+import { StoragePage } from "@/pages/storage/StoragePage";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { useAppSettings, useSetAppSetting } from "@/lib/api/app-settings";
 import {
@@ -33,6 +36,11 @@ export function Settings() {
     me.data?.role === "director" ||
     me.data?.role === "creator" ||
     me.data?.role === "admin";
+  // 18.09: «Хранилище» — вкладка настроек (раньше — раздел в меню), как и
+  // раньше, только директору и создателю.
+  const canStorage = me.data?.role === "director" || me.data?.role === "creator";
+  const [tabPicked, setTab] = useSettingsTab();
+  const tab: SettingsTab = canStorage ? tabPicked : "main";
   const settingsQ = useAppSettings();
   const setMut = useSetAppSetting();
   const items = settingsQ.data ?? [];
@@ -148,13 +156,27 @@ export function Settings() {
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       <Topbar />
 
-      <header className="flex items-baseline gap-3">
+      <header className="flex flex-wrap items-center gap-4">
         <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
           Настройки
         </h1>
+        {canStorage && (
+          <SectionTabs<SettingsTab>
+            attr="settings-tab"
+            align="start"
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { id: "main", label: "Основные", icon: SlidersHorizontal },
+              { id: "storage", label: "Хранилище", icon: HardDrive },
+            ]}
+          />
+        )}
       </header>
 
-      {!isAdmin ? (
+      {tab === "storage" ? (
+        <StoragePage embedded />
+      ) : !isAdmin ? (
         <div className="rounded-2xl bg-surface p-8 text-center shadow-card-sm">
           <Lock size={32} className="mx-auto mb-2 text-muted-2" />
           <div className="text-[14px] font-semibold text-ink">

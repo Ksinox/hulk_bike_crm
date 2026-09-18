@@ -7,14 +7,12 @@ import {
   CircleAlert,
   ClipboardCheck,
   FileText,
-  HardDrive,
   Home,
   LogOut,
   Receipt,
   Scale,
   Settings,
   ShoppingBag,
-  Sparkles,
   Handshake,
   TrendingUp,
   UserCog,
@@ -62,22 +60,13 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
     { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "docs", label: "Документы", icon: FileText, ready: true },
   ];
-  // «Сотрудники» и «Хранилище» — только director/creator.
+  // «Сотрудники» — только director/creator. 18.09: «Что нового» — вкладка
+  // «Развития», «Хранилище» — вкладка «Настроек»: в меню — то, чем
+  // пользуются каждый день.
   if (canManageStaff) {
     items.push({ id: "staff", label: "Сотрудники", icon: UserCog, ready: true });
   }
-  items.push(
-    { id: "whats-new", label: "Что нового", icon: Sparkles, ready: true },
-    { id: "progress", label: "Развитие", icon: TrendingUp, ready: true },
-  );
-  if (canManageStaff) {
-    items.push({
-      id: "storage",
-      label: "Хранилище",
-      icon: HardDrive,
-      ready: true,
-    });
-  }
+  items.push({ id: "progress", label: "Развитие", icon: TrendingUp, ready: true });
   items.push({ id: "rassrochki", label: "Выкуп", icon: Receipt, ready: true });
   // Разделы «скоро» — всегда в конце списка.
   // Аналитика открыта с 06.09 — доска показателей и экран на второй монитор.
@@ -271,15 +260,13 @@ export function Sidebar({
               onSelect={onSelect}
               isNew={isNewSection(item.id)}
               badgeCount={
-                item.id === "whats-new"
-                  ? changelogUnread
-                  : item.id === "rentals"
-                    ? newRentApplications
-                    : item.id === "sales"
-                      ? newSaleApplications
-                      : item.id === "progress"
-                        ? freshProgress
-                        : 0
+                item.id === "rentals"
+                  ? newRentApplications
+                  : item.id === "sales"
+                    ? newSaleApplications
+                    : item.id === "progress"
+                      ? freshProgress + changelogUnread
+                      : 0
               }
             />
           ))}
@@ -308,7 +295,7 @@ export function Sidebar({
                 {/* Красная точка, если в скрытых есть непрочитанное */}
                 {!expanded &&
                   hiddenItems.some(
-                    (i) => i.id === "whats-new" && changelogUnread > 0,
+                    (i) => i.id === "progress" && changelogUnread > 0,
                   ) && (
                     <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red ring-2 ring-surface" />
                   )}
@@ -378,15 +365,13 @@ export function Sidebar({
             const Icon = item.icon;
             const disabled = item.ready !== true;
             const badge =
-              item.id === "whats-new"
-                ? changelogUnread
-                : item.id === "rentals"
-                  ? newRentApplications
-                  : item.id === "sales"
-                    ? newSaleApplications
-                    : item.id === "progress"
-                      ? freshProgress
-                      : 0;
+              item.id === "rentals"
+                ? newRentApplications
+                : item.id === "sales"
+                  ? newSaleApplications
+                  : item.id === "progress"
+                    ? freshProgress + changelogUnread
+                    : 0;
             return (
               <button
                 key={item.id}

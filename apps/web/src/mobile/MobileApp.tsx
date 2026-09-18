@@ -24,12 +24,10 @@ import { MobileApplications } from "./pages/MobileApplications";
 import { MobileDebtors } from "./pages/MobileDebtors";
 import { MobileService } from "./pages/MobileService";
 import { MobileStaff } from "./pages/MobileStaff";
-import { MobileWhatsNew } from "./pages/MobileWhatsNew";
 import { MobileProgress } from "./pages/MobileProgress";
 import { MobileSettings } from "./pages/MobileSettings";
 import { MobileDocuments } from "./pages/MobileDocuments";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
-import { StoragePage } from "@/pages/storage/StoragePage";
 import { Partners } from "@/pages/partners/Partners";
 import { Sales } from "@/pages/sales/Sales";
 import { Analytics } from "@/pages/analytics/Analytics";
@@ -206,7 +204,6 @@ function MobilePage({
     case "staff":
       return <MobileStaff />;
     case "whats-new":
-      return <MobileWhatsNew />;
     case "progress":
       return <MobileProgress />;
     case "sales":
@@ -238,17 +235,10 @@ function MobilePage({
         </div>
       );
     case "settings":
+    case "storage":
       return <MobileSettings />;
     case "docs":
       return <MobileDocuments />;
-    case "storage":
-      // Страница «Хранилище» адаптивна — переиспользуем десктопную в мобильной
-      // обёртке (она и так grid-cols-1 на узком экране).
-      return (
-        <div className="px-1 pb-4">
-          <StoragePage />
-        </div>
-      );
     default:
       return <MobilePlaceholder route={route} />;
   }

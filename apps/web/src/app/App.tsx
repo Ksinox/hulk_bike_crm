@@ -12,10 +12,8 @@ import { Garage } from "@/pages/fleet/Garage";
 import { Service } from "@/pages/service/Service";
 import { Settings } from "@/pages/settings/Settings";
 import { Staff } from "@/pages/staff/Staff";
-import { StoragePage } from "@/pages/storage/StoragePage";
 import { Analytics } from "@/pages/analytics/Analytics";
 import { AnalyticsWall } from "@/pages/analytics/AnalyticsWall";
-import { WhatsNew } from "@/pages/whats-new/WhatsNew";
 import { Progress } from "@/pages/progress/Progress";
 import { Partners } from "@/pages/partners/Partners";
 import { Sales } from "@/pages/sales/Sales";
@@ -24,6 +22,8 @@ import { Applications } from "@/pages/applications/Applications";
 import { UpdateToast } from "./UpdateToast";
 import { TitleBar } from "./TitleBar";
 import { startWebVersionCheck } from "@/lib/version-check";
+import { APP_VERSION } from "@/data/releases";
+import { normalizeRoute } from "./route";
 import { isElectron } from "@/platform";
 import { loadRoute, saveRoute, type RouteId } from "./route";
 import { onNavigate } from "./navigationStore";
@@ -86,7 +86,13 @@ export function App() {
   // их с сервера и прокидывает в lib/billingPeriod, перетирая плоское
   // значение app_settings. Так смена дня старта не переписывает прошлое.
   useBillingPeriodAnchors({ enabled: !!me });
-  const [webUpdate, setWebUpdate] = useState<string | null>(null);
+  /**
+   * Новая сборка на сервере. `version` — номер для людей (2.0.3); `same` —
+   * номер тот же, что у открытой страницы: вышли исправления без новой
+   * версии (18.09: на превью и после хотфиксов тост писал «Доступна
+   * версия 2.0.2», хотя человек уже на 2.0.2).
+   */
+  const [webUpdate, setWebUpdate] = useState<{ version: string; same: boolean } | null>(null);
   const [route, setRoute] = useState<RouteId>(() => loadRoute());
 
   // Синхронизация роли в UI-сторе (lib/role) с реальной ролью из сессии.
@@ -104,20 +110,22 @@ export function App() {
     // В webUpdate кладём пользовательскую версию (1.0.0) для тоста; если её нет
     // в version.json (старая сборка) — падаем на build-id.
     return startWebVersionCheck((next, _cur, appVersion) =>
-      setWebUpdate(appVersion ?? next),
+      setWebUpdate({ version: appVersion ?? next, same: appVersion === APP_VERSION }),
     );
   }, []);
 
   useEffect(() => {
     return onNavigate((req) => {
-      setRoute(req.route);
-      saveRoute(req.route);
+      const r = normalizeRoute(req.route);
+      setRoute(r);
+      saveRoute(r);
     });
   }, []);
 
   const onSelect = (id: RouteId) => {
-    setRoute(id);
-    saveRoute(id);
+    const r = normalizeRoute(id);
+    setRoute(r);
+    saveRoute(r);
   };
 
   // Пока проверяем сессию — показываем заглушку.
@@ -148,20 +156,19 @@ export function App() {
     return <ForceChangePassword />;
   }
 
-  // Тост «Доступна новая версия» — ОБЩИЙ для мобилы и десктопа (раньше жил
-  // только внутри AppShell → на мобиле не показывался вовсе). Версия в
-  // заголовке + кнопка «Что нового» (перезагрузка в раздел релизов).
+  // Тост «Доступна новая версия» — ОБЩИЙ для мобилы и десктопа. Одна
+  // кнопка «Обновить» (18.09, заказчик): после обновления и так открывается
+  // полноэкранный показ того, что изменилось, — «Что нового» было лишним.
   const updateToastNode = webUpdate ? (
     <UpdateToast
-      title={`Доступна версия ${webUpdate}`}
-      description="Обновите страницу — или посмотрите, что изменилось."
+      title={webUpdate.same ? "Доступно обновление" : `Доступна версия ${webUpdate.version}`}
+      description={
+        webUpdate.same
+          ? "Вышли исправления — обновите страницу, чтобы их получить."
+          : "Обновите страницу и посмотрите, что изменилось."
+      }
       actionLabel="Обновить"
       onAction={() => window.location.reload()}
-      secondaryLabel="Что нового"
-      onSecondary={() => {
-        saveRoute("whats-new");
-        window.location.reload();
-      }}
       onClose={() => setWebUpdate(null)}
     />
   ) : null;
@@ -327,9 +334,7 @@ function AppShell({
       <Staff />
     ) : route === "docs" ? (
       <Documents />
-    ) : route === "whats-new" ? (
-      <WhatsNew />
-    ) : route === "progress" ? (
+    ) : route === "progress" || route === "whats-new" ? (
       <Progress />
     ) : route === "partners" ? (
       <Partners />
@@ -337,10 +342,8 @@ function AppShell({
       <Sales />
     ) : route === "rassrochki" ? (
       <Buyout />
-    ) : route === "settings" ? (
+    ) : route === "settings" || route === "storage" ? (
       <Settings />
-    ) : route === "storage" ? (
-      <StoragePage />
     ) : route === "analytics" ? (
       <Analytics />
     ) : (

@@ -48,7 +48,11 @@ function isVideoName(n: string): boolean {
   return /\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(n);
 }
 
-export function StoragePage() {
+/**
+ * `embedded` (18.09): страница живёт вкладкой «Хранилище» в «Настройках» —
+ * без своего заголовка, его заменяет вкладка.
+ */
+export function StoragePage({ embedded = false }: { embedded?: boolean } = {}) {
   const stats = useStorageStats();
   const [prefix, setPrefix] = useState("");
   const listing = useStorageList(prefix);
@@ -63,11 +67,13 @@ export function StoragePage() {
     : 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-5 px-1 py-1">
+    <div className={cn("flex w-full flex-col gap-5 px-1 py-1", !embedded && "mx-auto max-w-[1100px]")}>
       <div>
-        <h1 className="font-display text-[22px] font-extrabold text-ink">
-          Хранилище
-        </h1>
+        {!embedded && (
+          <h1 className="font-display text-[22px] font-extrabold text-ink">
+            Хранилище
+          </h1>
+        )}
         <p className="mt-0.5 text-[13px] text-muted">
           Сколько места занимает база и файлы, и что лежит в хранилище.
         </p>

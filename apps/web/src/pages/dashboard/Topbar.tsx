@@ -376,6 +376,7 @@ function ChangelogPopover({
   const preview = changelog.slice(0, 3);
   const onOpen = () => {
     onClose();
+    // 18.09: «Что нового» — вкладка «Что уже сделано» в «Развитии».
     navigate({ route: "whats-new" });
   };
   return (
@@ -413,7 +414,7 @@ function ChangelogPopover({
           onClick={onOpen}
           className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-ink px-3 py-2 text-[13px] font-bold text-white transition-colors hover:bg-blue-600"
         >
-          {unreadCount > 0 ? "Посмотреть улучшения" : "Открыть «Что нового»"}
+          {unreadCount > 0 ? "Посмотреть улучшения" : "Открыть «Что уже сделано»"}
         </button>
       </div>
     </div>

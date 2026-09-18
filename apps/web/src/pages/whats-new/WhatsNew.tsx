@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
-import { Topbar } from "@/pages/dashboard/Topbar";
 import {
   changelog,
   type ChangelogCategory,
@@ -52,7 +51,11 @@ function sectionId(date: string): string {
   return `whats-new-date-${date}`;
 }
 
-export function WhatsNew() {
+/**
+ * «Что уже сделано» — вкладка раздела «Развитие» (18.09; до этого —
+ * отдельный раздел «Что нового» в меню). Выпуски «было → стало» и архив.
+ */
+export function WhatsNewContent() {
   useEffect(() => {
     markChangelogSeen();
   }, []);
@@ -104,17 +107,15 @@ export function WhatsNew() {
   };
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-4">
-      <Topbar />
-
+    <div className="flex min-w-0 flex-col gap-4">
       <header>
         <h1 className="flex items-center gap-2 font-display text-[34px] font-extrabold leading-none text-ink">
           <Sparkles size={28} className="text-blue-600" />
-          Что нового
+          Что уже сделано
         </h1>
         <div className="mt-1.5 text-[13px] text-muted-2">
-          Изменения в CRM, объяснённые простым языком — без терминов.
-          Сверху — крупные изменения «Было / Стало», ниже — полный список правок.
+          Вышедшие обновления CRM простым языком. Сверху — крупные изменения «Было / Стало», ниже — полный
+          список правок.
         </div>
       </header>
 
@@ -222,7 +223,7 @@ export function WhatsNew() {
           ))}
         </section>
       </div>
-    </main>
+    </div>
   );
 }
 

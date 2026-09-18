@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, eq, ilike, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { activityLog, appSettings, rentals, scooterModels, scooters, users } from "../db/schema.js";
+import { activityLog, appSettings, buyoutDeals, rentals, scooterModels, scooters, users } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
 import { requireDirectorApproval } from "./approvals.js";
@@ -95,6 +95,48 @@ const BatchBody = z
     units: z.array(BatchUnit).min(1).max(50),
   })
   .strict();
+
+/**
+ * 2.0.3: правка партии после создания. `ids` — все единицы партии, как их
+ * видит окно (сверяем, что партию не меняли параллельно); `batch` — её
+ * текущее название. Поля, которых нет в запросе, не трогаем.
+ */
+const BatchMove = z.object({
+  to: z.enum(["rental_pool", "for_sale", "buyout", "ready"]),
+  ids: z.array(z.number().int().positive()).min(1).max(200),
+});
+type BatchMoveTo = z.infer<typeof BatchMove>["to"];
+
+const BatchEditBody = z
+  .object({
+    ids: z.array(z.number().int().positive()).min(1).max(200),
+    batch: z.string().trim().min(1).max(120),
+    rename: z.string().trim().min(1).max(120).optional(),
+    purchaseDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
+    /** Закуп за единицу — только с правом на прибыль. */
+    purchasePrice: z.number().int().min(0).max(100_000_000).nullable().optional(),
+    /** Цена продажи — тем, кто после правки на витрине. */
+    salePrice: z.number().int().min(0).max(100_000_000).nullable().optional(),
+    /**
+     * Раскладка по статусам (18.09, заказчик: «двое в аренду, пятеро на
+     * продажу, двое в выкуп» — за одно сохранение). Единица — в одном
+     * направлении.
+     */
+    moves: z.array(BatchMove).max(4).optional(),
+    /** Одно направление — как было в первой версии окна. */
+    status: BatchMove.optional(),
+    enableModelPurpose: z.boolean().optional(),
+  })
+  .strict();
+
+/** Ключ партии — как на фронте (suggestKey): регистр, пробелы по краям, «ё». */
+function batchKey(s: string | null | undefined): string {
+  return (s ?? "").trim().toLowerCase().replace(/ё/g, "е");
+}
 
 /** Статусы арендного контура: модель должна быть «сдаём». */
 const RENT_CONTOUR = ["rental_pool", "repair", "dtp", "disassembly"];
@@ -925,6 +967,330 @@ export async function scootersRoutes(app: FastifyInstance) {
       });
     }
     return { deleted: n };
+  });
+
+  /**
+   * POST /api/scooters/batch/edit — правка партии после создания (2.0.3).
+   *
+   * Заказчик 18.09: «возможность редактирования партии после её создания:
+   * статус, партию». Номер партии, дата и закуп меняются у всех единиц
+   * сразу, статус — у выбранных. Смена статуса — один ключ директора на
+   * всю партию, а не по разу на каждую карточку. Правила те же, что в
+   * карточке: техника в аренде, в выкупе по договору, проданная и в
+   * архиве статус здесь не меняет; в аренду — со свободным номером.
+   */
+  app.post("/batch/edit", async (req, reply) => {
+    const parsed = BatchEditBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
+    }
+    const body = parsed.data;
+    const role = req.user!.role as string;
+    const canProfit = !!req.perms?.["data.profit"];
+    const key = batchKey(body.batch);
+    const ids = [...new Set(body.ids)];
+
+    const changedMsg = {
+      error: "batch_changed",
+      message: "Партию изменили, пока окно было открыто. Закройте окно и откройте партию снова.",
+    };
+    const units = await db.select().from(scooters).where(inArray(scooters.id, ids));
+    if (units.length !== ids.length || units.some((u) => u.deletedAt || batchKey(u.purchaseBatch) !== key)) {
+      return reply.code(409).send(changedMsg);
+    }
+    // В партию могли добавить технику — тогда окно видит не всю партию.
+    const [{ n: inBatch } = { n: 0 }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(scooters)
+      .where(
+        and(
+          isNull(scooters.deletedAt),
+          sql`replace(lower(trim(${scooters.purchaseBatch})), 'ё', 'е') = ${key}`,
+        ),
+      );
+    if (inBatch !== ids.length) return reply.code(409).send(changedMsg);
+
+    const rename = body.rename && body.rename !== body.batch.trim() ? body.rename : null;
+    // Куда переводим: партия может разойтись по нескольким статусам сразу.
+    const targetOf = new Map<number, BatchMoveTo>();
+    for (const m of [...(body.moves ?? []), ...(body.status ? [body.status] : [])]) {
+      for (const id of m.ids) {
+        if (!ids.includes(id) || targetOf.has(id)) {
+          return reply.code(400).send({
+            error: "validation",
+            message: "Статус меняется только у техники этой партии, у каждой единицы — одно направление.",
+          });
+        }
+        targetOf.set(id, m.to);
+      }
+    }
+    const moving = units.filter((u) => targetOf.has(u.id));
+
+    // ── Кому статус здесь менять нельзя — и почему ──
+    type RowError = { id: number; message: string };
+    const rowErrors: RowError[] = [];
+    if (moving.length) {
+      const movingIds = moving.map((u) => u.id);
+      const liveRentals = await db
+        .select({ id: rentals.id, scooterId: rentals.scooterId })
+        .from(rentals)
+        .where(and(inArray(rentals.scooterId, movingIds), eq(rentals.status, "active")));
+      const liveBuyouts = await db
+        .select({ id: buyoutDeals.id, scooterId: buyoutDeals.scooterId })
+        .from(buyoutDeals)
+        .where(
+          and(
+            inArray(buyoutDeals.scooterId, movingIds),
+            inArray(buyoutDeals.status, ["contract", "active"]),
+          ),
+        );
+      const IN_CARD: Record<string, string> = {
+        repair: "на ремонте — статус меняется в карточке",
+        dtp: "после ДТП — статус меняется в карточке",
+        disassembly: "в разборке — статус меняется в карточке",
+      };
+      for (const u of moving) {
+        const target = targetOf.get(u.id)!;
+        const rent = liveRentals.find((r) => r.scooterId === u.id);
+        const buy = liveBuyouts.find((b) => b.scooterId === u.id);
+        const msg = u.archivedAt
+          ? "в архиве"
+          : u.baseStatus === "sold"
+            ? "продана"
+            : u.baseStatus === target
+              ? `уже «${scooterStatusLabel(target)}»`
+              : rent
+                ? `в аренде по договору #${String(rent.id).padStart(4, "0")} — сначала завершите аренду`
+                : buy
+                  ? "в выкупе по договору — статус меняется в «Выкупе»"
+                  : IN_CARD[u.baseStatus]
+                    ? IN_CARD[u.baseStatus]
+                    : target === "buyout" && u.isPartner
+                      ? "партнёрская — в выкуп нельзя"
+                      : null;
+        if (msg) {
+          // Без номера и рамы «Gear» не отличить от соседних — добавляем ID или цвет.
+          const who = [scooterLabel(u.name, u.rentalSlot), u.uid ? `ID ${u.uid}` : u.color].filter(Boolean).join(" · ");
+          rowErrors.push({ id: u.id, message: `${who}: ${msg}` });
+        }
+      }
+    }
+    if (rowErrors.length) {
+      return reply.code(409).send({
+        error: "rows",
+        message:
+          rowErrors.length === 1
+            ? `Статус не меняется — ${rowErrors[0]!.message}.`
+            : `Статус не меняется у ${rowErrors.length} единиц — они подсвечены.`,
+        rows: rowErrors,
+      });
+    }
+
+    // ── Модель должна подходить под категорию (как при добавлении) ──
+    const modelsOf = (to: BatchMoveTo) =>
+      new Set(
+        moving
+          .filter((u) => targetOf.get(u.id) === to)
+          .map((u) => u.modelId)
+          .filter((x): x is number => x != null),
+      );
+    const rentModelIds = modelsOf("rental_pool");
+    const saleModelIds = modelsOf("for_sale");
+    const modelIds = [...new Set([...rentModelIds, ...saleModelIds])];
+    const models = modelIds.length
+      ? await db.select().from(scooterModels).where(inArray(scooterModels.id, modelIds))
+      : [];
+    const missingRent = models.filter((m) => rentModelIds.has(m.id) && !m.forRent);
+    const missingSale = models.filter((m) => saleModelIds.has(m.id) && !m.forSale);
+    if (missingRent.length || missingSale.length) {
+      const canEditModel = role === "director" || role === "admin" || role === "creator";
+      if (!body.enableModelPurpose || !canEditModel) {
+        const rent = missingRent.length > 0;
+        const names = (rent ? missingRent : missingSale).map((m) => `«${m.name}»`).join(", ");
+        return reply.code(409).send({
+          error: rent ? "model_not_for_rent" : "model_not_for_sale",
+          message: rent
+            ? `Модель ${names} не отмечена для аренды. Отметьте «Сдаём в аренду» в «Модели».`
+            : `Модель ${names} не отмечена для продажи. Отметьте «Продаём» в «Модели».`,
+        });
+      }
+    }
+
+    // ── Ключ директора: один на всю партию ──
+    if (moving.length) {
+      if (!(await requireDirectorApproval(app, req, reply, "scooter_status_change"))) return;
+    }
+
+    type Row = typeof scooters.$inferSelect;
+    type Result =
+      | { ok: true; changed: { before: Row; after: Row }[] }
+      | { ok: false; code: number; payload: Record<string, unknown> };
+
+    const result: Result = await db.transaction(async (tx) => {
+      // Номера аренды раздаются без гонки с добавлением техники.
+      await tx.execute(sql`select pg_advisory_xact_lock(815001)`);
+
+      const slotFor = new Map<number, number>();
+      {
+        const entering = moving
+          .filter((u) => holdsSlot(targetOf.get(u.id)!) && !holdsSlot(u.baseStatus))
+          .sort((a, b) => a.id - b.id);
+        if (entering.length) {
+          const [totalRow] = await tx
+            .select({ value: appSettings.value })
+            .from(appSettings)
+            .where(eq(appSettings.key, "rental_slots_total"));
+          const totalN = Number(totalRow?.value);
+          const total = Number.isFinite(totalN) && totalN >= 0 ? totalN : 0;
+          const usedRows = await tx
+            .select({ slot: scooters.rentalSlot })
+            .from(scooters)
+            .where(and(isNotNull(scooters.rentalSlot), isNull(scooters.archivedAt), isNull(scooters.deletedAt)));
+          const free = freeSlotList(total, usedRows.filter((r): r is { slot: number } => r.slot != null));
+          if (entering.length > free.length) {
+            return {
+              ok: false,
+              code: 409,
+              payload: {
+                error: "no_free_slots",
+                message: `Свободных арендных номеров: ${free.length}, а в аренду переводим ${entering.length}. Увеличьте количество номеров или выберите меньше единиц.`,
+                free: free.length,
+                needed: entering.length,
+              },
+            };
+          }
+          entering.forEach((u, i) => slotFor.set(u.id, free[i]!));
+        }
+      }
+
+      if (missingRent.length) {
+        await tx
+          .update(scooterModels)
+          .set({ forRent: true, updatedAt: new Date() })
+          .where(inArray(scooterModels.id, missingRent.map((m) => m.id)));
+      }
+      if (missingSale.length) {
+        await tx
+          .update(scooterModels)
+          .set({ forSale: true, updatedAt: new Date() })
+          .where(inArray(scooterModels.id, missingSale.map((m) => m.id)));
+      }
+
+      const changed: { before: Row; after: Row }[] = [];
+      for (const u of [...units].sort((a, b) => a.id - b.id)) {
+        const set: Partial<Row> = {};
+        if (rename && u.purchaseBatch !== rename) set.purchaseBatch = rename;
+        if (body.purchaseDate !== undefined && (u.purchaseDate ?? null) !== body.purchaseDate) {
+          set.purchaseDate = body.purchaseDate;
+        }
+        if (canProfit && body.purchasePrice !== undefined && u.purchasePrice !== body.purchasePrice) {
+          set.purchasePrice = body.purchasePrice;
+        }
+        const target = targetOf.get(u.id);
+        if (target) {
+          set.baseStatus = target;
+          const was = holdsSlot(u.baseStatus);
+          const will = holdsSlot(target);
+          if (will && !was) set.rentalSlot = slotFor.get(u.id) ?? null;
+          if (was && !will) {
+            set.rentalSlot = null;
+            if (u.rentalSlot != null) set.exRentalSlot = u.rentalSlot;
+          }
+        }
+        const finalStatus = set.baseStatus ?? u.baseStatus;
+        if (
+          body.salePrice !== undefined &&
+          finalStatus === "for_sale" &&
+          !u.archivedAt &&
+          u.salePrice !== body.salePrice
+        ) {
+          set.salePrice = body.salePrice;
+        }
+        if (Object.keys(set).length === 0) continue;
+        const [after] = await tx
+          .update(scooters)
+          .set({ ...set, updatedAt: sql`now()` })
+          .where(eq(scooters.id, u.id))
+          .returning();
+        if (after) changed.push({ before: u, after });
+      }
+      return { ok: true, changed };
+    });
+
+    if (!result.ok) return reply.code(result.code).send(result.payload);
+
+    for (const [list, what] of [
+      [missingRent, "сдаём в аренду"],
+      [missingSale, "продаём"],
+    ] as const) {
+      for (const m of list) {
+        await logActivity(req, {
+          entity: "model",
+          entityId: m.id,
+          action: "updated",
+          summary: `Модель «${m.name}» отмечена: ${what} — при правке партии`,
+        });
+      }
+    }
+
+    // ── Журнал: у каждой единицы — своя запись «было → стало» ──
+    const label = rename ?? body.batch.trim();
+    const n = units.length;
+    const rub = (v: number | null) => (v == null ? "—" : `${v.toLocaleString("ru-RU")} ₽`);
+    const day = (v: string | null) => (v ? v.split("-").reverse().join(".") : "—");
+    for (const { before, after } of result.changed) {
+      const bits: string[] = [];
+      const fieldChanges: { field: string; label: string; from: string; to: string }[] = [];
+      if (before.purchaseBatch !== after.purchaseBatch) {
+        bits.push(`партия «${before.purchaseBatch ?? "—"}» → «${after.purchaseBatch ?? "—"}»`);
+        fieldChanges.push({ field: "purchaseBatch", label: "партия закупа", from: before.purchaseBatch ?? "—", to: after.purchaseBatch ?? "—" });
+      }
+      if ((before.purchaseDate ?? null) !== (after.purchaseDate ?? null)) {
+        bits.push(`дата закупа ${day(before.purchaseDate)} → ${day(after.purchaseDate)}`);
+        fieldChanges.push({ field: "purchaseDate", label: "дата закупа", from: day(before.purchaseDate), to: day(after.purchaseDate) });
+      }
+      if (before.baseStatus !== after.baseStatus) {
+        bits.push(`статус «${scooterStatusLabel(before.baseStatus)}» → «${scooterStatusLabel(after.baseStatus)}»`);
+        if (after.rentalSlot != null && before.rentalSlot == null) bits.push(`арендный номер ${after.rentalSlot}`);
+        if (before.rentalSlot != null && after.rentalSlot == null) bits.push(`номер ${before.rentalSlot} освободился`);
+      }
+      if (before.salePrice !== after.salePrice) {
+        bits.push(`цена продажи ${rub(before.salePrice)} → ${rub(after.salePrice)}`);
+        fieldChanges.push({ field: "salePrice", label: "цена продажи", from: rub(before.salePrice), to: rub(after.salePrice) });
+      }
+      // Закуп — отдельным фрагментом: без права на прибыль он вырезается.
+      if (before.purchasePrice !== after.purchasePrice) {
+        bits.push(`закуп ${rub(before.purchasePrice)} → ${rub(after.purchasePrice)}`);
+      }
+      const statusChanged = before.baseStatus !== after.baseStatus;
+      await logActivity(req, {
+        entity: "scooter",
+        entityId: after.id,
+        action: statusChanged ? "status_changed" : "updated",
+        summary: [`${scooterLabel(after.name, after.rentalSlot)} — правка партии «${label}»`, ...bits].join(" · "),
+        meta: {
+          scooterId: after.id,
+          scooterName: after.name,
+          source: "batch_edit",
+          batch: label,
+          batchSize: n,
+          fieldChanges,
+          ...(statusChanged ? { statusFrom: before.baseStatus, statusTo: after.baseStatus } : {}),
+          ...(before.purchasePrice !== after.purchasePrice
+            ? { purchasePrice: { from: before.purchasePrice, to: after.purchasePrice } }
+            : {}),
+        },
+      });
+    }
+
+    return {
+      items: result.changed.map((c) => c.after),
+      changed: result.changed.length,
+      statusChanged: result.changed.filter((c) => c.before.baseStatus !== c.after.baseStatus).length,
+      slots: result.changed
+        .filter((c) => c.after.rentalSlot != null && c.before.rentalSlot == null)
+        .map((c) => c.after.rentalSlot),
+    };
   });
 
   app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {

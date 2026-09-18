@@ -694,8 +694,64 @@ const RELEASE_2_0_2: ReleaseTourConfig = {
   ],
 };
 
+const R203 = "/release/2.0.3";
+
+const RELEASE_2_0_3: ReleaseTourConfig = {
+  version: "2.0.3",
+  label: "2.0.3",
+  major: false,
+  date: "2026-09-18",
+  subtitle: "Правка партии целиком; меню короче — «Что нового» теперь в «Развитии».",
+  items: [
+    {
+      id: "batch-edit",
+      kind: "new",
+      title: "Правка партии",
+      route: "fleet",
+      headline: "«Скутеры → Партии» → «Изменить»: номер, дата, закуп и статус — сразу у всей партии.",
+      why: "Раньше партию меняли по одной единице, а статус — ещё и с ключом директора на каждую.",
+      points: [
+        "Статус раскладкой: выбрали корзину — нажимаете на единицы, на корзине счётчик",
+        "Не хватает арендных номеров — «Добавить номера» прямо в окне",
+        "Ключ директора — один раз на всё сохранение",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R203}/d-batch-edit-was.jpg`, phone: `${R203}/m-batch-edit-was.jpg` },
+      img: { desktop: `${R203}/d-batch-edit-now.jpg`, phone: `${R203}/m-batch-edit-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v203-batch-units-was.jpg`, after: `${P}/v203-edit-spread-now.jpg` },
+        phone: { before: `${P}/v203-batch-units-m-was.jpg`, after: `${P}/v203-edit-spread-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "menu-shorter",
+      kind: "changed",
+      title: "Меню короче",
+      route: "progress",
+      headline: "«Что нового» — вкладка «Что уже сделано» в «Развитии», «Хранилище» — вкладка «Настроек».",
+      why: "В меню — то, чем пользуются каждый день; справочное — внутри разделов.",
+      points: [
+        "«Развитие»: «Текущие работы» и «Что уже сделано»",
+        "«Выкуп» и «Аналитика» вернулись из «Ещё»",
+        "Уведомление о новой версии — одна кнопка «Обновить»",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R203}/d-menu-was.jpg`, phone: `${R203}/m-menu-was.jpg` },
+      img: { desktop: `${R203}/d-menu-now.jpg`, phone: `${R203}/m-menu-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v203-nav-was.jpg`, after: `${P}/v203-nav-now.jpg` },
+        phone: { before: `${P}/v203-more-m-was.jpg`, after: `${P}/v203-more-m-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+  ],
+};
+
 /** Все выпуски с показом — от старого к новому. */
-export const RELEASE_TOURS: ReleaseTourConfig[] = [RELEASE_2_0, RELEASE_2_0_1, RELEASE_2_0_2];
+export const RELEASE_TOURS: ReleaseTourConfig[] = [RELEASE_2_0, RELEASE_2_0_1, RELEASE_2_0_2, RELEASE_2_0_3];
 
 /** Последний выпуск — для «кто посмотрел» и меток. */
 export const RELEASE_TOUR: ReleaseTourConfig = RELEASE_TOURS[RELEASE_TOURS.length - 1]!;
