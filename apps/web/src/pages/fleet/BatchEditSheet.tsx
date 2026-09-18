@@ -197,7 +197,7 @@ export function BatchEditSheet({
   const problem = !nameTrim
     ? "Впишите номер партии"
     : slotShort
-      ? `Свободных арендных номеров ${freeSlots.length}, а в аренду переводим ${entering.length}`
+      ? "Не хватает свободных арендных номеров"
       : purposeMissing.length && !canEditModel
         ? `Модель ${purposeMissing.map((m) => `«${m.name}»`).join(", ")} не отмечена ${target === "rental_pool" ? "для аренды" : "для продажи"} — это меняет директор`
         : target && moving.length === 0 && eligible.length > 0
@@ -344,7 +344,7 @@ export function BatchEditSheet({
             </span>
           ))}
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" data-batch-targets>
+        <div className="grid grid-cols-1 gap-2 min-[520px]:grid-cols-2" data-batch-targets>
           {TARGETS.map((t) => {
             const Icon = t.icon;
             const active = target === t.id;
@@ -356,26 +356,33 @@ export function BatchEditSheet({
                 onClick={() => pickTarget(active ? null : t.id)}
                 aria-pressed={active}
                 className={cn(
-                  "flex min-w-0 flex-col items-start gap-1 rounded-2xl border-2 text-left transition-colors",
-                  touch ? "min-h-[84px] p-3" : "p-2.5",
+                  "flex min-w-0 items-start gap-2.5 rounded-2xl border-2 text-left transition-colors",
+                  touch ? "min-h-[76px] p-3" : "p-2.5",
                   active ? "border-blue-600 bg-blue-50" : "border-border bg-white hover:border-blue-600/50",
                 )}
               >
-                <span className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                    active ? "bg-blue-600 text-white" : "bg-surface-soft text-ink-2",
+                  )}
+                >
+                  <Icon size={17} />
+                </span>
+                <span className="min-w-0 flex-1">
                   <span
                     className={cn(
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
-                      active ? "bg-blue-600 text-white" : "bg-surface-soft text-ink-2",
+                      "block font-extrabold leading-tight",
+                      touch ? "text-[14.5px]" : "text-[13.5px]",
+                      active ? "text-blue-700" : "text-ink",
                     )}
                   >
-                    <Icon size={16} />
-                  </span>
-                  <span className={cn("font-extrabold", touch ? "text-[14.5px]" : "text-[13px]", active ? "text-blue-700" : "text-ink")}>
                     {t.title}
                   </span>
-                </span>
-                <span className="text-[11.5px] leading-snug text-muted-2">
-                  {can ? `можно ${can} из ${units.length}` : "некого перевести"}
+                  <span className="block text-[11.5px] leading-snug text-muted">{t.lead}</span>
+                  <span className={cn("block text-[11.5px] font-semibold leading-snug", can ? "text-muted-2" : "text-muted-2/70")}>
+                    {can ? `можно ${can} из ${units.length}` : "некого перевести"}
+                  </span>
                 </span>
               </button>
             );
@@ -464,17 +471,32 @@ export function BatchEditSheet({
                             {err ?? blk!.text}
                           </span>
                         ) : null}
-                      </span>
-                      <span className="flex shrink-0 flex-col items-end gap-0.5 text-right">
-                        <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-bold", GROUP_TONE[groupOf(u)])}>
-                          {UNIT_STATUS_LABEL[u.baseStatus] ?? u.baseStatus}
-                        </span>
-                        {on && !blk && (
-                          <span className="flex items-center gap-1 text-[11px] font-bold text-blue-700">
-                            <ArrowRight size={12} /> {TARGETS.find((x) => x.id === target)!.title}
+                        {/* Телефон и планшет: статус — строкой ниже, чтобы рама и цвет не резались. */}
+                        {touch && (
+                          <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-bold", GROUP_TONE[groupOf(u)])}>
+                              {UNIT_STATUS_LABEL[u.baseStatus] ?? u.baseStatus}
+                            </span>
+                            {on && !blk && (
+                              <span className="flex items-center gap-1 text-[12px] font-bold text-blue-700">
+                                <ArrowRight size={13} /> {TARGETS.find((x) => x.id === target)!.title}
+                              </span>
+                            )}
                           </span>
                         )}
                       </span>
+                      {!touch && (
+                        <span className="flex shrink-0 flex-col items-end gap-0.5 text-right">
+                          <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-bold", GROUP_TONE[groupOf(u)])}>
+                            {UNIT_STATUS_LABEL[u.baseStatus] ?? u.baseStatus}
+                          </span>
+                          {on && !blk && (
+                            <span className="flex items-center gap-1 text-[11px] font-bold text-blue-700">
+                              <ArrowRight size={12} /> {TARGETS.find((x) => x.id === target)!.title}
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </button>
                   </li>
                 );
@@ -486,6 +508,21 @@ export function BatchEditSheet({
                 <Note tone="red" icon={<AlertTriangle size={14} />}>
                   Свободных арендных номеров {freeSlots.length}, а в аренду переводим {entering.length}. Выберите меньше
                   единиц или увеличьте количество номеров на странице «Скутеры».
+                  {freeSlots.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const keep = new Set(entering.slice(0, freeSlots.length).map((u) => u.id));
+                        setPicked(new Set(moving.filter((u) => holdsSlot(u.baseStatus) || keep.has(u.id)).map((u) => u.id)));
+                      }}
+                      className={cn(
+                        "mt-1.5 flex items-center rounded-full bg-white px-3 font-bold text-red-700 shadow-card-sm hover:bg-red-100",
+                        touch ? "h-10 text-[13px]" : "h-8 text-[12px]",
+                      )}
+                    >
+                      Оставить {freeSlots.length} — по свободным номерам
+                    </button>
+                  )}
                 </Note>
               ) : (
                 <Note tone="blue" icon={<Key size={14} />}>

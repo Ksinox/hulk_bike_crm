@@ -144,4 +144,141 @@ export async function run(page, ctx) {
     await S("batch-units");
     return;
   }
+
+  /* ---------------- на превью: ключ директора при смене статуса ---------------- */
+  if (when === "gate") {
+    await page.evaluate(() => {
+      const h = [...document.querySelectorAll("h3")].find((x) => /ТЕСТ партия/.test(x.textContent || ""));
+      h?.closest("section")?.querySelector("[data-batch-edit-open]")?.click();
+    });
+    await sleep(900);
+    await click(/^На продажу/, "[data-batch-targets]");
+    await sleep(500);
+    await click(/^Сохранить$/, "[data-batch-edit]");
+    await sleep(2500);
+    const gate = await page.evaluate(() => {
+      const d = [...document.querySelectorAll('div[class*="z-[190]"]')].pop();
+      return d ? d.innerText.replace(/\n+/g, " | ").slice(0, 400) : null;
+    });
+    console.log("окно ключа:", gate);
+    await S("gate");
+    await page.evaluate(() => {
+      const d = [...document.querySelectorAll('div[class*="z-[190]"]')].pop();
+      d?.querySelector('button[aria-label="Отмена"]')?.click();
+    });
+    await sleep(1200);
+    const after = await page.evaluate(() => document.querySelector("[data-batch-edit]")?.innerText.match(/Статус не изменён[^\n]*/)?.[0] ?? null);
+    console.log("после отмены ключа:", after);
+    await S("gate-cancel");
+    return;
+  }
+
+  /* ---------------- стало: правка партии ---------------- */
+  const setDate = (iso) =>
+    page.evaluate((iso) => {
+      const el = document.querySelector("[data-batch-date]");
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      set.call(el, iso);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }, iso);
+  const state = () =>
+    page.evaluate(() => ({
+      summary: document.querySelector("[data-batch-summary]")?.textContent?.trim(),
+      picked: [...document.querySelectorAll('[data-batch-units] [role="checkbox"]')].map((b) => b.getAttribute("aria-checked") + (b.disabled ? "/нельзя" : "")),
+      notes: [...document.querySelectorAll("[data-batch-status] .rounded-xl.border")].map((n) => n.textContent?.trim()).filter(Boolean),
+      overflow: document.querySelector("[data-batch-edit]")
+        ? [...document.querySelectorAll("[data-batch-edit] *")].filter((e) => e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX === "visible" && e.children.length === 0).length
+        : null,
+    }));
+  const openEdit = async () => {
+    await page.evaluate(() => {
+      const h = [...document.querySelectorAll("h3")].find((x) => /ТЕСТ партия/.test(x.textContent || ""));
+      h?.closest("section")?.querySelector("[data-batch-edit-open]")?.click();
+    });
+    await sleep(900);
+  };
+
+  await openEdit();
+  console.log("окно открыто:", JSON.stringify(await state()));
+  await S("edit-open");
+
+  await typeInto("[data-batch-name]", "ТЕСТ партия shotbot · сентябрь");
+  await setDate("2026-09-12");
+  if (await page.$("[data-batch-cost]")) await typeInto("[data-batch-cost]", "58000");
+  await sleep(400);
+  console.log("общее:", JSON.stringify(await state()));
+  await S("edit-fields");
+
+  await click(/^На продажу/, "[data-batch-targets]");
+  await sleep(500);
+  // четвёртую оставляем «не решили»
+  await page.evaluate(() => [...document.querySelectorAll('[data-batch-units] [role="checkbox"]')][3]?.click());
+  await sleep(300);
+  await typeInto("[data-batch-sale-input]", "95000");
+  await sleep(400);
+  await page.evaluate(() => document.querySelector("[data-batch-status]")?.scrollIntoView({ block: "start" }));
+  await sleep(300);
+  console.log("на продажу:", JSON.stringify(await state()));
+  await S("edit-status");
+  await page.evaluate(() => document.querySelector("[data-batch-sale]")?.scrollIntoView({ block: "end" }));
+  await sleep(300);
+  await S("edit-sale");
+
+  page.on("response", async (res) => {
+    if (!res.url().includes("/batch/edit")) return;
+    let t = "";
+    try {
+      t = (await res.text()).slice(0, 300);
+    } catch {}
+    console.log("ответ сервера:", res.status(), t);
+  });
+  const saveBtn = await page.evaluate(() => {
+    const b = [...document.querySelectorAll("[data-batch-edit] button")].find((x) => (x.textContent || "").trim() === "Сохранить");
+    return b ? { disabled: b.disabled } : null;
+  });
+  console.log("кнопка «Сохранить»:", JSON.stringify(saveBtn));
+  await click(/^Сохранить$/, "[data-batch-edit]");
+  await sleep(2500);
+  const toastText = await page.evaluate(() => [...document.querySelectorAll('[role="alert"]')].map((a) => a.innerText.replace(/\n/g, " ")).join(" | "));
+  const stillOpen = await page.evaluate(() => document.querySelector("[data-batch-edit]")?.innerText.slice(-400) ?? null);
+  console.log("уведомление:", toastText, "| окно:", stillOpen ? "открыто — " + stillOpen.replace(/\n+/g, " / ") : "закрыто");
+  if (stillOpen) await S("save-error");
+  await typeInto('input[placeholder^="Партия, модель или рама"]', "ТЕСТ партия");
+  await sleep(700);
+  await S("saved");
+  await quiet();
+  const card2 = await page.evaluate(() => {
+    const h = [...document.querySelectorAll("h3")].find((x) => /ТЕСТ партия/.test(x.textContent || ""));
+    return h?.closest("section")?.innerText.replace(/\n+/g, " | ").slice(0, 320);
+  });
+  console.log("карточка после:", card2);
+
+  // В аренду — оставшуюся
+  await openEdit();
+  await click(/^В аренду/, "[data-batch-targets]");
+  await sleep(500);
+  await page.evaluate(() => document.querySelector("[data-batch-status]")?.scrollIntoView({ block: "start" }));
+  await sleep(300);
+  console.log("в аренду, все:", JSON.stringify(await state()));
+  await S("edit-rent-short");
+  // оставляем одну — четвёртую, «не решили»
+  await click(/^Снять все$/, "[data-batch-edit]");
+  await sleep(200);
+  await page.evaluate(() => [...document.querySelectorAll('[data-batch-units] [role="checkbox"]')][3]?.click());
+  await sleep(400);
+  console.log("в аренду, одна:", JSON.stringify(await state()));
+  await S("edit-rent");
+  await click(/^Сохранить$/, "[data-batch-edit]");
+  await sleep(2200);
+  console.log(
+    "уведомление:",
+    await page.evaluate(() => [...document.querySelectorAll('[role="alert"]')].map((a) => a.innerText.replace(/\n/g, " ")).join(" | ")),
+  );
+  await quiet();
+  await typeInto('input[placeholder^="Партия, модель или рама"]', "ТЕСТ партия");
+  await sleep(600);
+  await click(/^Единицы · 4$/);
+  await sleep(600);
+  await S("after-units");
 }

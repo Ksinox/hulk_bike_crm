@@ -1051,7 +1051,11 @@ export async function scootersRoutes(app: FastifyInstance) {
                     : target === "buyout" && u.isPartner
                       ? "партнёрская — в выкуп нельзя"
                       : null;
-        if (msg) rowErrors.push({ id: u.id, message: `${scooterLabel(u.name, u.rentalSlot)}: ${msg}` });
+        if (msg) {
+          // Без номера и рамы «Gear» не отличить от соседних — добавляем ID или цвет.
+          const who = [scooterLabel(u.name, u.rentalSlot), u.uid ? `ID ${u.uid}` : u.color].filter(Boolean).join(" · ");
+          rowErrors.push({ id: u.id, message: `${who}: ${msg}` });
+        }
       }
     }
     if (rowErrors.length) {
