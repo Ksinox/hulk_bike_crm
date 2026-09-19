@@ -340,7 +340,7 @@ export function DebtorCase({
         <button
           type="button"
           onClick={onBack}
-          className="mb-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted hover:text-ink"
+          className={`${TAP}mb-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted hover:text-ink`}
         >
           <ArrowLeft size={13} />
           Назад к очереди

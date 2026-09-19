@@ -77,6 +77,7 @@ export function Documents({ embedded = false }: { embedded?: boolean } = {}) {
               onClick={() => setTab(t.id)}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[13px] font-semibold transition",
+                TAP,
                 tab === t.id
                   ? "bg-gradient-to-br from-slate-900 to-slate-700 text-white shadow-sm"
                   : "text-muted-2 hover:bg-slate-100 hover:text-ink",
