@@ -45,20 +45,23 @@ const TABS: { id: DocsTab; label: string; icon: typeof FileText }[] = [
  *  - **Редактор шаблонов** — пока заглушка, в следующих релизах будет
  *    WYSIWYG-редактор с drag-and-drop переменных.
  */
-export function Documents() {
+/** `embedded` — раздел внутри мобильной оболочки: без шапки и заголовка. */
+export function Documents({ embedded = false }: { embedded?: boolean } = {}) {
   const [tab, setTab] = useState<DocsTab>("templates");
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
-      <Topbar />
-      <header className="flex items-baseline gap-3">
-        <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
-          Документы
-        </h1>
-        <span className="text-[13px] text-muted-2">
-          справочники и шаблоны
-        </span>
-      </header>
+      {!embedded && (
+        <>
+          <Topbar />
+          <header className="flex items-baseline gap-3">
+            <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
+              Документы
+            </h1>
+            <span className="text-[13px] text-muted-2">справочники и шаблоны</span>
+          </header>
+        </>
+      )}
 
       <div className="inline-flex w-fit rounded-2xl border border-slate-200/60 bg-white/70 p-1 shadow-sm backdrop-blur">
         {TABS.map((t) => {
@@ -82,7 +85,7 @@ export function Documents() {
         })}
       </div>
 
-      <section className="flex min-h-0 flex-1 flex-col rounded-2xl bg-surface p-5 shadow-card-sm">
+      <section className={cn("flex min-h-0 flex-1 flex-col rounded-2xl bg-surface shadow-card-sm", embedded ? "p-3" : "p-5")}>
         {tab === "templates" && <TemplatesGallery />}
         {tab === "price" && <PriceListView />}
       </section>

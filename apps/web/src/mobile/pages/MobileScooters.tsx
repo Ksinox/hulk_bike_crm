@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
 import { useReloadRestoredState } from "@/lib/usePersistedState";
-import { ShoppingBag, Bike, ScrollText, Printer, Layers } from "lucide-react";
+import { Archive, Bike, Layers, Package, Printer, ScrollText, ShoppingBag, Tag } from "lucide-react";
 import { StaticDocPreview } from "@/components/StaticDocPreview";
 import { useInventorySheet } from "@/pages/fleet/useInventorySheet";
 import { ScooterJournal } from "@/pages/fleet/ScooterJournal";
 import { BatchesPanel } from "@/pages/fleet/BatchesPanel";
+import { ModelsCatalog } from "@/pages/fleet/ModelsCatalog";
+import { EquipmentCatalog } from "@/pages/fleet/EquipmentCatalog";
+import { ScooterArchive } from "@/pages/fleet/ScooterArchive";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -92,6 +95,8 @@ export function MobileScooters() {
   const [modelFilter, setModelFilter] = useState<string>("");
   /** Журнал техники — тот же, что на компьютере (паритет, 06.09). */
   const [journalOpen, setJournalOpen] = useState(false);
+  /** Справочники и архив — как на компьютере (паритет, 20.09). */
+  const [catalog, setCatalog] = useState<null | "models" | "equipment" | "archive">(null);
   /** «Партии» — та же сводка, что на компьютере (2.0.1). */
   const [batchesOpen, setBatchesOpen] = useState(false);
   /** «Ревизия парка» — тот же печатный лист, что на компьютере (06.09, п.2). */
@@ -295,6 +300,42 @@ export function MobileScooters() {
           <Printer size={15} />
         </button>
       </div>
+
+      {/* Паритет (20.09): модели, экипировка и архив — с телефона тоже. */}
+      <div className="flex items-center gap-2">
+        {(
+          [
+            { id: "models" as const, label: "Модели", icon: Tag },
+            { id: "equipment" as const, label: "Экипировка", icon: Package },
+            { id: "archive" as const, label: "Архив", icon: Archive },
+          ]
+        ).map((c) => {
+          const Icon = c.icon;
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setCatalog(c.id)}
+              className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-surface px-2 text-[13px] font-semibold text-ink shadow-card-sm"
+            >
+              <Icon size={15} /> {c.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <MobileSheet
+        open={catalog != null}
+        onClose={() => setCatalog(null)}
+        title={catalog === "models" ? "Модели" : catalog === "equipment" ? "Экипировка" : "Архив техники"}
+      >
+        {/* Справочники свёрстаны под компьютер: на телефоне держим ширину. */}
+        <div className="min-w-0 overflow-x-hidden">
+          {catalog === "models" && <ModelsCatalog />}
+          {catalog === "equipment" && <EquipmentCatalog />}
+          {catalog === "archive" && <ScooterArchive />}
+        </div>
+      </MobileSheet>
 
       {revisionOpen && (
         <StaticDocPreview

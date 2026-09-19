@@ -21,12 +21,12 @@ import { MobileRentals } from "./pages/MobileRentals";
 import { MobileClients } from "./pages/MobileClients";
 import { MobileScooters } from "./pages/MobileScooters";
 import { MobileApplications } from "./pages/MobileApplications";
-import { MobileDebtors } from "./pages/MobileDebtors";
+import { Debtors } from "@/pages/debtors/Debtors";
 import { MobileService } from "./pages/MobileService";
 import { MobileStaff } from "./pages/MobileStaff";
 import { MobileProgress } from "./pages/MobileProgress";
 import { MobileSettings } from "./pages/MobileSettings";
-import { MobileDocuments } from "./pages/MobileDocuments";
+import { Documents } from "@/pages/documents/Documents";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { Partners } from "@/pages/partners/Partners";
 import { Sales } from "@/pages/sales/Sales";
@@ -191,7 +191,13 @@ function MobilePage({
     case "applications":
       return <MobileApplications />;
     case "debtors":
-      return <MobileDebtors />;
+      // Паритет (20.09): раздел целиком, как на компьютере — очередь,
+      // дело должника с заметками и звонками, платежи, новый должник.
+      return (
+        <div className="px-1 pb-4">
+          <Debtors embedded />
+        </div>
+      );
     case "service":
       return <MobileService />;
     case "analytics":
@@ -238,7 +244,12 @@ function MobilePage({
     case "storage":
       return <MobileSettings />;
     case "docs":
-      return <MobileDocuments />;
+      // Паритет (20.09): шаблоны и прейскурант правятся и с телефона.
+      return (
+        <div className="px-1 pb-4">
+          <Documents embedded />
+        </div>
+      );
     default:
       return <MobilePlaceholder route={route} />;
   }

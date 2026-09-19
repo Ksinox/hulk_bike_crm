@@ -206,7 +206,7 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
               ),
             )
             .orderBy(asc(scooters.rentalSlot));
-          if (!units.length) return [] as { name: string; from: number; to: number }[];
+          if (!units.length) return [] as { id: number; name: string; from: number; to: number }[];
           const usedRows = await tx
             .select({ slot: scooters.rentalSlot })
             .from(scooters)
@@ -219,12 +219,12 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
               ),
             );
           const used = new Set(usedRows.map((r) => r.slot!));
-          const out: { name: string; from: number; to: number }[] = [];
+          const out: { id: number; name: string; from: number; to: number }[] = [];
           let n = 1;
           for (const u of units) {
             while (used.has(n)) n++;
             used.add(n);
-            out.push({ name: u.name, from: u.rentalSlot!, to: n });
+            out.push({ id: u.id, name: u.name, from: u.rentalSlot!, to: n });
             await tx
               .update(scooters)
               .set({ slotPool: pool, rentalSlot: n, exRentalSlot: u.rentalSlot, updatedAt: new Date() })
@@ -243,6 +243,21 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
           return out;
         });
         if (moved.length) {
+          // Номер техники — её история: запись у каждой единицы (правило CRM).
+          const rowWord = pool === "electric" ? "электро" : "бензина";
+          const fromWord = pool === "electric" ? "бензина" : "электро";
+          for (const mv of moved) {
+            await logActivity(req, {
+              entity: "scooter",
+              entityId: mv.id,
+              action: "status_changed",
+              summary: `Номер ${mv.name.replace(/\s*#\s*\d+\s*$/, "").trim() || mv.name}: ряд ${fromWord} №${mv.from} → ряд ${rowWord} №${mv.to} · модель «${updated.name}» отмечена ${pool === "electric" ? "электро" : "бензиновой"}`,
+              diff: {
+                rentalSlot: { label: "Номер в аренде", from: `№${mv.from}`, to: `№${mv.to}`, kind: "text" },
+                slotPool: { label: "Ряд номеров", from: fromWord === "бензина" ? "бензин" : "электро", to: rowWord === "электро" ? "электро" : "бензин", kind: "text" },
+              },
+            });
+          }
           await logActivity(req, {
             entity: "model",
             entityId: id,
