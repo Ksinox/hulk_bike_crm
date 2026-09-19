@@ -50,7 +50,12 @@ export type ServiceOrderTotals = {
   /** К оплате. */
   due: number;
   cost?: number;
+  /** Общая прибыль: к оплате − закуп запчастей. */
   profit?: number;
+  /** Доля механика с прибыли (правки 7.0). */
+  mechanicShare?: number;
+  /** Наша прибыль — за вычетом доли механика. */
+  ourProfit?: number;
   /** Внесено всего (возвраты вычтены). */
   paid: number;
   /** Остаток к оплате. */
@@ -83,6 +88,11 @@ export type ServiceOrder = {
   cashAmount: number;
   transferAmount: number;
   masterUserId: number | null;
+  /** Механик (правки 7.0) и его процент — копия на момент назначения. */
+  mechanicId: number | null;
+  mechanicName: string | null;
+  /** Приходит только с правом на прибыль ремонтов. */
+  mechanicPercent?: number | null;
   createdByUserId: number | null;
   createdAt: string;
   updatedAt: string;
@@ -150,6 +160,7 @@ export type NewServiceOrder = {
   complaint?: string | null;
   note?: string | null;
   masterUserId?: number | null;
+  mechanicId?: number | null;
   items?: NewServiceItem[];
   advance?: { amount: number; method: PayMethodValue; cashAmount?: number };
 };
@@ -216,6 +227,60 @@ export function useCompleteServiceOrder() {
     mutationFn: (id: number) =>
       api.post<OrderResp>(`/api/service-orders/${id}/complete`, {}),
     onSuccess: (r) => settle(r.order),
+  });
+}
+
+/** Правки 7.0 (п.10): «Готов к выдаче» → «В работе». Только директор. */
+export function useUncompleteServiceOrder() {
+  const settle = useSettle();
+  return useMutation({
+    mutationFn: (id: number) =>
+      api.post<OrderResp>(`/api/service-orders/${id}/uncomplete`, {}),
+    onSuccess: (r) => settle(r.order),
+  });
+}
+
+/* ---------- Механики (правки 7.0, п.2) ---------- */
+
+export type ServiceMechanic = {
+  id: number;
+  name: string;
+  /** Процент с прибыли ремонта — только с правом на прибыль ремонтов. */
+  percent?: number;
+  archivedAt: string | null;
+  createdAt: string;
+};
+
+const mechKey = ["service-mechanics"] as const;
+
+export function useServiceMechanics() {
+  return useQuery({
+    queryKey: mechKey,
+    queryFn: () => api.get<{ mechanics: ServiceMechanic[] }>("/api/service-orders/mechanics"),
+    staleTime: 60_000,
+    select: (d) => d.mechanics,
+  });
+}
+
+export function useSaveServiceMechanic() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id?: number;
+      name?: string;
+      percent?: number;
+      archived?: boolean;
+    }) =>
+      id
+        ? api.patch<{ mechanic: ServiceMechanic }>(`/api/service-orders/mechanics/${id}`, body)
+        : api.post<{ mechanic: ServiceMechanic }>("/api/service-orders/mechanics", body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: mechKey });
+      void qc.invalidateQueries({ queryKey: key });
+    },
   });
 }
 

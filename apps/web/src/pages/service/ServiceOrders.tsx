@@ -3,12 +3,16 @@ import { useCan } from "@/lib/permissions";
 import {
   Banknote,
   Bike,
+  ChevronRight,
+  HardHat,
   Hourglass,
   Plus,
   Search,
   TrendingUp,
   Wrench,
 } from "lucide-react";
+import { useMe } from "@/lib/api/auth";
+import { isFullAccess } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useIsMobile } from "@/lib/useIsMobile";
@@ -18,10 +22,12 @@ import {
   type ServiceOrder,
   type ServiceOrderStatus,
 } from "@/lib/api/service-orders";
-import { serviceMoney } from "@/lib/serviceMoney";
+import { serviceMoney, serviceMoneyRows } from "@/lib/serviceMoney";
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 import { ServiceOrderCard } from "./ServiceOrderCard";
 import { ServiceOrderForm } from "./ServiceOrderForm";
+import { MechanicsSheet } from "./ServiceMechanics";
+import { ServiceMoneySheet } from "./ServiceMoneySheet";
 import {
   money,
   moneyState,
@@ -68,6 +74,11 @@ export function ServiceOrders() {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  /** Правки 7.0: справочник механиков (директор) и разбивка денег. */
+  const [mechanicsOpen, setMechanicsOpen] = useState(false);
+  const [moneyOpen, setMoneyOpen] = useState(false);
+  const { data: me } = useMe();
+  const canManageMechanics = isFullAccess(me?.role);
 
   // «Новая сделка» → «Ремонт» (и на компьютере, и на телефоне) ведёт сюда
   // и сразу открывает приём чужой техники.
@@ -85,6 +96,7 @@ export function ServiceOrders() {
 
   /** Деньги за период — по дате оплаты (2.0.2). */
   const stats = useMemo(() => serviceMoney(orders, bounds.from), [orders, bounds.from]);
+  const moneyRows = useMemo(() => serviceMoneyRows(orders, bounds.from), [orders, bounds.from]);
 
   const list = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -128,13 +140,30 @@ export function ServiceOrders() {
             ))}
           </div>
           <span className="text-[12.5px] text-muted">{bounds.label}</span>
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-[12.5px] font-bold text-white hover:bg-ink-2"
-          >
-            <Plus size={15} /> Новый ремонт
-          </button>
+          <div className="ml-auto flex gap-2">
+            {canManageMechanics && (
+              <button
+                type="button"
+                onClick={() => setMechanicsOpen(true)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full bg-surface px-4 font-bold text-ink shadow-card-sm hover:bg-surface-soft",
+                  isMobile ? "h-11 text-[13.5px]" : "h-9 text-[12.5px]",
+                )}
+              >
+                <HardHat size={15} /> Механики
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full bg-ink px-4 font-bold text-white hover:bg-ink-2",
+                isMobile ? "h-11 text-[13.5px]" : "h-9 text-[12.5px]",
+              )}
+            >
+              <Plus size={15} /> Новый ремонт
+            </button>
+          </div>
         </div>
 
         <div
@@ -152,6 +181,7 @@ export function ServiceOrders() {
           <Kpi
             icon={<Banknote size={14} />}
             label="Выручка"
+            onClick={() => setMoneyOpen(true)}
             value={money(stats.revenue)}
             caption={
               stats.payments > 0
@@ -164,8 +194,13 @@ export function ServiceOrders() {
             <Kpi
               icon={<TrendingUp size={14} />}
               label="Прибыль"
+              onClick={() => setMoneyOpen(true)}
               value={money(stats.profit)}
-              caption={`по оплаченным: ${stats.paidOrders}`}
+              caption={
+                stats.mechanicShare > 0
+                  ? `наша · механикам ${money(stats.mechanicShare)}`
+                  : `по оплаченным: ${stats.paidOrders}`
+              }
               tone={stats.profit >= 0 ? "good" : "bad"}
             />
           )}
@@ -273,6 +308,23 @@ export function ServiceOrders() {
           </div>
         ))}
 
+      {mechanicsOpen && <MechanicsSheet touch={isMobile} onClose={() => setMechanicsOpen(false)} />}
+
+      {moneyOpen && (
+        <ServiceMoneySheet
+          rows={moneyRows}
+          stats={stats}
+          periodLabel={bounds.label}
+          showProfit={canRepairProfit}
+          touch={isMobile}
+          onOpen={(id) => {
+            setMoneyOpen(false);
+            setOpenId(id);
+          }}
+          onClose={() => setMoneyOpen(false)}
+        />
+      )}
+
       {creating && (
         <ServiceOrderForm
           touch={isMobile}
@@ -312,17 +364,29 @@ function Kpi({
   value,
   caption,
   tone,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   caption: string;
   tone?: "good" | "bad" | "warn";
+  /** Правки 7.0: плашка открывает разбивку по ремонтам. */
+  onClick?: () => void;
 }) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-2xl bg-surface p-4 shadow-card-sm">
-      <div className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+    <Tag
+      {...(onClick ? { type: "button" as const, onClick } : {})}
+      className={cn(
+        "flex min-w-0 flex-col gap-1 rounded-2xl bg-surface p-4 text-left shadow-card-sm",
+        onClick && "transition-shadow hover:shadow-card active:scale-[0.99]",
+      )}
+      data-kpi={label}
+    >
+      <div className="flex w-full items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
         {icon} {label}
+        {onClick && <ChevronRight size={14} className="ml-auto text-muted-2" aria-hidden />}
       </div>
       <div
         className={cn(
@@ -335,8 +399,8 @@ function Kpi({
       >
         {value}
       </div>
-      <div className="truncate text-[11.5px] text-muted-2">{caption}</div>
-    </div>
+      <div className="w-full truncate text-[11.5px] text-muted-2">{caption}</div>
+    </Tag>
   );
 }
 

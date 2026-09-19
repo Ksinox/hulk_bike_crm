@@ -2525,6 +2525,21 @@ export const buyoutPayments = pgTable(
  * внутри своего блока.
  * ============================================================ */
 
+/**
+ * Механики сторонних ремонтов (правки 7.0, п.2). Не учётки CRM — как
+ * менеджеры продаж: имя и процент с конечной прибыли ремонта.
+ */
+export const serviceMechanics = pgTable("service_mechanics", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  name: text("name").notNull(),
+  /** Процент с прибыли ремонта (к оплате − закуп запчастей). */
+  percent: integer("percent").notNull().default(0),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const serviceOrders = pgTable(
   "service_orders",
   {
@@ -2565,6 +2580,12 @@ export const serviceOrders = pgTable(
       () => users.id,
       { onDelete: "set null" },
     ),
+    /** Механик (правки 7.0) и его процент — копия на момент назначения. */
+    mechanicId: bigint("mechanic_id", { mode: "number" }).references(
+      () => serviceMechanics.id,
+      { onDelete: "set null" },
+    ),
+    mechanicPercent: integer("mechanic_percent"),
     /** Скидка при расчёте (2.0.2): к оплате = работы + запчасти − скидка. */
     discount: integer("discount").notNull().default(0),
     /** Статус до отмены — «Вернуть в работу» возвращает его (2.0.2). */

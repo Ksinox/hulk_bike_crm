@@ -39,7 +39,12 @@ const FIELD_RULES: FieldRule[] = [
     keys: ["share", "invested", "revenue", "income", "monthlyIncome", "accrued", "incomeAll", "revenueAll", "paidTotal", "amount"],
   },
   { prefix: "/api/scooters", perm: "data.partnerShares", keys: ["partnerShare"] },
-  { prefix: "/api/service-orders", perm: "data.repairProfit", keys: ["cost", "profit"] },
+  // Правки 7.0: доля механика и наша прибыль, процент механика — тоже про прибыль.
+  {
+    prefix: "/api/service-orders",
+    perm: "data.repairProfit",
+    keys: ["cost", "profit", "mechanicShare", "ourProfit", "percent", "mechanicPercent"],
+  },
   // 2.0.2: закуп в прайсе запчастей.
   { prefix: "/api/price-list", perm: "data.repairProfit", keys: ["cost"] },
 ];
@@ -54,7 +59,7 @@ const DENY_RULES: { prefix: string; perm: PermissionKey }[] = [
 /** Ключи в meta журнала и фрагменты текста, которые выдают закрытые числа. */
 const JOURNAL_META_KEYS: Record<PermissionKey, string[]> = {
   "data.profit": ["purchasePrice", "profit", "marginPct", "commission", "commissionPct", "managerCommission", "managerCommissionPct"],
-  "data.repairProfit": ["cost", "profit"],
+  "data.repairProfit": ["cost", "profit", "mechanicShare", "ourProfit", "mechanicPercent"],
   "data.partnerShares": ["partnerShare", "share", "accrued"],
 };
 /**
@@ -125,7 +130,8 @@ function redactJournal(payload: unknown, perms: Perms): unknown {
       // Записи о правах сотрудников называют права, но чисел не содержат.
       if (entity !== "user") {
         if (!perms["data.profit"]) words.push(PROFIT_WORDS);
-        if (!perms["data.repairProfit"] && entity === "service_order") words.push(REPAIR_PROFIT_WORDS);
+        if (!perms["data.repairProfit"] && (entity === "service_order" || entity === "service_mechanic"))
+          words.push(REPAIR_PROFIT_WORDS);
         if (!perms["data.partnerShares"]) words.push(SHARE_WORDS);
       }
       const summary = redactSummary(typeof it.summary === "string" ? it.summary : "", words);

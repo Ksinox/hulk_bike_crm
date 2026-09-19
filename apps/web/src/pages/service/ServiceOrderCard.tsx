@@ -6,11 +6,14 @@ import {
   HandCoins,
   Pencil,
   Phone,
+  Lock,
   Printer,
   RotateCcw,
+  Wrench,
   X,
 } from "lucide-react";
-import { useCan } from "@/lib/permissions";
+import { isFullAccess, useCan } from "@/lib/permissions";
+import { useMe } from "@/lib/api/auth";
 import { cn } from "@/lib/utils";
 import type { ApiError } from "@/lib/api";
 import { confirmDialog, pickAction, toast } from "@/lib/toast";
@@ -26,9 +29,11 @@ import {
   useServiceAdvance,
   useServiceRefund,
   useSettleServiceOrder,
+  useUncompleteServiceOrder,
   useUndoServicePayment,
   type ServiceOrder,
 } from "@/lib/api/service-orders";
+import { MechanicChips } from "./ServiceMechanics";
 import { DocumentPreviewModal } from "@/pages/rentals/DocumentPreviewModal";
 import { ItemsSection, PricePicker, type ItemPatch, type NewRowValue } from "./ServiceItemsEditor";
 import type { SavedToPrice } from "@/lib/api/service-orders";
@@ -66,6 +71,9 @@ export function ServiceOrderCard({
   const undoPay = useUndoServicePayment();
   const cancel = useCancelServiceOrder();
   const reopen = useReopenServiceOrder();
+  const uncomplete = useUncompleteServiceOrder();
+  const { data: me } = useMe();
+  const isDirector = isFullAccess(me?.role);
 
   const [pickerOpen, setPickerOpen] = useState<"work" | "part" | null>(null);
   const [pay, setPay] = useState<PayMode | null>(null);
@@ -81,7 +89,10 @@ export function ServiceOrderCard({
 
   const t = order.totals;
   const active = order.status === "in_work" || order.status === "done";
-  const locked = !active;
+  // Правки 7.0 (п.11): готовый к выдаче ремонт зафиксирован — работы,
+  // запчасти и данные не меняются, пока директор не вернёт его в работу.
+  const ready = order.status === "done";
+  const locked = !active || ready;
   const works = order.items.filter((i) => i.kind === "work");
   const parts = order.items.filter((i) => i.kind === "part");
   const no = orderNo(order.number);
@@ -238,6 +249,20 @@ export function ServiceOrderCard({
     if (ok) toast.success(`Ремонт ${no} снова в работе`);
   };
 
+  /** Правки 7.0 (п.10): директор возвращает готовый ремонт в работу. */
+  const doUncomplete = async () => {
+    const ok = await confirmDialog({
+      title: `Вернуть ремонт ${no} в работу?`,
+      message: "Статус станет «В работе» — работы, запчасти и данные снова можно менять. Деньги и авансы не трогаются.",
+      confirmText: "Вернуть в работу",
+    });
+    if (!ok) return;
+    setBusy(true);
+    const done = await run(uncomplete.mutateAsync(order.id));
+    setBusy(false);
+    if (done) toast.success(`Ремонт ${no} снова в работе`, "Правки открыты. Когда закончите — снова «Готов к выдаче».");
+  };
+
   const saveAndClose = () => {
     toast.success(`Ремонт ${no} сохранён`, `${STATUS_LABEL[order.status]} · ${t.left > 0 ? `остаток ${money(t.left)}` : `к оплате ${money(t.due)}`}`);
     onClose();
@@ -268,7 +293,7 @@ export function ServiceOrderCard({
           <div className={cn("mt-0.5 text-[12.5px] text-muted", !touch && "truncate")}>
             принят {fmtDay(order.acceptedAt)}
             {order.completedAt && order.status !== "in_work" ? ` · готов ${fmtDay(order.completedAt)}` : ""}
-            {active ? " · правки сохраняются сразу" : ""}
+            {order.status === "in_work" ? " · правки сохраняются сразу" : ""}
           </div>
         </div>
         <button
@@ -323,7 +348,27 @@ export function ServiceOrderCard({
           </div>
         )}
 
-        <ClientBlock order={order} touch={touch} editable={order.status !== "cancelled"} onSaved={() => setSavedAt(Date.now())} />
+        {ready && (
+          <div
+            className="mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
+            data-ready-lock
+          >
+            <Lock size={17} className="mt-0.5 shrink-0 text-amber-700" />
+            <div className="min-w-0 flex-1 text-[13px] leading-snug text-amber-900">
+              <b>Готов к выдаче — карточка зафиксирована.</b>{" "}
+              {isDirector
+                ? "Чтобы поменять работы или запчасти, верните ремонт в работу — кнопка внизу."
+                : "Работы и запчасти уже не меняются. Если нужно что-то поправить — вернуть ремонт в работу может директор."}
+            </div>
+          </div>
+        )}
+
+        <ClientBlock
+          order={order}
+          touch={touch}
+          editable={order.status !== "cancelled" && !ready}
+          onSaved={() => setSavedAt(Date.now())}
+        />
 
         <ItemsSection
           kind="work"
@@ -389,6 +434,16 @@ export function ServiceOrderCard({
               className={cn("inline-flex items-center justify-center gap-1.5 rounded-xl bg-surface px-4 font-bold text-ink shadow-card-sm hover:bg-surface-soft", btn)}
             >
               <Check size={16} /> Готов к выдаче
+            </button>
+          ) : isDirector ? (
+            <button
+              type="button"
+              onClick={doUncomplete}
+              disabled={busy}
+              className={cn("inline-flex items-center justify-center gap-1.5 rounded-xl bg-surface px-4 font-bold text-ink shadow-card-sm hover:bg-surface-soft disabled:opacity-50", btn)}
+              data-uncomplete
+            >
+              <RotateCcw size={16} /> В работу
             </button>
           ) : (
             touch && <span />
@@ -529,6 +584,7 @@ function ClientBlock({
         vehicle: form.vehicle.trim(),
         vehicleNumber: form.vehicleNumber.trim() || null,
         complaint: form.complaint.trim() || null,
+        mechanicId: form.mechanicId,
       });
       setEditing(false);
       onSaved();
@@ -590,6 +646,11 @@ function ClientBlock({
               />
             </Field>
           </div>
+          <div className="sm:col-span-2">
+            <MechanicField touch={touch}>
+              <MechanicChips value={form.mechanicId} onChange={(v) => setForm({ ...form, mechanicId: v })} touch={touch} />
+            </MechanicField>
+          </div>
         </div>
         {error && <div className="mt-2 text-[12.5px] font-semibold text-red-ink">{error}</div>}
         <div className="mt-3 flex gap-2">
@@ -632,6 +693,11 @@ function ClientBlock({
             {order.vehicle}
             {order.vehicleNumber ? <span className="text-muted"> · {order.vehicleNumber}</span> : null}
           </div>
+          {order.mechanicName && (
+            <div className="mt-1 inline-flex items-center gap-1.5 text-[12.5px] text-muted" data-order-mechanic>
+              <Wrench size={13} className="text-muted-2" /> механик <b className="font-semibold text-ink-2">{order.mechanicName}</b>
+            </div>
+          )}
         </div>
         {editable && (
           <button
@@ -663,7 +729,18 @@ function formOf(o: ServiceOrder) {
     vehicle: o.vehicle,
     vehicleNumber: o.vehicleNumber ?? "",
     complaint: o.complaint ?? "",
+    mechanicId: o.mechanicId ?? null,
   };
+}
+
+/** Подпись поля механика — без <label>: внутри кнопки, а не поле ввода. */
+function MechanicField({ touch, children }: { touch: boolean; children: React.ReactNode }) {
+  return (
+    <div className={cn("flex flex-col", touch ? "gap-1.5" : "gap-1")}>
+      <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">Механик</span>
+      {children}
+    </div>
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -736,9 +813,26 @@ function MoneyBlock({
         </div>
       )}
       {showProfit && t.cost !== undefined && t.profit !== undefined && (
-        <div className="mt-3 border-t border-border pt-2">
+        <div className="mt-3 border-t border-border pt-2" data-profit-block>
           <Row label="Закуп запчастей" value={`− ${money(t.cost)}`} muted />
-          <Row label="Прибыль" value={money(t.profit)} strong tone={t.profit >= 0 ? "good" : "bad"} />
+          {order.mechanicId != null && order.mechanicPercent != null ? (
+            <>
+              <Row label="Общая прибыль" value={money(t.profit)} />
+              <Row
+                label={`Механик ${order.mechanicName ?? ""} · ${order.mechanicPercent}%`}
+                value={`− ${money(t.mechanicShare ?? 0)}`}
+                muted
+              />
+              <Row
+                label="Наша прибыль"
+                value={money(t.ourProfit ?? t.profit)}
+                strong
+                tone={(t.ourProfit ?? t.profit) >= 0 ? "good" : "bad"}
+              />
+            </>
+          ) : (
+            <Row label="Прибыль" value={money(t.profit)} strong tone={t.profit >= 0 ? "good" : "bad"} />
+          )}
         </div>
       )}
     </div>

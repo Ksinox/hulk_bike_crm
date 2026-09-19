@@ -38,6 +38,8 @@ export type ActivityEntity =
   | "buyout"
   // Сторонние ремонты (06.09): заказ-наряды на чужую технику.
   | "service_order"
+  // Правки 7.0: механики сторонних ремонтов.
+  | "service_mechanic"
   | "settings";
 
 /**
