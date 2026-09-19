@@ -5,6 +5,8 @@
  *   sensitive — п.8: «В продаже» → правка → «Цена закупа» под ключом
  *   SHOT_BASE=http://localhost:5174 SHOT_API=http://localhost:5174 PHASE=desk|phone WHEN=was|now ONLY=…
  */
+const IPAD_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
 const PHONE_UA =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
 
@@ -13,7 +15,7 @@ export async function run(page, ctx) {
   const when = process.env.WHEN ?? "now";
   const only = (process.env.ONLY ?? "").split(",").filter(Boolean);
   const want = (s) => only.length === 0 || only.includes(s);
-  const sfx = phase === "phone" ? "-m" : "";
+  const sfx = phase === "phone" ? "-m" : phase === "tablet" ? "-t" : "";
   const S = (n) => ctx.shot(`v204-${n}${sfx}-${when}`, { jpeg: true });
   const sleep = ctx.sleep;
   const click = (re, scope = "body", sel = "button, [role=button], [role=switch]") =>
@@ -35,10 +37,13 @@ export async function run(page, ctx) {
       sel,
     );
   if (phase === "phone") await page.setUserAgent(PHONE_UA);
+  if (phase === "tablet") await page.setUserAgent(IPAD_UA);
   await page.setViewport(
     phase === "desk"
       ? { width: 1440, height: 900, deviceScaleFactor: 1 }
-      : { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
+      : phase === "tablet"
+        ? { width: 1180, height: 820, deviceScaleFactor: 1, isMobile: true, hasTouch: true }
+        : { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
   );
   // п.8: «ключ в этой вкладке уже вводили» — только локальная песочница,
   // шторка открывается без окна ключа (сам ключ не нужен и не трогается).
