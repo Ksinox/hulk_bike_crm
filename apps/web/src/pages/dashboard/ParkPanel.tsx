@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { Card } from "./KpiCard";
 import { useApiRentals } from "@/lib/api/rentals";
 import { useApiScooters, usePatchScooter } from "@/lib/api/scooters";
-import type { ApiScooter, ScooterModel } from "@/lib/api/types";
+import type { ApiScooter } from "@/lib/api/types";
 import type { DashboardMetrics } from "./useDashboardMetrics";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { navigate } from "@/app/navigationStore";
@@ -16,6 +16,7 @@ import {
 } from "./ParkTileHoverCard";
 import { ParkRadialFilters, type ParkStatusId } from "./ParkRadialFilters";
 import { ScooterName } from "@/components/ScooterName";
+import { useModelName } from "@/lib/useModelName";
 
 /** Извлечь номер из имени скутера ("Jog #07" → 7). Используется для
  * сортировки плиток парка по возрастанию номера, без блочной разбивки
@@ -78,9 +79,12 @@ export function ParkPanel({
   const rentalsQ = useApiRentals();
   const patchScooter = usePatchScooter();
   // Мультивыбор: пустой набор = «все». Тап по варианту переключает его.
-  const [models, setModels] = useState<Set<ScooterModel>>(() => new Set());
+  // 19.09 (п.9): фильтр по модели каталога — ключ «m:<id>» (раньше — старое
+  // поле model, где SEM и AIMA числились «Jog»).
+  const [models, setModels] = useState<Set<string>>(() => new Set());
+  const modelName = useModelName();
   const [statuses, setStatuses] = useState<Set<ParkStatusId>>(() => new Set());
-  const toggleModel = (id: ScooterModel) =>
+  const toggleModel = (id: string) =>
     setModels((prev) => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id);
@@ -166,6 +170,9 @@ export function ParkPanel({
         id: s.id,
         name: s.name,
         model: s.model,
+        modelKey: s.modelId != null ? `m:${s.modelId}` : `l:${s.model}`,
+        modelId: s.modelId ?? null,
+        modelLabel: modelName(s),
         // Правка 24.08: на плитке показываем АРЕНДНЫЙ номер, а не «#NN»
         // из имени (историческая нумерация заведения).
         rentalSlot: s.rentalSlot ?? null,
@@ -193,9 +200,15 @@ export function ParkPanel({
 
   const modelCounts = useMemo(() => {
     const acc: Record<string, number> = {};
-    tiles.forEach((t) => (acc[t.model] = (acc[t.model] ?? 0) + 1));
+    tiles.forEach((t) => (acc[t.modelKey] = (acc[t.modelKey] ?? 0) + 1));
     return acc;
   }, [tiles]);
+  /** Модели парка — для фильтра: чаще встречающиеся первыми. */
+  const modelList = useMemo(() => {
+    const seen = new Map<string, { key: string; label: string; modelId: number | null }>();
+    for (const t of tiles) if (!seen.has(t.modelKey)) seen.set(t.modelKey, { key: t.modelKey, label: t.modelLabel, modelId: t.modelId });
+    return [...seen.values()].sort((a, b) => (modelCounts[b.key] ?? 0) - (modelCounts[a.key] ?? 0));
+  }, [tiles, modelCounts]);
 
   const statusCounts = useMemo(() => {
     const acc: Record<string, number> = {};
@@ -246,6 +259,7 @@ export function ParkPanel({
         <ParkRadialFilters
           total={total}
           modelCounts={modelCounts}
+          modelList={modelList}
           statusCounts={statusCounts}
           selectedModels={models}
           selectedStatuses={statuses}
@@ -279,7 +293,7 @@ export function ParkPanel({
         style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
       >
         {tiles.map((s) => {
-          const modelMatch = models.size === 0 || models.has(s.model);
+          const modelMatch = models.size === 0 || models.has(s.modelKey);
           if (!modelMatch) return null;
           // v0.4.59: фильтр «активная аренда» — все скутеры у которых
           // есть аренда в работе (rented + overdue + late_today +

@@ -11,10 +11,10 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useModelName } from "@/lib/useModelName";
 import { confirmDialog } from "@/lib/toast";
 import type { FleetScooter } from "@/lib/mock/fleet";
 import { useRole } from "@/lib/role";
-import { MODEL_LABEL } from "@/lib/mock/rentals";
 import {
   fileUrl,
   useApiScooterDocs,
@@ -47,6 +47,7 @@ function isImageMime(mime: string): boolean {
 }
 
 export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
+  const modelName = useModelName();
   const role = useRole();
   const { data: docs = [] } = useApiScooterDocs(scooter.id);
   const uploadMut = useUploadScooterDoc(scooter.id);
@@ -78,7 +79,7 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
   }, [osagoDoc?.osagoValidUntil]);
 
   const handleAct = (w: "open" | "print") => {
-    const html = actHtml(scooter);
+    const html = actHtml(scooter, modelName(scooter));
     const win = window.open("", "_blank", "width=820,height=1000");
     if (!win) return;
     win.document.write(html);
@@ -440,7 +441,7 @@ function isoToRu(iso: string): string {
   return `${m[3]}.${m[2]}.${m[1]}`;
 }
 
-function actHtml(scooter: FleetScooter): string {
+function actHtml(scooter: FleetScooter, modelTitle: string): string {
   const today = new Date();
   const dateStr = `${String(today.getDate()).padStart(2, "0")} ${MONTH_RU[today.getMonth()]} ${today.getFullYear()}`;
   return `<!doctype html><html><head><meta charset="utf-8"><title>Акт приёма-передачи ${scooter.name}</title>
@@ -458,7 +459,7 @@ h2{font-size:13px;margin:18px 0 6px;text-transform:uppercase;letter-spacing:0.05
 <div>Составлен: ${dateStr}</div>
 
 <h2>Объект</h2>
-<div class="row"><b>Скутер</b>${scooter.name} · ${MODEL_LABEL[scooter.model]}</div>
+<div class="row"><b>Скутер</b>${scooter.name} · ${modelTitle}</div>
 <div class="row"><b>VIN</b>${scooter.vin ?? "—"}</div>
 <div class="row"><b>Номер двигателя</b>${scooter.engineNo ?? "—"}</div>
 <div class="row"><b>Пробег на момент выдачи</b>${fmt(scooter.mileage)} км</div>

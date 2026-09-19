@@ -24,7 +24,6 @@ import { useScooterMaintenance } from "@/lib/api/scooter-maintenance";
 import { useRepairJobs } from "@/lib/api/repair-jobs";
 import { useCan } from "@/lib/permissions";
 import { useRole } from "@/lib/role";
-import { MODEL_LABEL } from "@/lib/mock/rentals";
 import { ExNumberTag, ScooterName, scooterModelName } from "@/components/ScooterName";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { STATUS_LABEL as RENTAL_STATUS_LABEL } from "@/lib/mock/rentals";
@@ -52,6 +51,7 @@ import { askArchiveReason } from "@/pages/fleet/archiveReason";
 import type { Rental } from "@/lib/mock/rentals";
 import type { ApiClient } from "@/lib/api/types";
 import { TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
+import { useModelName } from "@/lib/useModelName";
 
 type TabId =
   | "overview"
@@ -133,6 +133,7 @@ export function MobileScooterCard({
   status: ScooterDisplayStatus;
   onBack: () => void;
 }) {
+  const modelName = useModelName();
   const rentals = useRentals();
   const { data: apiClients } = useApiClients();
   const role = useRole();
@@ -333,7 +334,7 @@ export function MobileScooterCard({
                   size="lg"
                 />
               </div>
-              <div className="text-[12px] text-muted">{MODEL_LABEL[scooter.model]}</div>
+              <div className="text-[12px] text-muted">{modelName(scooter)}</div>
               <ExNumberTag
                 number={scooter.exRentalSlot}
                 current={scooter.rentalSlot}
@@ -451,7 +452,7 @@ export function MobileScooterCard({
             )}
           </div>
           <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
-            <Spec label="Модель" value={MODEL_LABEL[scooter.model]} />
+            <Spec label="Модель" value={modelName(scooter)} />
             <Spec label="Пробег" value={`${fmt(scooter.mileage)} км`} accent />
             <Spec label="VIN номер" value={scooter.vin ?? "—"} mono />
             <Spec label="Двигатель" value={scooter.engineNo ?? "—"} mono />

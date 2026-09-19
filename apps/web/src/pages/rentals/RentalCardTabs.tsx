@@ -37,7 +37,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  MODEL_LABEL,
   PAYMENT_LABEL,
   rentalPaymentLabel,
   ratePeriodForDays,
@@ -79,6 +78,7 @@ import {
   type ApiDamageReport,
   type ApiDamagePayment,
 } from "@/lib/api/damage-reports";
+import { useModelName } from "@/lib/useModelName";
 
 function fmt(n: number | null | undefined) {
   if (n == null || Number.isNaN(n)) return "0";
@@ -280,6 +280,11 @@ export function TermsTab({
   const swapsQ = useApiScooterSwaps(rental.id);
   const swaps = swapsQ.data ?? [];
   const { data: apiScooters = [] } = useApiScooters();
+  // 19.09 (п.9): модель из каталога — у SEM/AIMA старое поле = «jog».
+  const modelName = useModelName();
+  const rentalModelName = modelName(
+    apiScooters.find((x) => x.name === rental.scooter) ?? { model: rental.model },
+  );
 
   const scooterChain = useMemo(() => {
     const ordered = chainIds
@@ -424,7 +429,7 @@ export function TermsTab({
                 </div>
                 <div className="mt-0.5 text-[11px] text-muted-2">Model &amp; ID</div>
                 <div className="mt-0.5 font-display text-[18px] font-extrabold leading-tight text-ink">
-                  {rental.scooter} · {MODEL_LABEL[rental.model]}
+                  {rental.scooter} · {rentalModelName}
                 </div>
               </button>
               <div className="flex shrink-0 items-center gap-1">

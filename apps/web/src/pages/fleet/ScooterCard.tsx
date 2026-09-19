@@ -31,7 +31,7 @@ import { useScooterMaintenance } from "@/lib/api/scooter-maintenance";
 import { useRepairJobs } from "@/lib/api/repair-jobs";
 import { useRole } from "@/lib/role";
 import { useCan } from "@/lib/permissions";
-import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
+import { type ScooterModel } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useApiClients } from "@/lib/api/clients";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -66,6 +66,7 @@ import {
 } from "@/components/ScooterName";
 import { askArchiveReason } from "./archiveReason";
 import { Sensitive } from "@/components/Sensitive";
+import { useModelName } from "@/lib/useModelName";
 
 type TabId =
   | "overview"
@@ -187,6 +188,7 @@ export function ScooterCard({
    */
   drawerChrome?: boolean;
 }) {
+  const modelName = useModelName();
   const rentals = useRentals();
   const { data: apiClients } = useApiClients();
   const { data: cardModels = [] } = useApiScooterModels();
@@ -687,7 +689,7 @@ export function ScooterCard({
                 <div className="flex min-w-0 items-center gap-2">
                   <div className="min-w-0">
                     <div className="truncate font-display text-[16px] font-extrabold leading-tight text-ink">
-                      {MODEL_LABEL[scooter.model]}
+                      {modelName(scooter)}
                     </div>
                     <div className="text-[11.5px] text-muted">
                       {[scooter.year ? `${scooter.year} г.` : null, scooter.color]
@@ -843,7 +845,7 @@ export function ScooterCard({
               )}
             >
               {!drawerChrome && (
-                <SpecCell label="Модель" value={MODEL_LABEL[scooter.model]} />
+                <SpecCell label="Модель" value={modelName(scooter)} />
               )}
               {!drawerChrome && (
                 <>
@@ -2106,6 +2108,7 @@ function ScooterPhotoArea({
   /** Дровер (правка 27.08): фото-зона ниже, без гигантской пустоты. */
   compact?: boolean;
 }) {
+  const modelName = useModelName();
   const { data: models = [] } = useApiScooterModels();
   // Ищем модель по modelId (новый FK); если нет — по совпадению названия с enum
   const model = scooter.modelId
@@ -2141,7 +2144,7 @@ function ScooterPhotoArea({
             )}
           />
           <div className="text-[15px] font-bold text-ink">
-            {model?.name ?? MODEL_LABEL[scooter.model]}
+            {model?.name ?? modelName(scooter)}
           </div>
           <div className="text-[10px] text-muted-2">аватарка модели</div>
         </>
@@ -2152,7 +2155,7 @@ function ScooterPhotoArea({
           </div>
           <div className="text-[13px] font-semibold text-ink-2">Нет фото</div>
           <div className="max-w-[200px] text-center text-[11px] leading-snug text-muted-2">
-            Загрузите аватарку модели {MODEL_LABEL[scooter.model]} в
+            Загрузите аватарку модели {modelName(scooter)} в
             «Гараж → Модели» — она появится здесь для всех скутеров этой модели
           </div>
         </>

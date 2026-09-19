@@ -49,11 +49,17 @@ export function Sensitive({
         tabIndex={0}
         title="Нажмите, чтобы снова спрятать"
         onClick={(e) => {
+          // 19.09 (п.8): внутри открытого блока бывает поле ввода («Цена
+          // закупа» в правке техники). Нажали в поле, чтобы исправить, —
+          // блок прятался и ввести было нельзя. Поля, кнопки и подписи
+          // теперь работают как обычно, прячет только нажатие мимо них.
+          if (isInteractive(e.target)) return;
           e.preventDefault();
           e.stopPropagation();
           hideSensitive();
         }}
         onKeyDown={(e) => {
+          if (isInteractive(e.target)) return;
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             hideSensitive();
@@ -122,6 +128,14 @@ export function Sensitive({
         <Lock size={12} />
       </span>
     </span>
+  );
+}
+
+/** Поле ввода, кнопка, подпись поля — у них своё поведение по нажатию. */
+function isInteractive(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    !!target.closest("input, textarea, select, button, label, a, [contenteditable='true']")
   );
 }
 

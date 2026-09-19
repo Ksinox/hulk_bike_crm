@@ -17,7 +17,6 @@ import {
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MODEL_LABEL } from "@/lib/mock/rentals";
 import { useFleetScooters } from "./fleetStore";
 import { useApiClients } from "@/lib/api/clients";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
@@ -26,6 +25,7 @@ import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { ExNumberTag, ScooterName } from "@/components/ScooterName";
+import { useModelName } from "@/lib/useModelName";
 
 const STATUS_LABEL: Record<string, string> = {
   ready: "Не распределён",
@@ -54,6 +54,7 @@ export function ScooterQuickView({
   /** v0.4.32: открыть карточку текущей аренды в том же drawer-стеке. */
   onOpenRental?: (rentalId: number) => void;
 }) {
+  const modelName = useModelName();
   const fleet = useFleetScooters();
   const scooter = fleet.find((s) => s.id === scooterId) ?? null;
   const { data: models = [] } = useApiScooterModels();
@@ -134,7 +135,7 @@ export function ScooterQuickView({
             </h2>
             <ExNumberTag number={scooter.exRentalSlot} current={scooter.rentalSlot} />
             <span className="text-[13px] text-muted">
-              · {MODEL_LABEL[scooter.model]}
+              · {modelName(scooter)}
             </span>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">

@@ -21,7 +21,7 @@ import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { ExNumberTag, ScooterName } from "@/components/ScooterName";
 import { usePageFab } from "../fab";
-import type { ApiScooter, ScooterModel } from "@/lib/api/types";
+import type { ApiScooter } from "@/lib/api/types";
 import {
   matchId,
   matchScooterName,
@@ -37,6 +37,7 @@ import {
   MobileSearch,
   type ChipOption,
 } from "../ui";
+import { useModelName } from "@/lib/useModelName";
 
 type Filter =
   | "all"
@@ -51,12 +52,6 @@ type Filter =
   /** Продан: права перешли покупателю, в парке не числится. */
   | "gone";
 
-const MODEL_LABEL: Record<ScooterModel, string> = {
-  jog: "Yamaha Jog",
-  gear: "Honda Gear",
-  honda: "Honda",
-  tank: "Tank",
-};
 
 // Тон под канонический статус. Ярлык берём из SCOOTER_STATUS_LABEL (единый
 // источник с десктопом — никаких выдуманных «В прокате»).
@@ -81,6 +76,7 @@ function num(n: number): string {
 }
 
 export function MobileScooters() {
+  const modelName = useModelName();
   const { data: scooters = [] } = useApiScooters();
   const { data: models = [] } = useApiScooterModels();
   // Картинка модели для аватарки скутера: по modelId, иначе по совпадению
@@ -180,7 +176,7 @@ export function MobileScooters() {
       const q = normalizeQuery(search);
       return (
         // 15.09: номер скутера — «5», «05», «№5», «айма 01», «бывший 80».
-        (numberQ != null && matchScooterNumber(s, numberQ, MODEL_LABEL[s.model]) != null) ||
+        (numberQ != null && matchScooterNumber(s, numberQ, modelName(s)) != null) ||
         matchScooterName(s.name, q) ||
         matchId(s.id, q) ||
         matchScooterName(s.vin ?? undefined, q) ||
@@ -195,7 +191,7 @@ export function MobileScooters() {
         if (numberQ) {
           const order = { current: 0, name: 1, former: 2 } as const;
           const rank = (x: ApiScooter) => {
-            const hit = matchScooterNumber(x, numberQ, MODEL_LABEL[x.model]);
+            const hit = matchScooterNumber(x, numberQ, modelName(x));
             return hit ? order[hit] : 3;
           };
           const d = rank(a) - rank(b);
@@ -431,6 +427,7 @@ function ScooterTile({
   avatar?: string;
   onClick: () => void;
 }) {
+  const modelName = useModelName();
   const meta = statusMeta(status);
   const oilState =
     status === "rental_pool" || status === "rented" ? oilFlag(scooter) : null;
@@ -457,7 +454,7 @@ function ScooterTile({
             />
           </div>
           <div className="truncate text-[12px] text-muted">
-            {MODEL_LABEL[scooter.model]}
+            {modelName(scooter)}
             {/* 2.0.1: без арендного номера одинаковые «Jog» различает ID. */}
             {scooter.rentalSlot == null && scooter.uid && ` · ID ${scooter.uid}`}
           </div>

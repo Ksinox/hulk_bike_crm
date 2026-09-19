@@ -39,6 +39,7 @@ import type { ApiScooter } from "@/lib/api/types";
 import { PriceItemsPicker } from "./PriceItemsPicker";
 import { ServiceOrders } from "./ServiceOrders";
 import { useServiceOrders } from "@/lib/api/service-orders";
+import { useModelName } from "@/lib/useModelName";
 
 type Tab = "active" | "completed";
 
@@ -245,6 +246,7 @@ function EmptyState({ tab, search }: { tab: Tab; search: string }) {
 }
 
 function ActiveRepairCard({ job }: { job: ApiRepairJob }) {
+  const modelName = useModelName();
   const { data: scooters = [] } = useApiScooters();
   const scooter = scooters.find((s) => s.id === job.scooterId) ?? null;
   const complete = useCompleteRepairJob();
@@ -339,7 +341,7 @@ function ActiveRepairCard({ job }: { job: ApiRepairJob }) {
                 )}
               </div>
               <div className="text-[12px] text-muted-2">
-                {modelLabelFor(scooter, job.scooter?.model)}
+                {modelLabelFor(scooter, job.scooter?.model, modelName(scooter) || undefined)}
               </div>
             </button>
             <button
@@ -694,6 +696,7 @@ function PhotoPreview({
 }
 
 function JournalRow({ job }: { job: ApiRepairJob }) {
+  const modelName = useModelName();
   const { data: scooters = [] } = useApiScooters();
   const scooter = scooters.find((s) => s.id === job.scooterId) ?? null;
   const totalPhotos = job.progress.reduce(
@@ -721,7 +724,7 @@ function JournalRow({ job }: { job: ApiRepairJob }) {
               )}
             </span>
             <span className="text-[12px] text-muted-2">
-              {modelLabelFor(scooter, job.scooter?.model)}
+              {modelLabelFor(scooter, job.scooter?.model, modelName(scooter) || undefined)}
             </span>
             <span className="rounded-full bg-green-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-green-ink">
               <CheckCircle2 size={9} className="-mt-0.5 mr-0.5 inline" />
@@ -856,7 +859,10 @@ function ScooterAvatar({
 function modelLabelFor(
   scooter: ApiScooter | null,
   fallbackModel?: string,
+  catalogName?: string,
 ): string {
+  // 19.09 (п.9): имя из каталога — у новых моделей старое поле = «jog».
+  if (catalogName) return catalogName;
   if (scooter) {
     const m =
       MODEL_LABEL[scooter.model as keyof typeof MODEL_LABEL] ?? scooter.model;

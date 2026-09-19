@@ -41,7 +41,7 @@ import {
 import { useFleetScooters } from "./fleetStore";
 import { useBuyoutDeals, type BuyoutDeal } from "@/lib/api/buyout";
 import { buyoutDealByScooter } from "@/lib/buyoutStock";
-import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
+import { type ScooterModel } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
 import {
   matchScooterName,
@@ -54,6 +54,8 @@ import { useRentals } from "@/pages/rentals/rentalsStore";
 import { ExNumberTag, ScooterName } from "@/components/ScooterName";
 import { ScooterCard } from "./ScooterCard";
 import { AddScooterModal, addScooterDraftKey, useAddScooterReopen } from "./AddScooterModal";
+import { useModelName } from "@/lib/useModelName";
+import { fileUrl } from "@/lib/files";
 
 /** «Сегодня» по демо-таймлайну */
 const TODAY = new Date();
@@ -150,6 +152,7 @@ export function Fleet({
   embedded = false,
   mode = "rental",
 }: { embedded?: boolean; mode?: FleetMode } = {}) {
+  const modelName = useModelName();
   const rentals = useRentals();
   const FLEET = useFleetScooters();
   const { data: apiClients } = useApiClients();
@@ -340,7 +343,10 @@ export function Fleet({
         if (modelIdsFilter.size > 0) {
           const byId =
             r.scooter.modelId != null && modelIdsFilter.has(r.scooter.modelId);
-          const byEnum = selectedLegacyModels.has(r.scooter.model);
+          // 19.09 (п.9): старое поле — только у техники без модели в
+          // каталоге. У SEM/AIMA там «jog», и фильтр «Jog» их захватывал.
+          const byEnum =
+            r.scooter.modelId == null && selectedLegacyModels.has(r.scooter.model);
           if (!byId && !byEnum) return false;
         }
         if (q.text) {
@@ -351,7 +357,7 @@ export function Fleet({
           const shortNumber = q.isNumeric && q.digits.length <= 3;
           const ok =
             (numberQ != null &&
-              matchScooterNumber(r.scooter, numberQ, MODEL_LABEL[r.scooter.model]) != null) ||
+              matchScooterNumber(r.scooter, numberQ, modelName(r.scooter)) != null) ||
             (!shortNumber &&
               (matchScooterName(r.scooter.name, q) ||
                 matchText(r.scooter.vin ?? undefined, q) ||
@@ -369,7 +375,7 @@ export function Fleet({
         if (numberQ) {
           const order = { current: 0, name: 1, former: 2 } as const;
           const rank = (x: typeof a) => {
-            const hit = matchScooterNumber(x.scooter, numberQ, MODEL_LABEL[x.scooter.model]);
+            const hit = matchScooterNumber(x.scooter, numberQ, modelName(x.scooter));
             return hit ? order[hit] : 3;
           };
           const d = rank(a) - rank(b);
@@ -686,6 +692,7 @@ function FleetRow({
    */
   active?: boolean;
 }) {
+  const modelName = useModelName();
   const { scooter, status, rental, buyout } = row;
   const wasRented = scooter.rentalSlot == null && scooter.exRentalSlot != null;
   // Бейдж масла показываем только для катающих скутеров (парк/в аренде).
@@ -709,7 +716,7 @@ function FleetRow({
     >
       {/* name + model */}
       <div className="flex min-w-0 items-center gap-3">
-        <ScooterAvatar model={scooter.model} />
+        <ScooterAvatar modelId={scooter.modelId} model={scooter.model} />
         <div className="min-w-0">
           <ScooterName
             name={scooter.name}
@@ -717,7 +724,7 @@ function FleetRow({
             className="text-[14px] font-bold text-ink"
           />
           <div className="truncate text-[11px] uppercase tracking-wider text-muted-2">
-            {MODEL_LABEL[scooter.model]}
+            {modelName(scooter)}
             {/* 2.0.1: без арендного номера одинаковые «Jog» различает ID. */}
             {scooter.rentalSlot == null && scooter.uid && (
               <span className="normal-case tracking-normal"> · ID {scooter.uid}</span>
@@ -821,6 +828,7 @@ function FleetTile({
   };
   onOpen: () => void;
 }) {
+  const modelName = useModelName();
   const { scooter, status, rental, buyout } = row;
   const oilState =
     status === "rental_pool" || status === "rented" ? oilFlag(scooter) : null;
@@ -836,7 +844,7 @@ function FleetTile({
       className="flex w-[200px] cursor-pointer flex-col gap-2 rounded-2xl border border-border bg-surface p-3 transition-colors hover:bg-surface-soft/60"
     >
       <div className="flex items-center gap-2">
-        <ScooterAvatar model={scooter.model} />
+        <ScooterAvatar modelId={scooter.modelId} model={scooter.model} />
         <div className="min-w-0 flex-1">
           <ScooterName
             name={scooter.name}
@@ -844,7 +852,7 @@ function FleetTile({
             className="text-[14px] font-bold text-ink"
           />
           <div className="truncate text-[10px] uppercase tracking-wider text-muted-2">
-            {MODEL_LABEL[scooter.model]}
+            {modelName(scooter)}
             {scooter.rentalSlot == null && scooter.uid && (
               <span className="normal-case tracking-normal"> · ID {scooter.uid}</span>
             )}
@@ -887,8 +895,25 @@ function FleetTile({
   );
 }
 
-function ScooterAvatar({ model }: { model: ScooterModel }) {
-  const bg =
+/**
+ * Значок модели в списке. 19.09 (п.9): у новых моделей (SEM, AIMA) старое
+ * поле `model` = «jog», и значок красился как у Jog. Есть аватарка модели в
+ * каталоге — показываем её, нет — нейтральный значок.
+ */
+function ScooterAvatar({ model, modelId }: { model: ScooterModel; modelId?: number | null }) {
+  const { data: models = [] } = useApiScooterModels();
+  const linked = modelId != null ? models.find((m) => m.id === modelId) : null;
+  const thumb = linked ? fileUrl(linked.avatarThumbKey ?? linked.avatarKey, { variant: "thumb" }) : null;
+  if (thumb) {
+    return (
+      <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-soft">
+        <img src={thumb} alt={linked?.name ?? ""} className="h-full w-full object-cover" />
+      </div>
+    );
+  }
+  const bg = linked
+    ? "bg-surface-soft text-ink-2"
+    :
     model === "jog"
       ? "bg-blue-50 text-blue-700"
       : model === "gear"

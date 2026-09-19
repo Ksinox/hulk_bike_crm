@@ -17,17 +17,12 @@ import {
 } from "../ui";
 import { ServiceOrders } from "@/pages/service/ServiceOrders";
 import { useServiceOrders } from "@/lib/api/service-orders";
+import { useModelName } from "@/lib/useModelName";
 
 type Filter = "active" | "completed";
 /** Как и на десктопе: главная вкладка — сторонние ремонты (06.09). */
 type Scope = "outside" | "own";
 
-const MODEL_LABEL: Record<string, string> = {
-  jog: "Yamaha Jog",
-  gear: "Honda Gear",
-  honda: "Honda",
-  tank: "Tank",
-};
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -123,6 +118,7 @@ export function MobileService() {
 }
 
 function JobRow({ job, onClick }: { job: ApiRepairJob; onClick: () => void }) {
+  const modelName = useModelName();
   const done = job.status === "completed";
   return (
     <button
@@ -142,7 +138,7 @@ function JobRow({ job, onClick }: { job: ApiRepairJob; onClick: () => void }) {
         <div className="truncate text-[14px] font-bold text-ink">
           {job.scooter?.name ?? "Скутер"}
           <span className="ml-1.5 text-[12px] font-normal text-muted">
-            {job.scooter ? MODEL_LABEL[job.scooter.model] ?? job.scooter.model : ""}
+            {job.scooter ? modelName(job.scooter) : ""}
           </span>
         </div>
         <div className="mt-0.5 truncate text-[12px] text-muted">

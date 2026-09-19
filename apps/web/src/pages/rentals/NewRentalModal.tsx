@@ -398,6 +398,27 @@ export function NewRentalModal({
       s.modelId != null && electricModelIds.has(s.modelId),
     [electricModelIds],
   );
+  /**
+   * Модель для кнопок фильтра — настоящая модель из каталога (19.09, п.6).
+   * Раньше фильтр шёл по старому полю `model`, где у всего незнакомого стоит
+   * «jog»: электрички AIMA попадали в «Jog» и смешивались с бензиновыми.
+   */
+  const modelNameOf = useCallback(
+    (s: { modelId?: number | null; model: string }) =>
+      (s.modelId != null ? modelsCatalog.find((m) => m.id === s.modelId)?.name : null) ??
+      MODEL_LABEL[s.model as ScooterModel] ??
+      s.model,
+    [modelsCatalog],
+  );
+  /** Из заявки приходит старое значение («jog») — это бензиновые этой модели. */
+  const matchesModel = useCallback(
+    (s: { modelId?: number | null; model: string }) =>
+      scooterModelFilter === "" ||
+      (LEGACY_MODELS.has(scooterModelFilter)
+        ? s.model === scooterModelFilter && !isElectricScooter(s)
+        : modelNameOf(s) === scooterModelFilter),
+    [scooterModelFilter, isElectricScooter, modelNameOf],
+  );
   /** Есть ли в свободном парке оба типа — иначе выбор категории не нужен. */
   const hasBothPower = useMemo(() => {
     let petrol = false;
@@ -422,7 +443,7 @@ export function NewRentalModal({
             !s.archivedAt &&
             (powerFilter === "all" ||
               (powerFilter === "electric") === isElectricScooter(s)) &&
-            (scooterModelFilter === "" || s.model === scooterModelFilter),
+            matchesModel(s),
         )
         .map((s) => ({
           name: s.name,
@@ -430,8 +451,9 @@ export function NewRentalModal({
           rentalSlot: s.rentalSlot ?? undefined,
           exRentalSlot: s.exRentalSlot ?? undefined,
           electric: isElectricScooter(s),
+          modelName: modelNameOf(s),
         })),
-    [apiScooters, blocked, scooterModelFilter, powerFilter, isElectricScooter],
+    [apiScooters, blocked, matchesModel, powerFilter, isElectricScooter, modelNameOf],
   );
 
   /** Список моделей с количеством свободных скутеров — для чипов фильтра. */
@@ -449,12 +471,30 @@ export function NewRentalModal({
         (powerFilter === "electric") !== isElectricScooter(s)
       )
         continue;
-      counts.set(s.model, (counts.get(s.model) ?? 0) + 1);
+      const name = modelNameOf(s);
+      counts.set(name, (counts.get(name) ?? 0) + 1);
     }
     return Array.from(counts.entries()).sort((a, b) =>
       a[0].localeCompare(b[0]),
     );
-  }, [apiScooters, blocked]);
+  }, [apiScooters, blocked, powerFilter, isElectricScooter, modelNameOf]);
+
+  // Старое значение из заявки («jog») → кнопка настоящей модели, если она одна.
+  useEffect(() => {
+    if (!LEGACY_MODELS.has(scooterModelFilter)) return;
+    const names = new Set(
+      (apiScooters ?? [])
+        .filter(
+          (s) =>
+            s.baseStatus === "rental_pool" &&
+            !s.archivedAt &&
+            s.model === scooterModelFilter &&
+            !isElectricScooter(s),
+        )
+        .map((s) => modelNameOf(s)),
+    );
+    if (names.size === 1) setScooterModelFilter([...names][0]!);
+  }, [apiScooters, scooterModelFilter, isElectricScooter, modelNameOf]);
 
   const [saving, setSaving] = useState(false);
   // v0.9.4: после создания аренды СРАЗУ показываем «Договор + Акт» поверх
@@ -755,7 +795,7 @@ export function NewRentalModal({
                     />
                   </div>
                   <div className="text-[11px] text-muted-2">
-                    {MODEL_LABEL[model]} · тариф{" "}
+                    {selectedScooter ? modelNameOf(selectedScooter) : MODEL_LABEL[model]} · тариф{" "}
                     {TARIFF_PERIOD_LABEL[ratePeriod]} · {rate} ₽/сут
                   </div>
                 </div>
@@ -1312,7 +1352,7 @@ export function NewRentalModal({
                 clientName={client?.name ?? "—"}
                 scooterName={scooterName}
                 scooterNumber={selectedScooter?.rentalSlot ?? undefined}
-                model={MODEL_LABEL[model]}
+                model={selectedScooter ? modelNameOf(selectedScooter) : MODEL_LABEL[model]}
                 period={`${start} ${startTime} → ${endPlanned} ${startTime}`}
                 days={days}
                 rate={rate}
@@ -1649,6 +1689,9 @@ function MobileClientPicker({
   );
 }
 
+/** Старое поле модели (до каталога): так модель приходит из заявки. */
+const LEGACY_MODELS = new Set(["jog", "gear", "honda", "tank"]);
+
 function MobileScooterPicker({
   scooters,
   modelChips,
@@ -1664,6 +1707,7 @@ function MobileScooterPicker({
     rentalSlot?: number;
     exRentalSlot?: number;
     electric?: boolean;
+    modelName?: string;
   }[];
   modelChips: [string, number][];
   filter: string;
@@ -1753,7 +1797,7 @@ function MobileScooterPicker({
                   className="text-[15px] font-bold text-ink"
                 />
               </span>
-              <span className="text-[12px] text-muted-2">{MODEL_LABEL[s.model]}</span>
+              <span className="text-[12px] text-muted-2">{s.modelName ?? MODEL_LABEL[s.model]}</span>
             </button>
           ))}
         </div>
