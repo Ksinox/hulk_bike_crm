@@ -10,6 +10,10 @@ import {
 import type { ApiScooter } from "@/lib/api/types";
 import { confirmDialog } from "@/lib/toast";
 import { ExNumberTag, ScooterName } from "@/components/ScooterName";
+import { isTouchPrimary } from "@/lib/useIsMobile";
+
+/** На пальце кнопки строки архива — не мельче 44px. */
+const TAP = isTouchPrimary() ? "min-h-[44px]" : "";
 
 export function ScooterArchive() {
   const { data: items = [], isLoading } = useApiScootersArchived();
@@ -86,9 +90,12 @@ function ArchiveRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-xl bg-surface p-3 shadow-card-sm",
+        "flex flex-col gap-2 rounded-xl bg-surface p-3 shadow-card-sm",
+        "sm:flex-row sm:items-center sm:gap-3",
       )}
     >
+      {/* На узком экране карточка идёт в столбик: описание сверху, кнопки снизу. */}
+      <div className="flex min-w-0 flex-1 items-center gap-3">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-muted-2">
         <Bike size={18} />
       </div>
@@ -101,7 +108,7 @@ function ArchiveRow({
           <ExNumberTag number={s.exRentalSlot} current={s.rentalSlot} />
         </div>
         {s.archivedReason && (
-          <div className="mt-0.5 truncate text-[12px] font-medium text-ink-2">
+          <div className="mt-0.5 line-clamp-2 text-[12px] font-medium text-ink-2 sm:truncate">
             Причина: {s.archivedReason}
           </div>
         )}
@@ -110,13 +117,14 @@ function ArchiveRow({
           {s.archivedAt ? formatDate(s.archivedAt) : "—"}
         </div>
       </div>
-      <div className="flex gap-1">
+      </div>
+      <div className="flex shrink-0 gap-2 sm:gap-1">
         <button
           type="button"
           onClick={onRestore}
           disabled={restore.isPending}
           title="Восстановить"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-blue-50 hover:text-blue-700"
+          className={cn("inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-blue-50 hover:text-blue-700 sm:flex-none", TAP)}
         >
           <RotateCcw size={13} /> Восстановить
         </button>
@@ -126,7 +134,7 @@ function ArchiveRow({
             onClick={onPurge}
             disabled={purge.isPending}
             title="Удалить навсегда"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-red-soft px-3 py-1.5 text-[12px] font-semibold text-red-ink hover:bg-red hover:text-white"
+            className={cn("inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-soft px-3 py-1.5 text-[12px] font-semibold text-red-ink hover:bg-red hover:text-white sm:flex-none", TAP)}
           >
             <Trash2 size={13} /> Удалить
           </button>

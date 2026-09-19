@@ -704,7 +704,7 @@ export function DebtorCase({
                   </div>
                   <a
                     href={`tel:${d.displayPhone}`}
-                    className="mt-1 inline-flex items-center gap-2 font-display text-[22px] font-bold tracking-[-0.01em] text-ink hover:text-blue-700"
+                    className="mt-1 inline-flex items-center gap-2 whitespace-nowrap font-display text-[19px] font-bold tracking-[-0.01em] text-ink hover:text-blue-700 xl:text-[22px]"
                   >
                     <Phone size={17} className="text-blue-600" />
                     {d.displayPhone}
