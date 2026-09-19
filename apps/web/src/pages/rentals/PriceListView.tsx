@@ -11,6 +11,7 @@ import {
   RefreshCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isTouchPrimary } from "@/lib/useIsMobile";
 import { useMe } from "@/lib/api/auth";
 import { useCan } from "@/lib/permissions";
 import { Switch } from "@/components/ui/switch";
@@ -43,6 +44,11 @@ function fmt(n: number | null) {
  * Прейскурант. Список групп → внутри каждой таблица позиций.
  * Изменять может director/creator. Остальные — только смотрят.
  */
+/** На пальце иконки-кнопки должны быть не меньше 44px, на мыши — компактные. */
+const TOUCH_HIT = isTouchPrimary()
+  ? "inline-flex h-11 w-11 items-center justify-center"
+  : "";
+
 export function PriceListView() {
   const me = useMe();
   const canEdit = me.data?.role === "director" || me.data?.role === "creator";
@@ -434,7 +440,7 @@ function PriceGroupCard({
                 <button
                   type="button"
                   onClick={() => setEditingHeader(true)}
-                  className="rounded-[8px] p-1.5 text-muted-2 hover:bg-surface-soft hover:text-ink"
+                  className={cn("rounded-[8px] p-1.5 text-muted-2", TOUCH_HIT, "hover:bg-surface-soft hover:text-ink")}
                   title="Изменить"
                 >
                   <Pencil size={14} />
@@ -457,7 +463,7 @@ function PriceGroupCard({
                       );
                     }
                   }}
-                  className="rounded-[8px] p-1.5 text-muted-2 hover:bg-red-soft hover:text-red-600"
+                  className={cn("rounded-[8px] p-1.5 text-muted-2", TOUCH_HIT, "hover:bg-red-soft hover:text-red-600")}
                   title="Удалить"
                 >
                   <Trash2 size={14} />
@@ -716,7 +722,7 @@ function PriceItemRow({
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="rounded-[8px] p-1.5 text-muted-2 hover:bg-surface-soft hover:text-ink"
+              className={cn("rounded-[8px] p-1.5 text-muted-2", TOUCH_HIT, "hover:bg-surface-soft hover:text-ink")}
               title="Изменить"
             >
               <Pencil size={12} />
@@ -734,7 +740,7 @@ function PriceItemRow({
                   );
                 }
               }}
-              className="rounded-[8px] p-1.5 text-muted-2 hover:bg-red-soft hover:text-red-600"
+              className={cn("rounded-[8px] p-1.5 text-muted-2", TOUCH_HIT, "hover:bg-red-soft hover:text-red-600")}
               title="Удалить"
             >
               <Trash2 size={12} />

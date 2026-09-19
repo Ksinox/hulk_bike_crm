@@ -18,6 +18,10 @@ import { BuyoutContractPreview } from "@/pages/buyout/BuyoutContractPreview";
 import { useBuyoutDeals } from "@/lib/api/buyout";
 import { useApiRentals } from "@/lib/api/rentals";
 import { TemplateEditorPage } from "./editor/TemplateEditorPage";
+import { isTouchPrimary } from "@/lib/useIsMobile";
+
+/** Кнопки шаблонов: на пальце не мельче 44px, на мыши — как были. */
+const TAP = isTouchPrimary() ? "min-h-[44px]" : "";
 import { useApiDocumentTemplates } from "@/lib/api/document-templates";
 import {
   RENTAL_AGREEMENT_TITLE,
@@ -356,6 +360,7 @@ function TemplatesGallery() {
                   onClick={() => setPreviewing(t)}
                   className={cn(
                     "inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-1.5 text-[12px] font-medium transition",
+                    TAP,
                     disabled
                       ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
                       : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
@@ -372,7 +377,7 @@ function TemplatesGallery() {
                   <button
                     type="button"
                     onClick={() => setEditing({ kind: "system", meta: t })}
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-900 bg-slate-900 py-1.5 text-[12px] font-medium text-white transition hover:bg-slate-800"
+                    className={cn("inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-900 bg-slate-900 py-1.5 text-[12px] font-medium text-white transition hover:bg-slate-800", TAP)}
                     title="Открыть в редакторе шаблонов"
                   >
                     <Pencil size={12} /> Редактировать
@@ -381,7 +386,7 @@ function TemplatesGallery() {
                   <button
                     type="button"
                     disabled
-                    className="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-[12px] font-medium text-slate-400"
+                    className={cn("inline-flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-[12px] font-medium text-slate-400", TAP)}
                     title="Редактирование этого шаблона будет доступно в следующих релизах — он генерируется программно с переменным числом строк."
                   >
                     <Pencil size={12} /> Редактировать
