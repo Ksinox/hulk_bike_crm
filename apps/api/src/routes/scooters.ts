@@ -119,6 +119,19 @@ const BatchEditBody = z
       .optional(),
     /** Закуп за единицу — только с правом на прибыль. */
     purchasePrice: z.number().int().min(0).max(100_000_000).nullable().optional(),
+    /**
+     * Правки 7.0 (п.15): свой закуп по каждой модели партии. modelId=null —
+     * единицы без модели в каталоге. Важнее общего purchasePrice.
+     */
+    purchaseByModel: z
+      .array(
+        z.object({
+          modelId: z.number().int().positive().nullable(),
+          price: z.number().int().min(0).max(100_000_000).nullable(),
+        }),
+      )
+      .max(30)
+      .optional(),
     /** Цена продажи — тем, кто после правки на витрине. */
     salePrice: z.number().int().min(0).max(100_000_000).nullable().optional(),
     /**
@@ -245,19 +258,50 @@ function uidFromVin(...sources: (string | null | undefined)[]): string | null {
   return null;
 }
 
-async function getSlotsTotal(): Promise<number> {
-  const [row] = await db
+/**
+ * Правки 7.0 (п.5): два ряда номеров — бензин и электро. У каждого своё
+ * количество номеров и своя нумерация с 1; номер уникален внутри ряда.
+ * Ряд определяет модель (флаг «электро» в каталоге).
+ */
+export type SlotPool = "petrol" | "electric";
+const POOL_TOTAL_KEY: Record<SlotPool, string> = {
+  petrol: "rental_slots_total",
+  electric: "rental_slots_total_electric",
+};
+const POOL_RU: Record<SlotPool, string> = { petrol: "бензин", electric: "электро" };
+type SlotTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function poolOfModel(
+  modelId: number | null | undefined,
+  ex: SlotTx | typeof db = db,
+): Promise<SlotPool> {
+  if (modelId == null) return "petrol";
+  const [m] = await ex
+    .select({ electric: scooterModels.isElectric })
+    .from(scooterModels)
+    .where(eq(scooterModels.id, modelId));
+  return m?.electric ? "electric" : "petrol";
+}
+
+async function getSlotsTotal(
+  pool: SlotPool = "petrol",
+  ex: SlotTx | typeof db = db,
+): Promise<number> {
+  const [row] = await ex
     .select({ value: appSettings.value })
     .from(appSettings)
-    .where(eq(appSettings.key, "rental_slots_total"));
+    .where(eq(appSettings.key, POOL_TOTAL_KEY[pool]));
   const n = Number(row?.value);
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-async function getUsedSlots(): Promise<
+async function getUsedSlots(
+  pool: SlotPool = "petrol",
+  ex: SlotTx | typeof db = db,
+): Promise<
   { slot: number; id: number; name: string }[]
 > {
-  const rows = await db
+  const rows = await ex
     .select({
       slot: scooters.rentalSlot,
       id: scooters.id,
@@ -267,6 +311,7 @@ async function getUsedSlots(): Promise<
     .where(
       and(
         isNotNull(scooters.rentalSlot),
+        eq(scooters.slotPool, pool),
         isNull(scooters.archivedAt),
         isNull(scooters.deletedAt),
       ),
@@ -313,8 +358,19 @@ export async function scootersRoutes(app: FastifyInstance) {
    * занятые (кем) и свободные номера. Для формы добавления/смены места.
    */
   app.get("/slots", async () => {
-    const [total, used] = await Promise.all([getSlotsTotal(), getUsedSlots()]);
-    return { total, used, free: freeSlotList(total, used) };
+    const [total, used, eTotal, eUsed] = await Promise.all([
+      getSlotsTotal("petrol"),
+      getUsedSlots("petrol"),
+      getSlotsTotal("electric"),
+      getUsedSlots("electric"),
+    ]);
+    // Верхний уровень — бензин (как раньше); электро — своим рядом (правки 7.0).
+    return {
+      total,
+      used,
+      free: freeSlotList(total, used),
+      electric: { total: eTotal, used: eUsed, free: freeSlotList(eTotal, eUsed) },
+    };
   });
 
   /**
@@ -322,42 +378,44 @@ export async function scootersRoutes(app: FastifyInstance) {
    * Нельзя опустить ниже максимального занятого номера — сначала
    * освободите места (переведите технику из аренды).
    */
-  app.post<{ Body: { total?: number } }>("/slots-total", async (req, reply) => {
+  app.post<{ Body: { total?: number; pool?: SlotPool } }>("/slots-total", async (req, reply) => {
     const total = Number(req.body?.total);
+    const pool: SlotPool = req.body?.pool === "electric" ? "electric" : "petrol";
     if (!Number.isFinite(total) || total < 0 || total > 999) {
       return reply.code(400).send({ error: "bad total" });
     }
-    const used = await getUsedSlots();
+    const used = await getUsedSlots(pool);
     const maxUsed = used.length ? used[used.length - 1]!.slot : 0;
     if (total < maxUsed) {
       return reply.code(409).send({
         error: "slots_in_use",
-        message: `Занят номер ${maxUsed} — сначала освободите номера выше ${total} (переведите технику из аренды).`,
+        message: `Занят номер ${maxUsed}${pool === "electric" ? " у электро" : ""} — сначала освободите номера выше ${total} (переведите технику из аренды).`,
       });
     }
-    const prev = await getSlotsTotal();
+    const prev = await getSlotsTotal(pool);
     await db
       .insert(appSettings)
-      .values({ key: "rental_slots_total", value: String(total) })
+      .values({ key: POOL_TOTAL_KEY[pool], value: String(total) })
       .onConflictDoUpdate({
         target: appSettings.key,
         set: { value: String(total) },
       });
+    const what = pool === "electric" ? "номеров электро" : "мест в арендном парке";
     await logActivity(req, {
       entity: "scooter",
       entityId: null,
       action: "rental_slots_total_changed",
-      summary: `Изменено количество мест в арендном парке: ${prev} → ${total}`,
+      summary: `Изменено количество ${what}: ${prev} → ${total}`,
       diff: {
         total: {
-          label: "Мест в арендном парке",
+          label: pool === "electric" ? "Номеров электро" : "Мест в арендном парке",
           from: prev,
           to: total,
           kind: "number",
         },
       },
     });
-    return { total };
+    return { total, pool };
   });
 
   /**
@@ -488,8 +546,10 @@ export async function scootersRoutes(app: FastifyInstance) {
     // (наименьшее свободное). Мест нет → 409, увеличьте общее количество.
     const status = parsed.data.baseStatus ?? "ready";
     let slotToUse: number | null = null;
+    // Правки 7.0 (п.5): у электро свой ряд номеров.
+    const pool = await poolOfModel(parsed.data.modelId);
     if (holdsSlot(status)) {
-      const [total, used] = await Promise.all([getSlotsTotal(), getUsedSlots()]);
+      const [total, used] = await Promise.all([getSlotsTotal(pool), getUsedSlots(pool)]);
       const free = freeSlotList(total, used);
       const wanted = (parsed.data as { rentalSlot?: number | null }).rentalSlot;
       if (wanted != null) {
@@ -508,7 +568,7 @@ export async function scootersRoutes(app: FastifyInstance) {
         if (free.length === 0)
           return reply.code(409).send({
             error: "no_free_slots",
-            message: `Все ${total} номеров арендного парка заняты. Увеличьте общее количество или освободите один.`,
+            message: `Все ${total} номеров ${pool === "electric" ? "электро" : "арендного парка"} заняты. Увеличьте количество номеров или освободите один.`,
           });
         slotToUse = free[0]!;
       }
@@ -521,6 +581,7 @@ export async function scootersRoutes(app: FastifyInstance) {
           mileage: parsed.data.mileage ?? 0,
           baseStatus: status,
           rentalSlot: slotToUse,
+          slotPool: pool,
           uid: uidFromVin(parsed.data.vin, parsed.data.frameNumber),
           // Правки 2.0, п.7: техника заведена под инвестора → она
           // партнёрская по определению.
@@ -682,6 +743,8 @@ export async function scootersRoutes(app: FastifyInstance) {
       canProfit && body.purchasePrice != null ? body.purchasePrice : null;
     const investorId = body.investorId ?? null;
     const isPartner = investorId ? true : (body.isPartner ?? false);
+    // Правки 7.0 (п.5): ряд номеров — по модели.
+    const pool: SlotPool = model.isElectric ? "electric" : "petrol";
 
     type Inserted = typeof scooters.$inferSelect;
     type Result =
@@ -695,22 +758,8 @@ export async function scootersRoutes(app: FastifyInstance) {
 
       let slots: (number | null)[] = units.map(() => null);
       if (holds) {
-        const [totalRow] = await tx
-          .select({ value: appSettings.value })
-          .from(appSettings)
-          .where(eq(appSettings.key, "rental_slots_total"));
-        const totalN = Number(totalRow?.value);
-        const total = Number.isFinite(totalN) && totalN >= 0 ? totalN : 0;
-        const usedRows = await tx
-          .select({ slot: scooters.rentalSlot })
-          .from(scooters)
-          .where(
-            and(
-              isNotNull(scooters.rentalSlot),
-              isNull(scooters.archivedAt),
-              isNull(scooters.deletedAt),
-            ),
-          );
+        const total = await getSlotsTotal(pool, tx);
+        const usedRows = await getUsedSlots(pool, tx);
         const busy = new Set(usedRows.map((r) => r.slot!));
         const errs: RowError[] = [];
         units.forEach((u, i) => {
@@ -750,7 +799,7 @@ export async function scootersRoutes(app: FastifyInstance) {
             code: 409,
             payload: {
               error: "no_free_slots",
-              message: `Свободных номеров: ${free.length}, а в партии без номера: ${autoNeeded}. Увеличьте общее количество номеров или заведите часть партии в «Пока не решили».`,
+              message: `Свободных номеров${pool === "electric" ? " электро" : ""}: ${free.length}, а в партии без номера: ${autoNeeded}. Увеличьте количество номеров или заведите часть партии в «Пока не решили».`,
               free: free.length,
               needed: autoNeeded,
             },
@@ -811,6 +860,7 @@ export async function scootersRoutes(app: FastifyInstance) {
             mileage: u.mileage ?? 0,
             baseStatus: status,
             rentalSlot: slots[i] ?? null,
+            slotPool: pool,
             purchaseDate: body.purchaseDate || null,
             purchasePrice,
             purchaseBatch: body.purchaseBatch || null,
@@ -1131,35 +1181,49 @@ export async function scootersRoutes(app: FastifyInstance) {
       await tx.execute(sql`select pg_advisory_xact_lock(815001)`);
 
       const slotFor = new Map<number, number>();
+      /** Правки 7.0 (п.5): ряд номеров единицы — по модели. */
+      const poolFor = new Map<number, SlotPool>();
       {
         const entering = moving
           .filter((u) => holdsSlot(targetOf.get(u.id)!) && !holdsSlot(u.baseStatus))
           .sort((a, b) => a.id - b.id);
         if (entering.length) {
-          const [totalRow] = await tx
-            .select({ value: appSettings.value })
-            .from(appSettings)
-            .where(eq(appSettings.key, "rental_slots_total"));
-          const totalN = Number(totalRow?.value);
-          const total = Number.isFinite(totalN) && totalN >= 0 ? totalN : 0;
-          const usedRows = await tx
-            .select({ slot: scooters.rentalSlot })
-            .from(scooters)
-            .where(and(isNotNull(scooters.rentalSlot), isNull(scooters.archivedAt), isNull(scooters.deletedAt)));
-          const free = freeSlotList(total, usedRows.filter((r): r is { slot: number } => r.slot != null));
-          if (entering.length > free.length) {
-            return {
-              ok: false,
-              code: 409,
-              payload: {
-                error: "no_free_slots",
-                message: `Свободных арендных номеров: ${free.length}, а в аренду переводим ${entering.length}. Увеличьте количество номеров или выберите меньше единиц.`,
-                free: free.length,
-                needed: entering.length,
-              },
-            };
+          const modelIds = [...new Set(entering.map((u) => u.modelId).filter((x): x is number => x != null))];
+          const electricIds = new Set(
+            modelIds.length
+              ? (
+                  await tx
+                    .select({ id: scooterModels.id })
+                    .from(scooterModels)
+                    .where(and(inArray(scooterModels.id, modelIds), eq(scooterModels.isElectric, true)))
+                ).map((m) => m.id)
+              : [],
+          );
+          for (const pool of ["petrol", "electric"] as SlotPool[]) {
+            const group = entering.filter(
+              (u) => (u.modelId != null && electricIds.has(u.modelId) ? "electric" : "petrol") === pool,
+            );
+            if (!group.length) continue;
+            const total = await getSlotsTotal(pool, tx);
+            const free = freeSlotList(total, await getUsedSlots(pool, tx));
+            if (group.length > free.length) {
+              return {
+                ok: false,
+                code: 409,
+                payload: {
+                  error: "no_free_slots",
+                  pool,
+                  message: `Свободных номеров ${pool === "electric" ? "электро" : "бензина"}: ${free.length}, а в аренду переводим ${group.length}. Увеличьте количество номеров или выберите меньше единиц.`,
+                  free: free.length,
+                  needed: group.length,
+                },
+              };
+            }
+            group.forEach((u, i) => {
+              slotFor.set(u.id, free[i]!);
+              poolFor.set(u.id, pool);
+            });
           }
-          entering.forEach((u, i) => slotFor.set(u.id, free[i]!));
         }
       }
 
@@ -1183,15 +1247,21 @@ export async function scootersRoutes(app: FastifyInstance) {
         if (body.purchaseDate !== undefined && (u.purchaseDate ?? null) !== body.purchaseDate) {
           set.purchaseDate = body.purchaseDate;
         }
-        if (canProfit && body.purchasePrice !== undefined && u.purchasePrice !== body.purchasePrice) {
-          set.purchasePrice = body.purchasePrice;
+        // Закуп: своя цена модели (правки 7.0) важнее общей.
+        const byModel = body.purchaseByModel?.find((p) => (p.modelId ?? null) === (u.modelId ?? null));
+        const newCost = byModel ? byModel.price : body.purchasePrice;
+        if (canProfit && (byModel || body.purchasePrice !== undefined) && u.purchasePrice !== newCost) {
+          set.purchasePrice = newCost ?? null;
         }
         const target = targetOf.get(u.id);
         if (target) {
           set.baseStatus = target;
           const was = holdsSlot(u.baseStatus);
           const will = holdsSlot(target);
-          if (will && !was) set.rentalSlot = slotFor.get(u.id) ?? null;
+          if (will && !was) {
+            set.rentalSlot = slotFor.get(u.id) ?? null;
+            set.slotPool = poolFor.get(u.id) ?? "petrol";
+          }
           if (was && !will) {
             set.rentalSlot = null;
             if (u.rentalSlot != null) set.exRentalSlot = u.rentalSlot;
@@ -1433,12 +1503,17 @@ export async function scootersRoutes(app: FastifyInstance) {
     // Ручная смена места (или назначение при входе в арендный парк) —
     // только на свободное и в пределах общего количества.
     const wantedSlot = parsed.data.rentalSlot;
-    if (wantedSlot !== undefined || (willHold && !heldBefore)) {
-      const [total, used] = await Promise.all([getSlotsTotal(), getUsedSlots()]);
+    // Правки 7.0 (п.5): ряд номеров — по модели. Сменили модель на модель
+    // другого ряда (бензин ↔ электро) — номер выдаётся заново в новом ряду.
+    const pool = await poolOfModel(parsed.data.modelId !== undefined ? parsed.data.modelId : before.modelId);
+    const poolChanged = willHold && before.rentalSlot != null && before.slotPool !== pool;
+    if (wantedSlot !== undefined || (willHold && !heldBefore) || poolChanged) {
+      const [total, used] = await Promise.all([getSlotsTotal(pool), getUsedSlots(pool)]);
       const free = freeSlotList(
         total,
         used.filter((u) => u.id !== id),
       );
+      patch.slotPool = pool;
       if (willHold) {
         if (wantedSlot != null) {
           if (wantedSlot > total)
@@ -1454,13 +1529,14 @@ export async function scootersRoutes(app: FastifyInstance) {
               message: `Номер ${wantedSlot} уже занят другой техникой.`,
             });
           patch.rentalSlot = wantedSlot;
-        } else if (before.rentalSlot == null || wantedSlot === null) {
-          // вход в парк без указания места (или явный сброс) → авто
+        } else if (before.rentalSlot == null || wantedSlot === null || poolChanged) {
+          // вход в парк без указания места (или явный сброс, или другой ряд) → авто
           if (free.length === 0)
             return reply.code(409).send({
               error: "no_free_slots",
-              message: `Все ${total} номеров арендного парка заняты. Увеличьте общее количество или освободите один.`,
+              message: `Все ${total} номеров ${pool === "electric" ? "электро" : "арендного парка"} заняты. Увеличьте количество номеров или освободите один.`,
             });
+          if (poolChanged && before.rentalSlot != null) patch.exRentalSlot = before.rentalSlot;
           patch.rentalSlot = free[0]!;
         }
       } else {

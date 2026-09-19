@@ -50,6 +50,8 @@ import {
   usePatchScooter,
   useRentalSlots,
   useSetSlotsTotal,
+  slotsOf,
+  type SlotPool,
 } from "@/lib/api/scooters";
 import { useMe } from "@/lib/api/auth";
 import { Archive, Loader2 } from "lucide-react";
@@ -701,7 +703,11 @@ export function ScooterCard({
                       отдельная строка ради одной цифры не нужна. */}
                   <span className="ml-auto shrink-0 text-right">
                     {scooter.rentalSlot != null ? (
-                      <ScooterNumberBadge number={scooter.rentalSlot} size="md" />
+                      <ScooterNumberBadge
+                        number={scooter.rentalSlot}
+                        size="md"
+                        electric={scooter.slotPool === "electric"}
+                      />
                     ) : (
                       <span className="rounded-full bg-surface-soft px-2 py-0.5 text-[10px] font-semibold text-muted-2">
                         без номера
@@ -1772,10 +1778,13 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
     );
   }
 
-  const free = slotsQ.data?.free ?? [];
-  const total = slotsQ.data?.total ?? 0;
+  // Правки 7.0 (п.5): номера того ряда, в котором стоит техника.
+  const pool: SlotPool = scooter.slotPool === "electric" ? "electric" : "petrol";
+  const poolSlots = slotsOf(slotsQ.data, pool);
+  const free = poolSlots.free;
+  const total = poolSlots.total;
   const holderOf = new Map(
-    (slotsQ.data?.used ?? []).map((u) => [u.slot, u] as const),
+    poolSlots.used.map((u) => [u.slot, u] as const),
   );
   const numbers = Array.from({ length: total }, (_, i) => i + 1);
 
@@ -1810,7 +1819,7 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
       return;
     }
     try {
-      await setTotal.mutateAsync(n);
+      await setTotal.mutateAsync({ total: n, pool });
       setMoreOpen(false);
       setMoreTotal("");
       toast.success("Номера добавлены", `В арендном парке теперь ${n} номеров`);
@@ -1825,7 +1834,7 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
   return (
     <div className="relative">
       <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-        Номер в аренде
+        {pool === "electric" ? "Номер электро" : "Номер в аренде"}
       </div>
       <button
         type="button"

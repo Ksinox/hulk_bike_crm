@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { scooterModels, scooters } from "../db/schema.js";
+import { appSettings, scooterModels, scooters } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
 import { diffFields } from "../services/activityMessages.js";
@@ -184,6 +184,75 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         action: "updated",
         summary,
       });
+
+      // Правки 7.0 (п.5): модель стала электро (или перестала) — её техника
+      // с номерами переходит в другой ряд и получает там первые свободные
+      // номера; прежний номер остаётся «бывшим».
+      if (parsed.data.isElectric !== undefined && parsed.data.isElectric !== before.isElectric) {
+        const pool = parsed.data.isElectric ? "electric" : "petrol";
+        const key = pool === "electric" ? "rental_slots_total_electric" : "rental_slots_total";
+        const moved = await db.transaction(async (tx) => {
+          await tx.execute(sql`select pg_advisory_xact_lock(815001)`);
+          const units = await tx
+            .select()
+            .from(scooters)
+            .where(
+              and(
+                eq(scooters.modelId, id),
+                isNotNull(scooters.rentalSlot),
+                ne(scooters.slotPool, pool),
+                isNull(scooters.archivedAt),
+                isNull(scooters.deletedAt),
+              ),
+            )
+            .orderBy(asc(scooters.rentalSlot));
+          if (!units.length) return [] as { name: string; from: number; to: number }[];
+          const usedRows = await tx
+            .select({ slot: scooters.rentalSlot })
+            .from(scooters)
+            .where(
+              and(
+                eq(scooters.slotPool, pool),
+                isNotNull(scooters.rentalSlot),
+                isNull(scooters.archivedAt),
+                isNull(scooters.deletedAt),
+              ),
+            );
+          const used = new Set(usedRows.map((r) => r.slot!));
+          const out: { name: string; from: number; to: number }[] = [];
+          let n = 1;
+          for (const u of units) {
+            while (used.has(n)) n++;
+            used.add(n);
+            out.push({ name: u.name, from: u.rentalSlot!, to: n });
+            await tx
+              .update(scooters)
+              .set({ slotPool: pool, rentalSlot: n, exRentalSlot: u.rentalSlot, updatedAt: new Date() })
+              .where(eq(scooters.id, u.id));
+          }
+          // Номеров в ряду должно хватить на всех.
+          const [tRow] = await tx.select().from(appSettings).where(eq(appSettings.key, key));
+          const total = Number(tRow?.value) || 0;
+          const need = Math.max(...out.map((o) => o.to));
+          if (need > total) {
+            await tx
+              .insert(appSettings)
+              .values({ key, value: String(need) })
+              .onConflictDoUpdate({ target: appSettings.key, set: { value: String(need) } });
+          }
+          return out;
+        });
+        if (moved.length) {
+          await logActivity(req, {
+            entity: "model",
+            entityId: id,
+            action: "updated",
+            summary: `Модель «${updated.name}» — ${pool === "electric" ? "электро" : "бензин"}: номера техники перенесены в ${pool === "electric" ? "ряд электро" : "общий ряд"} · ${moved
+              .map((m) => `№${m.from} → №${m.to}`)
+              .join(", ")}`,
+          });
+        }
+      }
       return updated;
     },
   );

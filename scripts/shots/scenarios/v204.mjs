@@ -68,6 +68,31 @@ export async function run(page, ctx) {
     await S("fleet-sale");
   }
 
+  /* ---------- п.5: номера электро ---------- */
+  if (want("numbers")) {
+    await ctx.gotoRoute("fleet");
+    await sleep(1500);
+    console.log("режим:", await click(phase === "desk" ? /^Аренда$/ : /^Аренда/));
+    await sleep(1500);
+    const badges = await page.evaluate(() =>
+      [...document.querySelectorAll("span")]
+        .filter((x) => /^\d{1,3}$/.test((x.textContent || "").trim()) && x.className.includes("rounded-full") && x.className.includes("text-white"))
+        .map((x) => `${(x.textContent || "").trim()}${x.getAttribute("data-slot-pool") === "electric" ? "э" : ""}`)
+        .slice(0, 30),
+    );
+    console.log("кружки:", badges.join(" "));
+    await S("fleet-numbers");
+    // Электро на превью — партнёрские: их номера видны в «Партнёрке» и на главной.
+    await ctx.gotoRoute("partners");
+    await sleep(2500);
+    await S("partner-numbers");
+    await ctx.gotoRoute("dashboard");
+    await sleep(3000);
+    await page.evaluate(() => document.querySelector("[data-park-panel], [data-tour='park']")?.scrollIntoView({ block: "center" }));
+    await sleep(600);
+    await S("dash-numbers");
+  }
+
   /* ---------- п.6: модели в новой аренде ---------- */
   if (want("rent")) {
     await ctx.gotoRoute("rentals");
@@ -97,6 +122,74 @@ export async function run(page, ctx) {
     await S("rent-jog");
     await page.keyboard.press("Escape");
     await sleep(600);
+  }
+
+  /* ---------- п.15: закуп по моделям в партии ---------- */
+  if (want("batches")) {
+    await ctx.gotoRoute("fleet");
+    await sleep(1500);
+    console.log("вкладка:", await click(/^Партии/));
+    await sleep(1800);
+    await page.evaluate(() => {
+      const card = [...document.querySelectorAll("section")].find((x) => /ТЕСТ партия shotbot/.test(x.textContent || ""));
+      card?.scrollIntoView({ block: "center" });
+    });
+    await sleep(500);
+    await S("batch-card");
+    await page.evaluate(() => {
+      const card = [...document.querySelectorAll("section")].find((x) => /ТЕСТ партия shotbot/.test(x.textContent || ""));
+      card?.querySelector("[data-batch-edit-open]")?.click();
+    });
+    await sleep(1500);
+    await page.evaluate(() => (document.querySelector("[data-batch-cost-models]") ?? document.querySelector("[data-batch-cost]"))?.scrollIntoView({ block: "center" }));
+    await sleep(400);
+    console.log("закуп:", await page.evaluate(() => (document.querySelector("[data-batch-cost-models]")?.innerText ?? document.querySelector("[data-batch-cost]")?.closest("label")?.innerText ?? "").replace(/\s+/g, " ").slice(0, 200)));
+    await S("batch-cost");
+    await page.keyboard.press("Escape");
+    await sleep(500);
+  }
+
+  /* ---------- п.7: проданная сделка ---------- */
+  if (want("sales")) {
+    await ctx.gotoRoute("sales");
+    await sleep(1500);
+    console.log("вкладка:", await click(/^Сделки/));
+    await sleep(1200);
+    // Проданная сделка — строка/карточка с «Продана»
+    const opened = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll("tr, button")].filter((r) => /Продан/.test(r.textContent || "") && /Gear|Jog|SEM|Dio/.test(r.textContent || ""));
+      const r = rows[0];
+      r?.click();
+      return r ? (r.textContent || "").replace(/\s+/g, " ").slice(0, 80) : null;
+    });
+    console.log("сделка:", opened);
+    await sleep(1500);
+    console.log("кнопка «Исправить»:", await page.evaluate(() => !!document.querySelector("[data-edit-signed]")));
+    await S("sale-deal");
+    if (when === "now") {
+      await page.evaluate(() => document.querySelector("[data-edit-signed]")?.click());
+      await sleep(900);
+      console.log("форма:", (await text("[data-signed-edit]"))?.replace(/\n+/g, " | ").slice(0, 300));
+      await S("sale-edit");
+      await click(/^Отмена$/, "[data-signed-edit]");
+      await sleep(500);
+    }
+  }
+
+  /* ---------- п.12: план и факт на стене ---------- */
+  if (want("analytics")) {
+    await ctx.gotoRoute("analytics");
+    await sleep(2500);
+    console.log("раздел:", await click(/^Настройка стены$/));
+    await sleep(2500);
+    const plans = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-flip-key]")]
+        .map((t) => (t.textContent || "").replace(/\s+/g, " ").trim())
+        .filter((t) => t.includes("/"))
+        .slice(0, 6),
+    );
+    console.log("плитки с планом:", plans.join(" || "));
+    await S("wall-setup");
   }
 
   /* ---------- п.2, 3, 10, 11: ремонты ---------- */

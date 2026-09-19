@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import {
   Ban,
   Banknote,
@@ -23,6 +23,7 @@ import { ManagerAvatar } from "./SalesUI";
 import { fmt, ruDate, STATUS_CLASS, STATUS_LABEL } from "./salesUtils";
 import { Sensitive } from "@/components/Sensitive";
 import { useCan } from "@/lib/permissions";
+import { SignedDealEditor } from "./SignedDealEditor";
 
 /**
  * Карточка сделки (31.08): всё о продаже в одном окне — техника с VIN,
@@ -46,6 +47,9 @@ export function SaleDealDrawer({
   const isDirector = me?.role === "director" || me?.role === "creator";
   const cancel = useCancelSaleDeal();
   const del = useDeleteSaleDeal();
+  /** Правки 7.0 (п.7): директор исправляет проданную сделку. */
+  const [editing, setEditing] = useState(false);
+  const canEditSigned = isDirector && deal.status === "signed";
 
   const profit = deal.price - (deal.purchasePrice ?? 0);
   const margin = deal.price > 0 ? Math.round((profit / deal.price) * 100) : 0;
@@ -86,10 +90,13 @@ export function SaleDealDrawer({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="flex flex-col gap-3">
+          {editing && canEditSigned && (
+            <SignedDealEditor key={deal.updatedAt} deal={deal} onDone={() => setEditing(false)} />
+          )}
           {/* Деньги */}
           {/* 14.09: без права на прибыль «Закуп» и «Прибыль» уходят, «Продажа»
               остаётся одна и занимает всю ширину. */}
-          <div className="grid grid-cols-3 gap-2 [&>*:only-child]:col-span-3">
+          <div className={cn("grid grid-cols-3 gap-2 [&>*:only-child]:col-span-3", editing && "hidden")}>
             <Money label="Продажа" value={`${fmt(deal.price)} ₽`} accent />
             <Money
               sensitive
@@ -265,6 +272,16 @@ export function SaleDealDrawer({
             className="inline-flex h-10 items-center gap-1.5 rounded-full bg-emerald-600 px-5 text-[13px] font-bold text-white transition-transform active:scale-[0.98]"
           >
             <Pencil size={14} /> Продолжить оформление
+          </button>
+        )}
+        {canEditSigned && !editing && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="inline-flex h-11 items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-bold text-white transition-transform active:scale-[0.98]"
+            data-edit-signed
+          >
+            <Pencil size={14} /> Исправить
           </button>
         )}
         <div className="flex-1" />

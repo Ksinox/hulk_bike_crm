@@ -29,6 +29,8 @@ const TileSchema = z.object({
   size: z.enum(["s", "m", "l"]).optional(),
   /** Ручной план (для количественных показателей). null — плана нет. */
   plan: z.number().min(0).nullable().optional(),
+  /** Премия за выполнение плана на 100%, ₽ (правки 7.0, п.12). */
+  bonus: z.number().int().min(0).max(10_000_000).nullable().optional(),
   /** Свой период плитки; null — берётся общий период доски. */
   period: z.enum(["today", "week", "month", "billing", "year"]).nullable().optional(),
 });

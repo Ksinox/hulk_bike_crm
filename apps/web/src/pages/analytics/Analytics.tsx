@@ -374,7 +374,7 @@ export function Analytics() {
                     value={values[tile.metric]}
                     tile={tile}
                     period={periodOf(tile.metric)}
-                    onPlan={(plan) => patchTile(i, { plan })}
+                    onPlan={(plan, bonus) => patchTile(i, { plan, bonus: bonus ?? null })}
                     {...shared}
                   />
                 );
@@ -390,7 +390,8 @@ export function Analytics() {
                 cols={cols}
                 onMove={(from, to) => move(from, to)}
                 onResize={(i, w, h) => patchTile(i, { w, h })}
-                onPlan={(i, plan) => patchTile(i, { plan })}
+                onPlan={(i, plan) => patchTile(i, { plan, ...(plan == null ? { bonus: null } : {}) })}
+                onBonus={(i, bonus) => patchTile(i, { bonus })}
                 onRemove={(i) => removeTile(i)}
               />
             )}
