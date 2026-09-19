@@ -370,7 +370,7 @@ export function DebtorCase({
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13.5px] text-muted">
           <a
             href={`tel:${d.displayPhone}`}
-            className="inline-flex items-center gap-1.5 font-semibold text-ink-2 hover:text-blue-700"
+            className={`${TAP}inline-flex items-center gap-1.5 font-semibold text-ink-2 hover:text-blue-700`}
           >
             <Phone size={13} className="text-blue-600" />
             {d.displayPhone}
