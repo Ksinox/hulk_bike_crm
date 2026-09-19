@@ -27,7 +27,7 @@ import {
 } from "../ui";
 import { ServiceOrders } from "@/pages/service/ServiceOrders";
 import { useServiceOrders } from "@/lib/api/service-orders";
-import { useModelName } from "@/lib/useModelName";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 
 type Filter = "active" | "completed";
 /** Как и на десктопе: главная вкладка — сторонние ремонты (06.09). */
@@ -117,7 +117,7 @@ export function MobileService() {
       <MobileSheet
         open={openJob != null}
         onClose={() => setOpenId(null)}
-        title={openJob?.scooter?.name ?? "Ремонт"}
+        title={openJob?.scooter ? scooterModelName(openJob.scooter.name) : "Ремонт"}
       >
         {openJob && <JobDetail job={openJob} />}
       </MobileSheet>
@@ -128,7 +128,6 @@ export function MobileService() {
 }
 
 function JobRow({ job, onClick }: { job: ApiRepairJob; onClick: () => void }) {
-  const modelName = useModelName();
   const done = job.status === "completed";
   return (
     <button
@@ -145,11 +144,18 @@ function JobRow({ job, onClick }: { job: ApiRepairJob; onClick: () => void }) {
         <Wrench size={18} />
       </div>
       <div className="min-w-0 flex-1">
+        {/* Именование техники: модель + кружок номера (без «Dio #36»). */}
         <div className="truncate text-[14px] font-bold text-ink">
-          {job.scooter?.name ?? "Скутер"}
-          <span className="ml-1.5 text-[12px] font-normal text-muted">
-            {job.scooter ? modelName(job.scooter) : ""}
-          </span>
+          {job.scooter ? (
+            <ScooterName
+              name={job.scooter.name}
+              number={job.scooter.rentalSlot}
+              electric={job.scooter.slotPool === "electric"}
+              size="sm"
+            />
+          ) : (
+            "Скутер"
+          )}
         </div>
         <div className="mt-0.5 truncate text-[12px] text-muted">
           {progressLabel(job.progress)} · с {formatDate(job.startedAt)}
@@ -203,7 +209,7 @@ function JobDetail({ job }: { job: ApiRepairJob }) {
     if (!ok) return;
     try {
       await complete.mutateAsync({ jobId: job.id, newScooterStatus: "rental_pool" });
-      toast.success("Скутер в парке", `${job.scooter?.name ?? "Скутер"} готов к аренде`);
+      toast.success("Скутер в парке", `${job.scooter ? scooterModelName(job.scooter.name) : "Скутер"} готов к аренде`);
     } catch (e) {
       toast.error("Не удалось закрыть ремонт", (e as Error).message ?? "");
     }
@@ -223,7 +229,14 @@ function JobDetail({ job }: { job: ApiRepairJob }) {
       </div>
 
       <div className="rounded-2xl bg-surface px-3.5 shadow-card-sm">
-        <DetailRow label="Скутер" value={job.scooter?.name ?? "—"} />
+        <DetailRow
+          label="Скутер"
+          value={
+            job.scooter
+              ? `${scooterModelName(job.scooter.name)}${job.scooter.rentalSlot != null ? ` №${job.scooter.rentalSlot}` : ""}`
+              : "—"
+          }
+        />
         <div className="border-t border-border" />
         <DetailRow label="Начат" value={formatDate(job.startedAt)} />
         {job.completedAt && (
