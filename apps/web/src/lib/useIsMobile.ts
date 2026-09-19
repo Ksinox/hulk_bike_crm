@@ -79,9 +79,9 @@ export function isTouchPrimary(): boolean {
  */
 export function isTouchTablet(): boolean {
   if (typeof window === "undefined" || !isTouchPrimary()) return false;
-  const w = window.screen?.width || window.innerWidth;
-  const h = window.screen?.height || window.innerHeight;
-  return Math.min(w, h) >= 600;
+  // Окно, а не screen: у iPad в Split View узкое окно — там телефонная
+  // клавиатура уместнее; у повёрнутого телефона короткая сторона < 450.
+  return Math.min(window.innerWidth, window.innerHeight) >= 600;
 }
 
 export function useIsMobile(breakpoint = 768): boolean {
