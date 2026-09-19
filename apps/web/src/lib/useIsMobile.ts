@@ -71,6 +71,19 @@ export function isTouchPrimary(): boolean {
   }
 }
 
+/**
+ * Планшет под пальцем (правки 7.0, п.8б): основной указатель — палец, а
+ * короткая сторона экрана от 600px (iPad mini — 744). У телефона, даже
+ * повёрнутого, короткая сторона ~390px. На планшете числа вводятся родной
+ * клавиатурой — своя цифровая клавиатура для телефона там мелкая.
+ */
+export function isTouchTablet(): boolean {
+  if (typeof window === "undefined" || !isTouchPrimary()) return false;
+  const w = window.screen?.width || window.innerWidth;
+  const h = window.screen?.height || window.innerHeight;
+  return Math.min(w, h) >= 600;
+}
+
 export function useIsMobile(breakpoint = 768): boolean {
   const [isMobile, setIsMobile] = useState<boolean>(() =>
     computeIsMobile(breakpoint),

@@ -278,6 +278,12 @@ function conflict(reply: FastifyReply, error: string, message: string) {
   return reply.code(409).send({ error, message });
 }
 
+function badMechanic(reply: FastifyReply) {
+  return reply
+    .code(400)
+    .send({ error: "validation", message: "Имя механика обязательно, процент — от 0 до 100." });
+}
+
 /** Правки 7.0 (п.11): готовый к выдаче ремонт зафиксирован. */
 function readyLocked(reply: FastifyReply) {
   return conflict(
@@ -381,7 +387,9 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
   });
 
   app.post("/mechanics", { preHandler: directorOnly }, async (req, reply) => {
-    const body = MechanicBody.parse(req.body);
+    const parsed = MechanicBody.safeParse(req.body);
+    if (!parsed.success) return badMechanic(reply);
+    const body = parsed.data;
     const [row] = await db
       .insert(serviceMechanics)
       .values({ name: body.name, percent: body.percent })
@@ -398,7 +406,9 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
 
   app.patch("/mechanics/:mid", { preHandler: directorOnly }, async (req, reply) => {
     const mid = Number((req.params as { mid: string }).mid);
-    const body = MechanicBody.partial().extend({ archived: z.boolean().optional() }).parse(req.body);
+    const parsed = MechanicBody.partial().extend({ archived: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success) return badMechanic(reply);
+    const body = parsed.data;
     const [before] = await db.select().from(serviceMechanics).where(eq(serviceMechanics.id, mid));
     if (!before) return reply.code(404).send({ error: "not_found", message: "Механик не найден." });
     const set: Partial<typeof serviceMechanics.$inferInsert> = {};

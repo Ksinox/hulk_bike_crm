@@ -461,7 +461,10 @@ function OrderRow({
         </span>
         {canRepairProfit && order.totals.profit !== undefined && order.status !== "cancelled" && (
           <span className="hidden text-[11px] tabular-nums text-muted-2 sm:block">
-            прибыль {money(order.totals.profit)}
+            {/* Правки 7.0: с механиком — наша прибыль, за вычетом его доли. */}
+            {order.mechanicId != null && order.totals.ourProfit !== undefined
+              ? `наша прибыль ${money(order.totals.ourProfit)}`
+              : `прибыль ${money(order.totals.profit)}`}
           </span>
         )}
       </span>

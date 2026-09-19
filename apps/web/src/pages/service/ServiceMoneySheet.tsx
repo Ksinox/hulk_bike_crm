@@ -58,7 +58,19 @@ export function ServiceMoneySheet({
 
   const table = (
     <div className="overflow-hidden rounded-2xl border border-border" data-money-table>
-      <table className="w-full border-collapse text-[13px]">
+      <table className="w-full table-fixed border-collapse text-[13px]">
+        {/* Ремонту — место под технику и клиента, цифрам — ровно по ширине. */}
+        <colgroup>
+          <col className={showProfit ? "w-[34%]" : "w-[62%]"} />
+          <col className={showProfit ? "w-[15%]" : "w-[38%]"} />
+          {showProfit && (
+            <>
+              <col className="w-[17%]" />
+              <col className="w-[16%]" />
+              <col className="w-[18%]" />
+            </>
+          )}
+        </colgroup>
         <thead>
           <tr className="bg-surface-soft text-left text-[11px] font-bold uppercase tracking-wider text-muted-2">
             <th className="px-3 py-2.5">Ремонт</th>
@@ -132,7 +144,9 @@ export function ServiceMoneySheet({
             {showProfit && (
               <>
                 <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink">{money(stats.grossProfit)}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink-2">− {money(stats.mechanicShare)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-ink-2">
+                  {stats.mechanicShare > 0 ? `− ${money(stats.mechanicShare)}` : "—"}
+                </td>
                 <td className={cn("whitespace-nowrap px-3 py-2.5 text-right tabular-nums", stats.profit >= 0 ? "text-green-ink" : "text-red-ink")}>
                   {money(stats.profit)}
                 </td>

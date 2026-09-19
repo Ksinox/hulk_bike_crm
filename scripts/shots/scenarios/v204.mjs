@@ -124,5 +124,51 @@ export async function run(page, ctx) {
     });
     console.log("карточка готового:", JSON.stringify(card));
     await S("repair-ready");
+    if (when === "now") {
+      // Откат директором
+      await page.evaluate(() => document.querySelector("[data-uncomplete]")?.click());
+      await sleep(700);
+      await S("repair-confirm");
+      console.log("подтвердили:", await click(/^Вернуть в работу$/));
+      await sleep(1500);
+      console.log("статус:", await text("[data-service-card] header"));
+      // Механик в шапке
+      await click(/^Изменить$/, "[data-service-card]");
+      await sleep(700);
+      console.log("механики:", await text("[data-mechanic-chips]"));
+      await page.evaluate(() => document.querySelector("[data-mechanic-chips]")?.scrollIntoView({ block: "center" }));
+      await sleep(400);
+      await S("repair-edit-mech");
+      await click(/ТЕСТ Механик shotbot/, "[data-mechanic-chips]");
+      await sleep(300);
+      await click(/^Сохранить$/, "[data-client-edit]");
+      await sleep(1500);
+      await page.evaluate(() => document.querySelector("[data-profit-block]")?.scrollIntoView({ block: "center" }));
+      await sleep(500);
+      console.log("деньги:", (await text("[data-profit-block]"))?.replace(/\n+/g, " | "));
+      await S("repair-mech");
+      // Снова готов к выдаче
+      console.log("готов:", await click(/Готов к выдаче/, "[data-service-card] footer"));
+      await sleep(1500);
+      console.log("замок снова:", await page.evaluate(() => !!document.querySelector("[data-ready-lock]")));
+      await click(/^Закрыть$|^Сохранить/, "[data-service-card]");
+      await page.evaluate(() => document.querySelector('[aria-label="Закрыть"]')?.click());
+      await sleep(800);
+      // Механики
+      console.log("кнопка «Механики»:", await click(/^Механики$/));
+      await sleep(1000);
+      console.log("список механиков:", (await text("[data-mechanics-sheet]"))?.replace(/\n+/g, " | ").slice(0, 200));
+      await S("mechanics");
+      await page.evaluate(() => [...document.querySelectorAll('[aria-label="Закрыть"]')].pop()?.click());
+      await sleep(800);
+      // Разбивка денег
+      await page.evaluate(() => document.querySelector('[data-kpi="Прибыль"]')?.click());
+      await sleep(1200);
+      console.log("разбивка:", (await text("[data-money-summary]"))?.replace(/\n+/g, " | "));
+      console.log("строк:", await page.evaluate(() => document.querySelectorAll("[data-money-row]").length));
+      await S("repairs-money");
+      await page.evaluate(() => [...document.querySelectorAll('[aria-label="Закрыть"]')].pop()?.click());
+      await sleep(600);
+    }
   }
 }
