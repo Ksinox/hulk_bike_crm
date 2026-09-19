@@ -157,6 +157,37 @@ export async function run(page, ctx) {
     await sleep(600);
   }
 
+  /* ---- паритет: ремонт нашей техники с телефона ---- */
+  if (want("job")) {
+    await ctx.gotoRoute("service");
+    await sleep(2500);
+    console.log("наша техника:", await click(/^Наша техника/));
+    await sleep(1500);
+    const opened = await page.evaluate(() => {
+      const row = [...document.querySelectorAll("button")].find((b) => /Чек-лист|готово/.test(b.textContent || ""));
+      row?.click();
+      return row ? (row.textContent || "").replace(/\s+/g, " ").slice(0, 60) : null;
+    });
+    console.log("ремонт:", opened);
+    await sleep(1500);
+    const info = await page.evaluate(() => {
+      const el = document.querySelector("[data-mobile-job]");
+      return {
+        text: el?.innerText.replace(/\n+/g, " | ").slice(0, 220) ?? null,
+        items: document.querySelectorAll("[data-progress]").length,
+        finish: [...document.querySelectorAll("button")].some((b) => /Готов к аренде/.test(b.textContent || "")),
+      };
+    });
+    console.log("карточка ремонта:", JSON.stringify(info));
+    await S("job");
+    if (when === "now" && info.items > 0) {
+      await page.evaluate(() => document.querySelector("[data-progress] button")?.click());
+      await sleep(1500);
+      console.log("после отметки:", await page.evaluate(() => document.querySelector("[data-mobile-job]")?.innerText.match(/Чек-лист[^|]*/)?.[0] ?? document.querySelector("[data-mobile-job]")?.innerText.slice(0, 80)));
+      await S("job-checked");
+    }
+  }
+
   /* ---- п.8 ---- */
   if (want("sensitive")) {
     await ctx.gotoRoute("sales");

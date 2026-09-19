@@ -88,6 +88,8 @@ export function MobileScooters() {
     return fileUrl(m?.avatarKey, { variant: "thumb" }) ?? undefined;
   };
   const [filter, setFilter] = useState<Filter>("all");
+  /** Фильтр по модели (правки 7.0, паритет с компьютером): «Все» или модель. */
+  const [modelFilter, setModelFilter] = useState<string>("");
   /** Журнал техники — тот же, что на компьютере (паритет, 06.09). */
   const [journalOpen, setJournalOpen] = useState(false);
   /** «Партии» — та же сводка, что на компьютере (2.0.1). */
@@ -186,7 +188,12 @@ export function MobileScooters() {
       );
     };
     return (filter === "gone" ? goneList : live)
-      .filter((s) => (filter === "gone" ? true : matchStatus(s)) && matchSearch(s))
+      .filter(
+        (s) =>
+          (filter === "gone" ? true : matchStatus(s)) &&
+          matchSearch(s) &&
+          (modelFilter === "" || modelName(s) === modelFilter),
+      )
       .sort((a, b) => {
         if (numberQ) {
           const order = { current: 0, name: 1, former: 2 } as const;
@@ -200,7 +207,7 @@ export function MobileScooters() {
         return a.name.localeCompare(b.name, "ru", { numeric: true });
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, goneList, filter, search, rentedSet]);
+  }, [live, goneList, filter, search, rentedSet, modelFilter]);
 
   const chips: ChipOption<Filter>[] = [
     { id: "all", label: "Все", count: live.length },
@@ -217,6 +224,22 @@ export function MobileScooters() {
       ? [{ id: "gone" as const, label: "Проданы", count: goneList.length }]
       : []),
   ];
+
+  /** Модели в текущем списке — по каталогу (частые первыми). */
+  const modelChips = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const s of filter === "gone" ? goneList : live) {
+      const name = modelName(s);
+      if (name) n.set(name, (n.get(name) ?? 0) + 1);
+    }
+    const list = [...n.entries()].sort((a, b) => b[1] - a[1]);
+    if (list.length < 2) return [];
+    return [
+      { id: "", label: "Все модели", count: list.reduce((x, [, c]) => x + c, 0) },
+      ...list.map(([name, count]) => ({ id: name, label: name, count })),
+    ] as ChipOption<string>[];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, goneList, filter]);
 
   // Ищем среди ВСЕЙ техники, а не только «живой»: карточка проданной
   // единицы тоже должна открываться (её смотрят из чипа «Проданы»).
@@ -241,6 +264,9 @@ export function MobileScooters() {
       {/* 2.0.1: фильтры — во всю ширину, инструменты — строкой ниже (иначе
           «Партии» и «Журнал» съедали место и фильтры не читались). */}
       <MobileChips options={chips} value={filter} onChange={setFilter} />
+      {modelChips.length > 0 && (
+        <MobileChips options={modelChips} value={modelFilter} onChange={setModelFilter} />
+      )}
       <div className="flex items-center gap-2">
         <button
           type="button"
