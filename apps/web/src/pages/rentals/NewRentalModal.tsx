@@ -479,6 +479,14 @@ export function NewRentalModal({
     );
   }, [apiScooters, blocked, powerFilter, isElectricScooter, modelNameOf]);
 
+  // Заявка на бензиновую модель («jog» из анкеты) — сразу категория «Бензин»:
+  // заказчик видел в «Все» электрички рядом с Jog и думал, что они «в Jog».
+  useEffect(() => {
+    if (initialModelFilter && LEGACY_MODELS.has(initialModelFilter)) setPowerFilter("petrol");
+    // только при открытии окна
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Старое значение из заявки («jog») → кнопка настоящей модели, если она одна.
   useEffect(() => {
     if (!LEGACY_MODELS.has(scooterModelFilter)) return;

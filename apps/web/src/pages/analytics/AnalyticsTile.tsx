@@ -321,9 +321,11 @@ export function AnalyticsTile({
             >
               <Gift className="h-[1.1em] w-[1.1em] shrink-0" />
               <span className="truncate">
-                {state.done
-                  ? `План выполнен — премия ${fmtRub(bonus)}`
-                  : `Выполнишь план — получишь ${fmtRub(bonus)}`}
+                {/* На узкой плитке остаётся «🎁 5 000 ₽» — фраза не обрезается. */}
+                <span className="a-hide-narrow">
+                  {state.done ? "План выполнен — премия " : "Выполнишь план — получишь "}
+                </span>
+                {fmtRub(bonus)}
               </span>
             </div>
           )}
