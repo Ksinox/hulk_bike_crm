@@ -37,10 +37,14 @@ export async function run(page, ctx) {
   await ctx.sleep(2200);
   await tap(/^Принять оплату$/);
   await ctx.sleep(1500);
-  await tap(/^Далее$/);
-  await ctx.sleep(1200);
-  await tap(/^Далее$/);
-  await ctx.sleep(1200);
+  // Шагов теперь может быть 4 (при просрочке первый — «Дата оплаты»):
+  // идём «Далее», пока не дойдём до шага «Оплата».
+  for (let i = 0; i < 4; i++) {
+    const atPay = await page.evaluate(() => /ШАГ \d · ОПЛАТА/i.test(document.body.innerText));
+    if (atPay) break;
+    await tap(/^Далее$/);
+    await ctx.sleep(1200);
+  }
   await S("01-step3");
   // Кнопки, открывающие цифровую клавиатуру, показывают сумму «… ₽».
   const opened = await page.evaluate(() => {

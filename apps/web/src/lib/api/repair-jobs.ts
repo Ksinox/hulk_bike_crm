@@ -45,7 +45,15 @@ export type ApiRepairJob = {
   note: string | null;
   createdAt: string;
   updatedAt: string;
-  scooter: { id: number; name: string; model: string } | null;
+  scooter: {
+    id: number;
+    name: string;
+    model: string;
+    /** Правки 7.0: модель из каталога и номер — для подписи и кружка. */
+    modelId?: number | null;
+    rentalSlot?: number | null;
+    slotPool?: "petrol" | "electric";
+  } | null;
   rental: {
     id: number;
     clientId: number | null;
