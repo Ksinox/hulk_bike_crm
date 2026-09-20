@@ -270,7 +270,7 @@ function MoneyTile({
       </div>
       <div
         className={cn(
-          "font-display text-[26px] font-extrabold leading-none tabular-nums sm:text-[30px]",
+          "font-display text-[21px] font-extrabold leading-none tabular-nums sm:text-[30px]",
           tone === "good" ? "text-ink" : "text-ink",
         )}
       >
