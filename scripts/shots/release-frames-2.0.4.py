@@ -84,6 +84,10 @@ square("v204-sale-edit-now", (855, 140, 1430, 700), "d-deal-now")
 phone_crop("v204-job-m-was", (0, 60, 780, 900), "m-job-was")
 phone_crop("v204-job-m-now", (0, 60, 780, 900), "m-job-now")
 
+# ── 10. Новый блок «Финансы» ──
+square("fin-overview-now", (86, 140, 1430, 700), "d-finance-now")
+phone_crop("fin-overview-m-now", (0, 100, 780, 1000), "m-finance-now")
+
 # ── 8б. Паритет: дело должника с телефона ──
 phone_crop("v204-debtors-m-was", (0, 60, 780, 900), "m-parity-was")
 phone_crop("v204-debtor-case-m-now", (0, 60, 780, 900), "m-parity-now")
