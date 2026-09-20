@@ -73,10 +73,20 @@ export function QuickEntry({
   const word = kind === "income" ? "приход" : "расход";
   const cats = categories.filter((c) => c.kind === kind);
 
-  /** На шаге статьи ловим цифры и стрелки — выбор без мыши. */
+  /**
+   * На шаге статьи ловим цифры и стрелки — выбор без мыши.
+   *
+   * Подписываемся с задержкой: тот самый Enter, которым перешли с суммы,
+   * иначе долетает сюда и сохраняет строку с первой попавшейся статьёй.
+   */
   useEffect(() => {
     if (step !== "category" || addingCat) return;
+    let armed = false;
+    const arm = window.setTimeout(() => {
+      armed = true;
+    }, 160);
     const onKey = (e: KeyboardEvent) => {
+      if (!armed) return;
       if (e.key === "Escape") {
         onClose();
         return;
@@ -114,7 +124,10 @@ export function QuickEntry({
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(arm);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [step, catIndex, cats, draft, addingCat]);
 
   /** Подсветка выбранной статьи при возврате к шагу. */
