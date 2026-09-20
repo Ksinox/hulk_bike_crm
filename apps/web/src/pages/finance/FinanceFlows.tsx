@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Pencil, Plus, Repeat, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
@@ -88,6 +88,12 @@ export function FinanceFlows({
   );
 
   const [draft, setDraft] = useState<Draft | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+  // Открыли форму — сразу подводим её к глазам: на телефоне она иначе
+  // остаётся ниже плиток и кажется, что кнопка ничего не сделала.
+  useEffect(() => {
+    if (draft) formRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [draft?.id, draft === null]);
   const create = useCreateFinanceEntry();
   const update = useUpdateFinanceEntry();
   const del = useDeleteFinanceEntry();
@@ -165,7 +171,7 @@ export function FinanceFlows({
       }
     >
       {draft && (
-        <div className="mb-3 rounded-2xl border border-ink/15 bg-surface-soft p-3">
+        <div ref={formRef} className="mb-3 rounded-2xl border border-ink/15 bg-surface-soft p-3">
           <div className="mb-2 flex items-center justify-between">
             <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-2">
               {draft.id ? "Правка строки" : `Новый ${word}`}
