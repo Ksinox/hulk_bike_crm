@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Pencil, Plus, Repeat, Trash2, X } from "lucide-react";
+import { Pencil, Plus, Repeat, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
-import { DatePicker } from "@/components/ui/date-picker";
-import { SuggestInput, rankSuggestions } from "@/components/SuggestInput";
+import { rankSuggestions } from "@/components/SuggestInput";
 import {
   useCreateFinanceCategory,
   useCreateFinanceEntry,
@@ -15,7 +14,8 @@ import {
   type FinanceKind,
 } from "@/lib/api/finance";
 import { fmtMoney } from "./Finance";
-import { Btn, Chips, EmptyHint, Field, MoneyInput, SectionCard } from "./ui";
+import { Btn, EmptyHint, SectionCard } from "./ui";
+import { QuickEntry, type QuickDraft } from "./QuickEntry";
 
 /**
  * Приход и расход за период.
@@ -45,14 +45,6 @@ const dayLabel = (iso: string): string => {
     day: "numeric",
     month: "short",
   });
-};
-
-type Draft = {
-  id?: number;
-  categoryId: number | null;
-  name: string;
-  amount: number;
-  at: string;
 };
 
 export function FinanceFlows({
@@ -87,7 +79,9 @@ export function FinanceFlows({
     [allEntries, kind],
   );
 
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<QuickDraft | null>(null);
+  /** Сколько строк внесли подряд за этот заход — «книга учёта» в действии. */
+  const [savedCount, setSavedCount] = useState(0);
   const formRef = useRef<HTMLDivElement>(null);
   // Открыли форму — сразу подводим её к глазам: на телефоне она иначе
   // остаётся ниже плиток и кажется, что кнопка ничего не сделала.
@@ -100,22 +94,26 @@ export function FinanceFlows({
   const restore = useRestoreFinanceEntry();
   const addCategory = useCreateFinanceCategory();
 
-  const word = kind === "income" ? "приход" : "расход";
-
-  const startNew = () =>
+  const startNew = () => {
+    setSavedCount(0);
     setDraft({
       categoryId: cats[0]?.id ?? null,
       name: "",
       amount: 0,
       at: todayISO(bounds.from, bounds.to),
     });
+  };
 
-  const save = async () => {
-    if (!draft) return;
+  /**
+   * Сохранение из пошагового ввода. Вернули true — мастер остаётся открытым и
+   * ждёт следующую строку: так подряд вносят десять расходов, не отрываясь.
+   */
+  const submitQuick = async (d: QuickDraft): Promise<boolean> => {
+    const draft = d;
     const name = draft.name.trim();
     if (!name) {
-      toast.error("Нужно наименование", "Например «Масло 10W-40» или «Выручка аренды за неделю»");
-      return;
+      toast.error("Напишите, за что", "Например «Масло 10W-40»");
+      return false;
     }
     if (draft.id) {
       await update.mutateAsync({
@@ -126,20 +124,24 @@ export function FinanceFlows({
         at: draft.at,
       });
       toast.success("Сохранено", `${name} · ${fmtMoney(draft.amount)}`);
-    } else {
-      await create.mutateAsync({
-        kind,
-        categoryId: draft.categoryId,
-        name,
-        amount: draft.amount,
-        at: draft.at,
-      });
-      toast.success(
-        kind === "income" ? "Приход внесён" : "Издержка внесена",
-        `${name} · ${fmtMoney(draft.amount)}`,
-      );
+      setDraft(null);
+      return false;
     }
-    setDraft(null);
+    await create.mutateAsync({
+      kind,
+      categoryId: draft.categoryId,
+      name,
+      amount: draft.amount,
+      at: draft.at,
+    });
+    toast.success(
+      kind === "income" ? "Приход записан" : "Расход записан",
+      `${name} · ${fmtMoney(draft.amount)}`,
+    );
+    setSavedCount((n) => n + 1);
+    // Готовы к следующей строке: та же дата и статья под рукой.
+    setDraft({ categoryId: draft.categoryId, name: "", amount: 0, at: draft.at });
+    return true;
   };
 
   const remove = async (e: FinanceEntry) => {
@@ -171,76 +173,22 @@ export function FinanceFlows({
       }
     >
       {draft && (
-        <div ref={formRef} className="mb-3 rounded-2xl border border-ink/15 bg-surface-soft p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-2">
-              {draft.id ? "Правка строки" : `Новый ${word}`}
-            </div>
-            <button
-              type="button"
-              onClick={() => setDraft(null)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-2 hover:bg-white hover:text-ink"
-              title="Закрыть"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          {/* Наименование — самое широкое: его пишут руками. Дальше сумма,
-              дата и сразу кнопка, чтобы не вести мышь через всю форму. */}
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px_170px_auto]">
-            <Field label="Наименование">
-              <SuggestInput
-                value={draft.name}
-                onValueChange={(v) => setDraft({ ...draft, name: v })}
-                suggestions={names}
-                autoFocus
-                touch
-                minChars={1}
-                heading="Вписывали раньше"
-                placeholder={kind === "income" ? "Выручка аренды" : "Масло, свечи"}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void save();
-                }}
-                className="h-11 w-full rounded-xl border border-border bg-white px-3 text-[14px] text-ink outline-none transition-colors placeholder:text-muted-2 focus:border-ink"
-              />
-            </Field>
-            <Field label="Сумма">
-              <MoneyInput
-                value={draft.amount}
-                onChange={(v) => setDraft({ ...draft, amount: v })}
-                onEnter={() => void save()}
-              />
-            </Field>
-            <Field label="Дата">
-              <DatePicker
-                value={draft.at}
-                onChange={(v) => setDraft({ ...draft, at: v ?? draft.at })}
-                clearable={false}
-              />
-            </Field>
-            <div className="flex items-end gap-2">
-              <Btn tone="primary" onClick={() => void save()} className="flex-1 sm:flex-none">
-                <Check size={16} /> Сохранить
-              </Btn>
-            </div>
-          </div>
-
-          <div className="mt-2.5">
-            <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-2">
-              Статья
-            </div>
-            <Chips
-              options={cats.map((c) => ({ id: c.id, label: c.name }))}
-              value={draft.categoryId}
-              onChange={(id) => setDraft({ ...draft, categoryId: id })}
-              onAdd={async (name) => {
-                const r = await addCategory.mutateAsync({ kind, name });
-                setDraft((d) => (d ? { ...d, categoryId: r.item.id } : d));
-                toast.success("Статья добавлена", name);
-              }}
-            />
-          </div>
+        <div ref={formRef}>
+          <QuickEntry
+            kind={kind}
+            categories={categories}
+            suggestions={names}
+            draft={draft}
+            savedCount={savedCount}
+            onChange={setDraft}
+            onSubmit={submitQuick}
+            onClose={() => setDraft(null)}
+            onAddCategory={async (name) => {
+              const r = await addCategory.mutateAsync({ kind, name });
+              toast.success("Статья добавлена", name);
+              return r.item?.id ?? null;
+            }}
+          />
         </div>
       )}
 
