@@ -10,6 +10,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { cn } from "@/lib/utils";
 import {
   currentBillingPeriod,
@@ -78,6 +79,8 @@ export function keyOfPeriod(p: BillingPeriod): string {
 
 export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
   const [tab, setTab] = useState<FinanceTab>("overview");
+  /** На телефоне показываем короче: 13 столбиков в 390px не читаются. */
+  const compact = useIsMobile();
   /** Сдвиг от текущего периода: 0 — этот, 1 — прошлый и так далее. */
   const [back, setBack] = useState(0);
 
@@ -105,14 +108,18 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
-      {!embedded && <Topbar />}
-
-      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h1 className="font-display text-[28px] font-extrabold leading-none text-ink sm:text-[34px]">
-          Финансы
-        </h1>
-        <span className="text-[13px] text-muted-2">приход, расход и прибыль за период</span>
-      </header>
+      {/* В мобильной оболочке шапка и заголовок раздела уже есть. */}
+      {!embedded && (
+        <>
+          <Topbar />
+          <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="font-display text-[28px] font-extrabold leading-none text-ink sm:text-[34px]">
+              Финансы
+            </h1>
+            <span className="text-[13px] text-muted-2">приход, расход и прибыль за период</span>
+          </header>
+        </>
+      )}
 
       {/* Переключатель периода: тот же расчётный период, что и во всей CRM. */}
       <div className="flex items-center justify-between gap-2 rounded-2xl bg-surface p-2 shadow-card-sm sm:p-2.5">
@@ -172,9 +179,10 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
         />
       </div>
 
-      {/* Вкладки. На телефоне прокручиваются вбок, ширину страницы не рвут. */}
-      <div className="-mx-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div className="inline-flex min-w-full gap-1.5 rounded-2xl bg-surface p-1.5 shadow-card-sm">
+      {/* Вкладки: на телефоне сеткой в две строки — видно все сразу, ничего
+          не прячется за край. На компьютере — одной строкой. */}
+      <div>
+        <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-surface p-1.5 shadow-card-sm sm:flex">
           {TABS.map((t) => {
             const Icon = t.icon;
             const on = tab === t.id;
@@ -184,7 +192,7 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
                 type="button"
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  "inline-flex h-11 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 text-[13px] font-semibold transition-colors",
+                  "inline-flex h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 text-[13px] font-semibold transition-colors sm:flex-1 sm:px-3",
                   on ? "bg-ink text-white" : "text-muted hover:bg-surface-soft hover:text-ink",
                 )}
               >
@@ -201,7 +209,7 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
           entries={entries}
           categories={categories}
           periodKey={periodKey}
-          periods={entriesData?.periods ?? []}
+          periods={(entriesData?.periods ?? []).slice(0, compact ? 6 : 13)}
           payrollTotal={payrollTotal}
           onOpenTab={setTab}
         />
