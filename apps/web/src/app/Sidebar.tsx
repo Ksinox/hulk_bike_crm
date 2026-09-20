@@ -58,6 +58,11 @@ function buildMainItems(canManageStaff: boolean, canFinance: boolean): NavItem[]
     { id: "fleet", label: "Скутеры", icon: ShoppingBag, ready: true },
     { id: "sales", label: "Продажи", icon: Wallet, ready: true },
     { id: "partners", label: "Партнёрка", icon: Handshake, ready: true },
+    // «Финансы» (20.09) — рядом с денежными разделами, а не в конце списка:
+    // это ежедневный экран директора, а не справочник. Нет права — пункта нет.
+    ...(canFinance
+      ? [{ id: "finance" as const, label: "Финансы", icon: Landmark, ready: true }]
+      : []),
     { id: "service", label: "Ремонты", icon: Wrench, ready: true },
     { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "docs", label: "Документы", icon: FileText, ready: true },
@@ -73,10 +78,6 @@ function buildMainItems(canManageStaff: boolean, canFinance: boolean): NavItem[]
   // Разделы «скоро» — всегда в конце списка.
   // Аналитика открыта с 06.09 — доска показателей и экран на второй монитор.
   items.push({ id: "analytics", label: "Аналитика", icon: BarChart3, ready: true });
-  // «Финансы» (20.09) — деньги организации. Нет права — пункта нет вовсе.
-  if (canFinance) {
-    items.push({ id: "finance", label: "Финансы", icon: Landmark, ready: true });
-  }
   items.push(
     { id: "incidents", label: "Инциденты", icon: CircleAlert },
     { id: "tasks", label: "Задачи", icon: ClipboardCheck },

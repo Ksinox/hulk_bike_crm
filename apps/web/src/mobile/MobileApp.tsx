@@ -4,6 +4,7 @@ import { Calculator, Plus, ReceiptText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RouteId } from "@/app/route";
 import { useMe, useLogout } from "@/lib/api/auth";
+import { usePerms } from "@/lib/permissions";
 import { openCalculator } from "@/lib/calc/calcStore";
 import { FabProvider, usePageFab, type PageFab } from "./fab";
 import { openDeal } from "@/pages/clients/CreateDealMenu";
@@ -55,7 +56,8 @@ export function MobileApp({
 }) {
   const { data: me } = useMe();
   const canManageStaff = me?.role === "creator" || me?.role === "director";
-  const moreItems = buildMoreItems(canManageStaff);
+  const perms = usePerms();
+  const moreItems = buildMoreItems(canManageStaff, perms["data.finance"]);
   const [moreOpen, setMoreOpen] = useState(false);
   const [fab, setFab] = useState<PageFab | null>(null);
   // 16.09 (заказчик): кнопка «Сделка» оставалась поверх открытого окна.

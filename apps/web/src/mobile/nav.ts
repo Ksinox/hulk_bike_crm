@@ -4,6 +4,7 @@ import {
   Bike,
   FileText,
   Home,
+  Landmark,
   LayoutGrid,
   LogOut,
   Receipt,
@@ -41,7 +42,10 @@ export const tabItems: MobileNavItem[] = [
 ];
 
 /** Раздел «Ещё» — раскрывается шторкой снизу. */
-export function buildMoreItems(canManageStaff: boolean): MobileNavItem[] {
+export function buildMoreItems(
+  canManageStaff: boolean,
+  canFinance = false,
+): MobileNavItem[] {
   const items: MobileNavItem[] = [
     { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "service", label: "Ремонты", icon: Wrench, ready: true },
@@ -55,6 +59,10 @@ export function buildMoreItems(canManageStaff: boolean): MobileNavItem[] {
     // Аналитика (06.09): доска показателей.
     { id: "analytics", label: "Аналитика", icon: BarChart3, ready: true },
   ];
+  // Блок «Финансы» (20.09): деньги организации. Нет права — пункта нет.
+  if (canFinance) {
+    items.push({ id: "finance", label: "Финансы", icon: Landmark, ready: true });
+  }
   if (canManageStaff) {
     items.push({ id: "staff", label: "Сотрудники", icon: UserCog, ready: true });
   }
@@ -90,6 +98,7 @@ export function routeTitle(route: RouteId): string {
     sales: "Продажи",
     rassrochki: "Выкуп",
     progress: "Развитие",
+    finance: "Финансы",
   };
   return all[route] ?? "Халк Байк";
 }
