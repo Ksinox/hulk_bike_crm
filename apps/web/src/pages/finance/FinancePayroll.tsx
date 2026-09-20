@@ -197,8 +197,8 @@ export function FinancePayroll({ rows }: { rows: FinancePayrollRow[] }) {
 
           <div className="mt-1 grid grid-cols-3 gap-2 rounded-xl bg-surface-soft px-3 py-3">
             <Total label="Оклады" value={salaries} />
-            <Total label="Процент с продаж" value={bonuses} />
-            <Total label="ФОТ за период" value={total} strong />
+            <Total label="% с продаж" value={bonuses} />
+            <Total label="ФОТ итого" value={total} strong />
           </div>
         </div>
       )}
