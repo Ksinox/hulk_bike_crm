@@ -190,6 +190,7 @@ export function FinanceFlows({
                 suggestions={names}
                 autoFocus
                 touch
+                minChars={1}
                 heading="Вписывали раньше"
                 placeholder={kind === "income" ? "Выручка аренды" : "Масло, свечи"}
                 onKeyDown={(e) => {
