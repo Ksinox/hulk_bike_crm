@@ -329,7 +329,13 @@ function MoneyTile({
             {up ? "↗" : "↘"} {Math.abs(delta)}%
           </span>
         )}
-        <span className="truncate">{hint ?? "к прошлому периоду"}</span>
+        <span className="truncate">
+          {hint ?? (
+            <>
+              к прошлому<span className="hidden sm:inline"> периоду</span>
+            </>
+          )}
+        </span>
       </div>
     </button>
   );

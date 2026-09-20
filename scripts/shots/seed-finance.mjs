@@ -127,20 +127,35 @@ for (const [cat, name, amount] of FIXED) {
 
 /* ФОТ: оклад + процент с продаж. */
 const people = (await call("GET", "/api/finance/people")).data.items;
+// имя · роль · оклад · процент с продаж · продажи за период
 const PEOPLE = [
-  ["Дима", "администратор", 80000, 11000],
-  ["Кирилл", "механик", 70000, 14500],
+  ["Дима", "администратор", 80000, 5, 220000],
+  ["Кирилл", "механик", 70000, 10, 145000],
 ];
-for (const [name, role, salary, bonus] of PEOPLE) {
+for (const [name, role, salary, pct, base] of PEOPLE) {
   let p = people.find((x) => x.name === name);
   if (!p) {
-    const r = await call("POST", "/api/finance/people", { name, role, salaryDefault: salary });
+    const r = await call("POST", "/api/finance/people", {
+      name,
+      role,
+      salaryDefault: salary,
+      salesPct: pct,
+    });
     p = r.data.item;
     console.log("человек:", name, r.status);
+  } else {
+    await call("PATCH", `/api/finance/people/${p.id}`, { salesPct: pct });
   }
   const payroll = (await call("GET", `/api/finance/payroll?period=${periods[0]}`)).data.items;
   const row = payroll.find((x) => x.personId === p.id);
-  if (row) await call("PATCH", `/api/finance/payroll/${row.id}`, { salary, salesBonus: bonus });
+  if (row) {
+    await call("PATCH", `/api/finance/payroll/${row.id}`, {
+      salary,
+      salesPct: pct,
+      salesBase: base,
+      salesBonus: Math.round((base * pct) / 100),
+    });
+  }
 }
 
 const after = (await call("GET", "/api/finance/entries")).data.items;
