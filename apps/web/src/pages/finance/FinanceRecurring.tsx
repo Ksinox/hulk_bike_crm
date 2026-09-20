@@ -3,6 +3,7 @@ import { Pencil, Plus, Repeat, Trash2, X } from "lucide-react";
 import { toast, confirmDialog } from "@/lib/toast";
 import { Switch } from "@/components/ui/switch";
 import {
+  useCreateFinanceCategory,
   useCreateFinanceRecurring,
   useDeleteFinanceRecurring,
   useFinanceRecurring,
@@ -11,7 +12,7 @@ import {
   type FinanceEntry,
 } from "@/lib/api/finance";
 import { fmtMoney } from "./Finance";
-import { Btn, EmptyHint, Field, MoneyInput, SectionCard, Select, TextInput } from "./ui";
+import { Btn, Chips, EmptyHint, Field, MoneyInput, SectionCard, TextInput } from "./ui";
 
 /**
  * Постоянные издержки: аренда помещения, связь, интернет, логистика.
@@ -47,6 +48,7 @@ export function FinanceRecurringList({
   const create = useCreateFinanceRecurring();
   const update = useUpdateFinanceRecurring();
   const remove = useDeleteFinanceRecurring();
+  const addCategory = useCreateFinanceCategory();
 
   const monthly = items.filter((i) => i.active).reduce((s, i) => s + i.amount, 0);
 
@@ -124,7 +126,9 @@ export function FinanceRecurringList({
               <X size={16} />
             </button>
           </div>
-          <div className="grid gap-2 sm:grid-cols-[1fr_180px_150px]">
+          {/* Наименование пишут руками — ему вся свободная ширина; кнопка
+              стоит сразу за суммой, а не в другом углу формы. */}
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_170px_auto]">
             <Field label="Наименование">
               <TextInput
                 autoFocus
@@ -136,21 +140,6 @@ export function FinanceRecurringList({
                 }}
               />
             </Field>
-            <Field label="Статья">
-              <Select
-                value={draft.categoryId ?? ""}
-                onChange={(e) =>
-                  setDraft({ ...draft, categoryId: e.target.value ? Number(e.target.value) : null })
-                }
-              >
-                <option value="">без статьи</option>
-                {cats.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
             <Field label="Сумма за период">
               <MoneyInput
                 value={draft.amount}
@@ -158,19 +147,31 @@ export function FinanceRecurringList({
                 onEnter={() => void save()}
               />
             </Field>
+            <div className="flex items-end">
+              <Btn tone="primary" onClick={() => void save()} className="w-full sm:w-auto">
+                Сохранить
+              </Btn>
+            </div>
+          </div>
+          <div className="mt-2.5">
+            <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+              Статья
+            </div>
+            <Chips
+              options={cats.map((c) => ({ id: c.id, label: c.name }))}
+              value={draft.categoryId}
+              onChange={(id) => setDraft({ ...draft, categoryId: id })}
+              onAdd={async (name) => {
+                const r = await addCategory.mutateAsync({ kind: "expense", name });
+                setDraft((d) => (d ? { ...d, categoryId: r.item.id } : d));
+                toast.success("Статья добавлена", name);
+              }}
+            />
           </div>
           <p className="mt-2 text-[12px] text-muted">
             Появится в этом периоде и дальше в каждом следующем. Сумму в конкретном периоде можно
             поправить на вкладке «Расход» — шаблон это не изменит.
           </p>
-          <div className="mt-2.5 flex gap-2">
-            <Btn tone="primary" onClick={() => void save()} className="flex-1 sm:flex-none">
-              Сохранить
-            </Btn>
-            <Btn onClick={() => setDraft(null)} className="flex-1 sm:flex-none">
-              Отмена
-            </Btn>
-          </div>
         </div>
       )}
 

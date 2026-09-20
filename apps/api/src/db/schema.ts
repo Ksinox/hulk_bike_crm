@@ -2773,6 +2773,8 @@ export const financePeople = pgTable("finance_people", {
   name: text("name").notNull(),
   role: text("role"),
   salaryDefault: integer("salary_default").notNull().default(0),
+  /** Процент с продаж, который получает человек сверх оклада. */
+  salesPct: integer("sales_pct").notNull().default(0),
   active: boolean("active").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -2791,6 +2793,11 @@ export const financePayroll = pgTable(
     /** Имя на момент периода — переименование не переписывает прошлое. */
     personName: text("person_name").notNull(),
     salary: integer("salary").notNull().default(0),
+    /** Продажи периода, с которых считается процент. */
+    salesBase: integer("sales_base").notNull().default(0),
+    /** Процент, действовавший в этом периоде. */
+    salesPct: integer("sales_pct").notNull().default(0),
+    /** Сама премия: база × процент, но может быть вписана руками. */
     salesBonus: integer("sales_bonus").notNull().default(0),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true })

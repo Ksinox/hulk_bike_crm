@@ -88,12 +88,130 @@ export function DateInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input type="date" {...props} className={cn(inputBase, props.className)} />;
 }
 
-export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+/**
+ * Выбор статьи — плитками, а не выпадающим списком.
+ *
+ * Нативный `<select>` в CRM не используем: он рисуется системой и выбивается
+ * из оформления, а на телефоне открывает колесо во весь экран. Плитки видно
+ * целиком, попадать по ним пальцем удобно, а рядом живёт кнопка «своя
+ * статья» — новую статью заводят прямо здесь, не уходя из формы.
+ */
+export function Chips<T extends string | number>({
+  options,
+  value,
+  onChange,
+  onAdd,
+  addLabel = "Своя статья",
+}: {
+  options: { id: T; label: string; hint?: string }[];
+  value: T | null;
+  onChange: (v: T) => void;
+  /** Заведение нового варианта прямо в форме. */
+  onAdd?: (name: string) => void | Promise<void>;
+  addLabel?: string;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const commit = async () => {
+    const name = draft.trim();
+    if (!name || !onAdd) return;
+    await onAdd(name);
+    setDraft("");
+    setAdding(false);
+  };
   return (
-    <select
-      {...props}
-      className={cn(inputBase, "appearance-none bg-white pr-8", props.className)}
-    />
+    <div className="flex flex-wrap items-center gap-1.5">
+      {options.map((o) => (
+        <button
+          key={String(o.id)}
+          type="button"
+          onClick={() => onChange(o.id)}
+          title={o.hint}
+          className={cn(
+            "inline-flex h-10 items-center rounded-xl px-3 text-[13px] font-semibold transition-colors",
+            value === o.id
+              ? "bg-ink text-white"
+              : "border border-border bg-white text-ink-2 hover:border-ink hover:text-ink",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+      {onAdd &&
+        (adding ? (
+          <span className="inline-flex items-center gap-1.5">
+            <input
+              autoFocus
+              value={draft}
+              placeholder="Название статьи"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void commit();
+                if (e.key === "Escape") setAdding(false);
+              }}
+              className={cn(inputBase, "h-10 w-44")}
+            />
+            <button
+              type="button"
+              onClick={() => void commit()}
+              className="inline-flex h-10 items-center rounded-xl bg-ink px-3 text-[13px] font-semibold text-white"
+            >
+              Готово
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="inline-flex h-10 items-center gap-1 rounded-xl border border-dashed border-border px-3 text-[13px] font-semibold text-muted hover:border-ink hover:text-ink"
+          >
+            + {addLabel}
+          </button>
+        ))}
+    </div>
+  );
+}
+
+/** Процент: короткое поле со знаком «%» — рядом видно, сколько это в деньгах. */
+export function PercentInput({
+  value,
+  onCommit,
+  className,
+}: {
+  value: number;
+  onCommit: (v: number) => void;
+  className?: string;
+}) {
+  const [draft, setDraft] = useState(String(value || ""));
+  const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    if (!editing) setDraft(String(value || ""));
+  }, [value, editing]);
+  const commit = () => {
+    setEditing(false);
+    const n = Math.max(0, Math.min(100, Number(draft || 0)));
+    if (n !== value) onCommit(n);
+  };
+  return (
+    <span className={cn("relative inline-flex items-center", className)}>
+      <input
+        inputMode="numeric"
+        value={draft}
+        placeholder="0"
+        onChange={(e) => {
+          setEditing(true);
+          setDraft(e.target.value.replace(/\D/g, "").slice(0, 3));
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+        }}
+        className={cn(inputBase, "pr-7 text-right font-semibold tabular-nums")}
+      />
+      <span className="pointer-events-none absolute right-3 text-[13px] font-semibold text-muted-2">
+        %
+      </span>
+    </span>
   );
 }
 

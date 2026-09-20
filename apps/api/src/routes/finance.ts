@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   billingPeriodAnchors,
@@ -140,6 +140,8 @@ async function materialize(periodKey: string, a: BillingAnchorRow[]): Promise<vo
         personId: p.id,
         personName: p.name,
         salary: p.salaryDefault,
+        salesPct: p.salesPct,
+        salesBase: 0,
         salesBonus: 0,
       })
       .onConflictDoNothing();
@@ -185,6 +187,7 @@ const PersonBody = z
     name: z.string().trim().min(1).max(120),
     role: z.string().max(120).nullable().optional(),
     salaryDefault: z.number().int().min(0).max(100_000_000).optional(),
+    salesPct: z.number().int().min(0).max(100).optional(),
     active: z.boolean().optional(),
     sortOrder: z.number().int().min(0).max(9999).optional(),
   })
@@ -193,6 +196,8 @@ const PersonBody = z
 const PayrollBody = z
   .object({
     salary: z.number().int().min(0).max(100_000_000).optional(),
+    salesBase: z.number().int().min(0).max(1_000_000_000).optional(),
+    salesPct: z.number().int().min(0).max(100).optional(),
     salesBonus: z.number().int().min(0).max(100_000_000).optional(),
     note: z.string().max(500).nullable().optional(),
   })
@@ -285,10 +290,40 @@ export async function financeRoutes(app: FastifyInstance) {
 
   /* ── движения денег ── */
 
-  app.get<{ Querystring: { period?: string; back?: string } }>("/entries", async (req) => {
+  app.get<{ Querystring: { period?: string; back?: string; from?: string; to?: string } }>(
+    "/entries",
+    async (req) => {
     const a = await anchors();
     const periodKey = req.query.period ?? keyOf(new Date(), a);
     const back = Math.min(36, Math.max(1, Number(req.query.back ?? 13)));
+    // Свой диапазон дат (правка 20.09): смотрим «за своё», а не только за
+    // расчётный период. Разворачиваем постоянные издержки во всех периодах,
+    // которые диапазон задевает, — иначе в «своём» периоде их не будет.
+    if (req.query.from && req.query.to) {
+      const from = req.query.from;
+      const to = req.query.to;
+      const keys: string[] = [];
+      let cur = periodFor(parseISO(from), a);
+      while (cur.start.getTime() <= parseISO(to).getTime()) {
+        const k = toISODate(cur.start);
+        keys.push(k);
+        await materialize(k, a);
+        cur = periodFor(new Date(cur.end.getTime() + 1), a);
+        if (keys.length > 60) break;
+      }
+      const items = await db
+        .select()
+        .from(financeEntries)
+        .where(
+          and(
+            isNull(financeEntries.deletedAt),
+            gte(financeEntries.at, from),
+            lte(financeEntries.at, to),
+          ),
+        )
+        .orderBy(desc(financeEntries.at), desc(financeEntries.id));
+      return { items, periodKey: keys[0] ?? periodKey, periods: [...keys].reverse(), bounds: { from, to } };
+    }
     await materialize(periodKey, a);
     const keys = keysBack(parseISO(periodKey), back, a);
     const oldest = keys[keys.length - 1]!;
@@ -305,7 +340,8 @@ export async function financeRoutes(app: FastifyInstance) {
       )
       .orderBy(desc(financeEntries.at), desc(financeEntries.id));
     return { items, periodKey, periods: keys, bounds: boundsOf(periodKey, a) };
-  });
+  },
+  );
 
   app.post("/entries", async (req, reply) => {
     const parsed = EntryBody.safeParse(req.body);
@@ -588,17 +624,39 @@ export async function financeRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  app.get<{ Querystring: { period?: string } }>("/payroll", async (req) => {
-    const a = await anchors();
-    const periodKey = req.query.period ?? keyOf(new Date(), a);
-    await materialize(periodKey, a);
-    const items = await db
-      .select()
-      .from(financePayroll)
-      .where(eq(financePayroll.periodKey, periodKey))
-      .orderBy(asc(financePayroll.id));
-    return { items, periodKey };
-  });
+  app.get<{ Querystring: { period?: string; from?: string; to?: string } }>(
+    "/payroll",
+    async (req) => {
+      const a = await anchors();
+      if (req.query.from && req.query.to) {
+        const keys: string[] = [];
+        let cur = periodFor(parseISO(req.query.from), a);
+        while (cur.start.getTime() <= parseISO(req.query.to).getTime()) {
+          const k = toISODate(cur.start);
+          keys.push(k);
+          await materialize(k, a);
+          cur = periodFor(new Date(cur.end.getTime() + 1), a);
+          if (keys.length > 60) break;
+        }
+        const items = keys.length
+          ? await db
+              .select()
+              .from(financePayroll)
+              .where(inArray(financePayroll.periodKey, keys))
+              .orderBy(asc(financePayroll.id))
+          : [];
+        return { items, periodKey: keys[0] ?? keyOf(new Date(), a) };
+      }
+      const periodKey = req.query.period ?? keyOf(new Date(), a);
+      await materialize(periodKey, a);
+      const items = await db
+        .select()
+        .from(financePayroll)
+        .where(eq(financePayroll.periodKey, periodKey))
+        .orderBy(asc(financePayroll.id));
+      return { items, periodKey };
+    },
+  );
 
   app.patch<{ Params: { id: string } }>("/payroll/:id", async (req, reply) => {
     const id = Number(req.params.id);

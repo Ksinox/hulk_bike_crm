@@ -2,8 +2,6 @@ import { useMemo, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
-  ChevronLeft,
-  ChevronRight,
   Repeat,
   Tags,
   UsersRound,
@@ -15,20 +13,20 @@ import { cn } from "@/lib/utils";
 import {
   currentBillingPeriod,
   listRecentBillingPeriods,
-  periodFor,
   type BillingPeriod,
 } from "@/lib/billingPeriod";
 import {
-  totalsOf,
   useFinanceCategories,
-  useFinanceEntries,
-  useFinancePayroll,
+  useFinanceEntriesRange,
+  useFinancePayrollRange,
+  type FinanceEntry,
 } from "@/lib/api/finance";
 import { FinanceFlows } from "./FinanceFlows";
 import { FinanceOverview } from "./FinanceOverview";
 import { FinancePayroll } from "./FinancePayroll";
 import { FinanceRecurringList } from "./FinanceRecurring";
 import { FinanceCategories } from "./FinanceCategories";
+import { PeriodBar, type RangeMode } from "./PeriodBar";
 
 /**
  * Блок «Финансы» (задание заказчика 20.09) — форма ДДС.
@@ -37,17 +35,10 @@ import { FinanceCategories } from "./FinanceCategories";
  * данные карточками. Так блок не разъезжается между версиями — оператор с
  * любого устройства делает одно и то же.
  *
- * Что здесь:
- *   • Обзор — приход, расход, прибыль и динамика по периодам, разрез по
- *     статьям и доля постоянных издержек;
- *   • Приход / Расход — сами движения, каждая строка правится на месте,
- *     удаление мягкое с кнопкой «Отменить»;
- *   • Постоянные — издержки, которые сами повторяются каждый период;
- *   • ФОТ — оклад + процент с продаж по каждому человеку;
- *   • Статьи — справочник.
- *
- * Период — общий расчётный период CRM (у заказчика с 15-го по 15-е). Своего
- * календаря у блока нет: два разных «месяца» в системе гарантируют спор цифр.
+ * Период по умолчанию — расчётный период CRM (у заказчика с 15-го по 15-е),
+ * но смотреть можно и за три периода, полгода, год или за свой диапазон дат.
+ * Своего календаря у блока нет: два разных «месяца» в системе гарантируют
+ * спор цифр.
  */
 
 export type FinanceTab = "overview" | "income" | "expense" | "recurring" | "payroll" | "categories";
@@ -63,48 +54,107 @@ const TABS: { id: FinanceTab; label: string; icon: typeof Wallet }[] = [
 
 export const fmtMoney = (n: number): string => `${Math.round(n).toLocaleString("ru-RU")} ₽`;
 
+const isoOf = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+const dayMonth = (iso: string): string => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y!, (m ?? 1) - 1, d ?? 1)
+    .toLocaleDateString("ru-RU", { day: "numeric", month: "short" })
+    .replace(".", "");
+};
+
 /** Короткая подпись периода: «15 сен — 14 окт». */
 export function periodLabel(p: BillingPeriod): string {
   const last = new Date(p.end.getTime() - 86_400_000);
-  const f = (d: Date) =>
-    d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }).replace(".", "");
-  return `${f(p.start)} — ${f(last)}`;
+  return `${dayMonth(isoOf(p.start))} — ${dayMonth(isoOf(last))}`;
 }
 
 export function keyOfPeriod(p: BillingPeriod): string {
-  const d = p.start;
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${String(d.getDate()).padStart(2, "0")}`;
+  return isoOf(p.start);
 }
+
+/** Сколько расчётных периодов охватывает быстрый вариант. */
+const SPAN: Record<RangeMode, number> = {
+  period: 1,
+  quarter: 3,
+  half: 6,
+  year: 12,
+  custom: 1,
+};
 
 export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
   const [tab, setTab] = useState<FinanceTab>("overview");
-  /** На телефоне показываем короче: 13 столбиков в 390px не читаются. */
-  const compact = useIsMobile();
   /** Сдвиг от текущего периода: 0 — этот, 1 — прошлый и так далее. */
   const [back, setBack] = useState(0);
+  const [mode, setMode] = useState<RangeMode>("period");
+  const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
+  /** На телефоне динамику показываем короче: 13 столбиков в 390px не читаются. */
+  const compact = useIsMobile();
 
-  const period = useMemo(() => {
-    const cur = currentBillingPeriod();
-    if (back === 0) return cur;
-    return listRecentBillingPeriods(back + 1)[back] ?? cur;
-  }, [back]);
-  const periodKey = keyOfPeriod(period);
+  /** Видимый диапазон: свой или набранный из расчётных периодов. */
+  const range = useMemo(() => {
+    if (mode === "custom" && custom) {
+      return {
+        from: custom.from,
+        to: custom.to,
+        label: `${dayMonth(custom.from)} — ${dayMonth(custom.to)}`,
+        sub: "свой период",
+      };
+    }
+    const span = SPAN[mode];
+    const list = listRecentBillingPeriods(back + span);
+    const newest = list[back] ?? currentBillingPeriod();
+    const oldest = list[back + span - 1] ?? newest;
+    const lastDay = new Date(newest.end.getTime() - 86_400_000);
+    const sub =
+      span > 1
+        ? `${span} периода подряд`
+        : back === 0
+          ? "текущий период"
+          : back === 1
+            ? "прошлый период"
+            : `${back} периода назад`;
+    return {
+      from: isoOf(oldest.start),
+      to: isoOf(lastDay),
+      label: `${dayMonth(isoOf(oldest.start))} — ${dayMonth(isoOf(lastDay))}`,
+      sub,
+    };
+  }, [mode, custom, back]);
+
+  /** Такой же по длине отрезок перед выбранным — с ним и сравниваем. */
+  const prev = useMemo(() => {
+    const from = new Date(range.from);
+    const to = new Date(range.to);
+    const days = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1);
+    const prevTo = new Date(from.getTime() - 86_400_000);
+    const prevFrom = new Date(prevTo.getTime() - (days - 1) * 86_400_000);
+    return { from: isoOf(prevFrom), to: isoOf(prevTo) };
+  }, [range.from, range.to]);
 
   const { data: categories = [] } = useFinanceCategories();
-  const { data: entriesData } = useFinanceEntries(periodKey, 13);
-  const { data: payroll = [] } = useFinancePayroll(periodKey);
-  const entries = entriesData?.items ?? [];
+  const { data: entriesData } = useFinanceEntriesRange(range.from, range.to);
+  const { data: payroll = [] } = useFinancePayrollRange(range.from, range.to);
+  const { data: prevData } = useFinanceEntriesRange(prev.from, prev.to);
+  const entries: FinanceEntry[] = entriesData?.items ?? [];
+  const prevEntries: FinanceEntry[] = prevData?.items ?? [];
 
   const payrollTotal = payroll.reduce((s, r) => s + r.salary + r.salesBonus, 0);
-  const totals = totalsOf(entries, periodKey, payrollTotal);
-
-  /** Прошлый период — чтобы показать, куда двинулись цифры. */
-  const prevKey = useMemo(() => {
-    const prev = periodFor(new Date(period.start.getTime() - 86_400_000));
-    return keyOfPeriod(prev);
-  }, [period]);
-  const prevTotals = totalsOf(entries, prevKey, 0);
+  const payrollByPeriod = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of payroll) m[r.periodKey] = (m[r.periodKey] ?? 0) + r.salary + r.salesBonus;
+    return m;
+  }, [payroll]);
+  const sum = (list: FinanceEntry[], kind: "income" | "expense") =>
+    list.filter((e) => e.kind === kind).reduce((s, e) => s + e.amount, 0);
+  const income = sum(entries, "income");
+  const expense = sum(entries, "expense") + payrollTotal;
+  const profit = income - expense;
+  const marginPct = income > 0 ? Math.round((profit / income) * 100) : 0;
+  const prevIncome = sum(prevEntries, "income");
+  const prevExpense = sum(prevEntries, "expense");
+  const prevProfit = prevIncome - prevExpense;
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
@@ -121,59 +171,44 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
         </>
       )}
 
-      {/* Переключатель периода: тот же расчётный период, что и во всей CRM. */}
-      <div className="flex items-center justify-between gap-2 rounded-2xl bg-surface p-2 shadow-card-sm sm:p-2.5">
-        <button
-          type="button"
-          onClick={() => setBack((b) => b + 1)}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-muted hover:bg-surface-soft hover:text-ink"
-          title="Предыдущий период"
-        >
-          <ChevronLeft size={20} />
-        </button>
-        <div className="min-w-0 text-center">
-          <div className="truncate font-display text-[17px] font-bold leading-tight text-ink sm:text-[19px]">
-            {periodLabel(period)}
-          </div>
-          <div className="text-[11.5px] text-muted-2">
-            {back === 0 ? "текущий период" : back === 1 ? "прошлый период" : `${back} периода назад`}
-            {period.kind === "transition" ? " · переходный" : ""}
-          </div>
-        </div>
-        <button
-          type="button"
-          disabled={back === 0}
-          onClick={() => setBack((b) => Math.max(0, b - 1))}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-muted hover:bg-surface-soft hover:text-ink disabled:opacity-30"
-          title="Следующий период"
-        >
-          <ChevronRight size={20} />
-        </button>
-      </div>
+      <PeriodBar
+        label={range.label}
+        sublabel={range.sub}
+        mode={mode}
+        back={back}
+        custom={custom}
+        onBack={() => setBack((b) => b + 1)}
+        onForward={() => setBack((b) => Math.max(0, b - 1))}
+        onMode={(m) => {
+          setMode(m);
+          setBack(0);
+        }}
+        onCustom={setCustom}
+      />
 
       {/* Три цифры периода. Клик ведёт в соответствующий список. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <MoneyTile
           label="Приход"
-          value={totals.income}
-          prev={prevTotals.income}
+          value={income}
+          prev={prevIncome}
           tone="good"
           onClick={() => setTab("income")}
         />
         <MoneyTile
           label="Расход"
-          value={totals.expense}
-          prev={prevTotals.expense}
-          tone="bad"
+          value={expense}
+          prev={prevExpense}
           invertDelta
+          tone="bad"
           onClick={() => setTab("expense")}
         />
         <MoneyTile
           label="Прибыль"
-          value={totals.profit}
-          prev={prevTotals.profit}
-          tone={totals.profit >= 0 ? "good" : "bad"}
-          hint={totals.income > 0 ? `${totals.marginPct}% от прихода` : "приход ещё не внесён"}
+          value={profit}
+          prev={prevProfit}
+          tone={profit >= 0 ? "good" : "bad"}
+          hint={income > 0 ? `${marginPct}% от прихода` : "приход ещё не внесён"}
           onClick={() => setTab("overview")}
           wide
         />
@@ -207,10 +242,11 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
       {tab === "overview" && (
         <FinanceOverview
           entries={entries}
+          prevEntries={prevEntries}
           categories={categories}
-          periodKey={periodKey}
           periods={(entriesData?.periods ?? []).slice(0, compact ? 6 : 13)}
           payrollTotal={payrollTotal}
+          payrollByPeriod={payrollByPeriod}
           onOpenTab={setTab}
         />
       )}
@@ -218,16 +254,20 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
         <FinanceFlows
           kind={tab === "income" ? "income" : "expense"}
           entries={entries}
+          allEntries={entries}
           categories={categories}
-          period={period}
-          periodKey={periodKey}
+          bounds={{ from: range.from, to: range.to }}
           payrollTotal={payrollTotal}
         />
       )}
       {tab === "recurring" && (
-        <FinanceRecurringList categories={categories} periodKey={periodKey} entries={entries} />
+        <FinanceRecurringList
+          categories={categories}
+          periodKey={entriesData?.periodKey ?? range.from}
+          entries={entries}
+        />
       )}
-      {tab === "payroll" && <FinancePayroll rows={payroll} />}
+      {tab === "payroll" && <FinancePayroll rows={payroll} rangeLabel={range.label} />}
       {tab === "categories" && <FinanceCategories categories={categories} entries={entries} />}
     </main>
   );
@@ -236,7 +276,7 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
 function MoneyTile({
   label,
   value,
-  prev,
+  prev = 0,
   tone,
   hint,
   onClick,
@@ -245,7 +285,8 @@ function MoneyTile({
 }: {
   label: string;
   value: number;
-  prev: number;
+  /** Столько же было за предыдущий такой же отрезок. */
+  prev?: number;
   tone: "good" | "bad";
   hint?: string;
   onClick?: () => void;
@@ -276,16 +317,16 @@ function MoneyTile({
       >
         {fmtMoney(value)}
       </div>
-      <div className="flex items-center gap-1.5 text-[12px] text-muted">
+      <div className="flex min-w-0 items-center gap-1.5 text-[12px] text-muted">
         {delta != null && (
           <span
             className={cn(
-              "inline-flex items-center gap-0.5 font-semibold",
+              "shrink-0 font-semibold",
               goodDelta ? "text-emerald-700" : "text-red-600",
             )}
+            title="Изменение к предыдущему такому же отрезку"
           >
-            {up ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
-            {Math.abs(delta)}%
+            {up ? "↗" : "↘"} {Math.abs(delta)}%
           </span>
         )}
         <span className="truncate">{hint ?? "к прошлому периоду"}</span>

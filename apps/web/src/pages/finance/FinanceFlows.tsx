@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
-import { Pencil, Plus, Repeat, Trash2, X } from "lucide-react";
+import { Check, Pencil, Plus, Repeat, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
-import type { BillingPeriod } from "@/lib/billingPeriod";
+import { DatePicker } from "@/components/ui/date-picker";
+import { SuggestInput, rankSuggestions } from "@/components/SuggestInput";
 import {
+  useCreateFinanceCategory,
   useCreateFinanceEntry,
   useDeleteFinanceEntry,
   useRestoreFinanceEntry,
@@ -13,23 +15,28 @@ import {
   type FinanceKind,
 } from "@/lib/api/finance";
 import { fmtMoney } from "./Finance";
-import { Btn, DateInput, EmptyHint, Field, MoneyInput, SectionCard, Select, TextInput } from "./ui";
+import { Btn, Chips, EmptyHint, Field, MoneyInput, SectionCard } from "./ui";
 
 /**
  * Приход и расход за период.
  *
- * Главное требование заказчика к блоку — всё должно правиться. Поэтому:
- *   • строка открывается на правку по клику, поля те же, что при заведении;
- *   • удаление мягкое: строка уходит, но в тосте 10 секунд живёт «Отменить»;
- *   • строки из постоянных издержек помечены значком повтора — их сумму
- *     можно поправить точечно в этом периоде, не трогая шаблон.
+ * Как устроен ввод (правки заказчика 20.09 по UX):
+ *   • порядок полей = порядок мысли: что → сколько → когда. Наименование
+ *     пишут руками, поэтому оно самое широкое; статью выбирают плитками.
+ *   • кнопка «Сохранить» стоит сразу за последним полем, а не в другом углу
+ *     экрана — не нужно вести мышь через всю форму.
+ *   • наименования запоминаются: в следующий раз то же самое предлагается
+ *     подсказкой, как цвет в карточке техники.
+ *   • новая статья заводится прямо в форме, не уходя в справочник.
+ *
+ * Править можно всё: строка открывается теми же полями, удаление мягкое —
+ * в тосте десять секунд живёт «Отменить».
  */
 
-const todayISO = (p: BillingPeriod): string => {
+const todayISO = (from: string, to: string): string => {
   const now = new Date();
-  const inside = now >= p.start && now < p.end;
-  const d = inside ? now : p.start;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return iso >= from && iso <= to ? iso : from;
 };
 
 const dayLabel = (iso: string): string => {
@@ -51,33 +58,41 @@ type Draft = {
 export function FinanceFlows({
   kind,
   entries,
+  allEntries,
   categories,
-  period,
-  periodKey,
+  bounds,
   payrollTotal,
 }: {
   kind: FinanceKind;
+  /** Движения выбранного периода. */
   entries: FinanceEntry[];
+  /** Все загруженные движения — из них берутся подсказки наименований. */
+  allEntries: FinanceEntry[];
   categories: FinanceCategory[];
-  period: BillingPeriod;
-  periodKey: string;
+  bounds: { from: string; to: string };
   payrollTotal: number;
 }) {
   const cats = categories.filter((c) => c.kind === kind);
   const rows = useMemo(
     () =>
       entries
-        .filter((e) => e.kind === kind && e.periodKey === periodKey)
+        .filter((e) => e.kind === kind)
         .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : b.id - a.id)),
-    [entries, kind, periodKey],
+    [entries, kind],
   );
   const total = rows.reduce((s, e) => s + e.amount, 0);
+  /** Что уже вписывали в этот вид движений — предложим при следующем вводе. */
+  const names = useMemo(
+    () => rankSuggestions(allEntries.filter((e) => e.kind === kind).map((e) => e.name)),
+    [allEntries, kind],
+  );
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const create = useCreateFinanceEntry();
   const update = useUpdateFinanceEntry();
   const del = useDeleteFinanceEntry();
   const restore = useRestoreFinanceEntry();
+  const addCategory = useCreateFinanceCategory();
 
   const word = kind === "income" ? "приход" : "расход";
 
@@ -86,7 +101,7 @@ export function FinanceFlows({
       categoryId: cats[0]?.id ?? null,
       name: "",
       amount: 0,
-      at: todayISO(period),
+      at: todayISO(bounds.from, bounds.to),
     });
 
   const save = async () => {
@@ -113,7 +128,10 @@ export function FinanceFlows({
         amount: draft.amount,
         at: draft.at,
       });
-      toast.success(kind === "income" ? "Приход внесён" : "Издержка внесена", `${name} · ${fmtMoney(draft.amount)}`);
+      toast.success(
+        kind === "income" ? "Приход внесён" : "Издержка внесена",
+        `${name} · ${fmtMoney(draft.amount)}`,
+      );
     }
     setDraft(null);
   };
@@ -139,9 +157,11 @@ export function FinanceFlows({
           : `Всего ${fmtMoney(total)}`
       }
       right={
-        <Btn tone="primary" onClick={startNew}>
-          <Plus size={16} /> Добавить
-        </Btn>
+        !draft && (
+          <Btn tone="primary" onClick={startNew}>
+            <Plus size={16} /> Добавить
+          </Btn>
+        )
       }
     >
       {draft && (
@@ -154,41 +174,28 @@ export function FinanceFlows({
               type="button"
               onClick={() => setDraft(null)}
               className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-2 hover:bg-white hover:text-ink"
+              title="Закрыть"
             >
               <X size={16} />
             </button>
           </div>
-          <div className="grid gap-2 sm:grid-cols-[130px_1fr_150px_140px]">
-            <Field label="Дата">
-              <DateInput
-                value={draft.at}
-                onChange={(e) => setDraft({ ...draft, at: e.target.value })}
-              />
-            </Field>
-            <Field label="Статья">
-              <Select
-                value={draft.categoryId ?? ""}
-                onChange={(e) =>
-                  setDraft({ ...draft, categoryId: e.target.value ? Number(e.target.value) : null })
-                }
-              >
-                <option value="">без статьи</option>
-                {cats.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+
+          {/* Наименование — самое широкое: его пишут руками. Дальше сумма,
+              дата и сразу кнопка, чтобы не вести мышь через всю форму. */}
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px_170px_auto]">
             <Field label="Наименование">
-              <TextInput
+              <SuggestInput
                 value={draft.name}
+                onValueChange={(v) => setDraft({ ...draft, name: v })}
+                suggestions={names}
                 autoFocus
+                touch
+                heading="Вписывали раньше"
                 placeholder={kind === "income" ? "Выручка аренды" : "Масло, свечи"}
-                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void save();
                 }}
+                className="h-11 w-full rounded-xl border border-border bg-white px-3 text-[14px] text-ink outline-none transition-colors placeholder:text-muted-2 focus:border-ink"
               />
             </Field>
             <Field label="Сумма">
@@ -198,14 +205,34 @@ export function FinanceFlows({
                 onEnter={() => void save()}
               />
             </Field>
+            <Field label="Дата">
+              <DatePicker
+                value={draft.at}
+                onChange={(v) => setDraft({ ...draft, at: v ?? draft.at })}
+                clearable={false}
+              />
+            </Field>
+            <div className="flex items-end gap-2">
+              <Btn tone="primary" onClick={() => void save()} className="flex-1 sm:flex-none">
+                <Check size={16} /> Сохранить
+              </Btn>
+            </div>
           </div>
-          <div className="mt-2.5 flex gap-2">
-            <Btn tone="primary" onClick={() => void save()} className="flex-1 sm:flex-none">
-              Сохранить
-            </Btn>
-            <Btn onClick={() => setDraft(null)} className="flex-1 sm:flex-none">
-              Отмена
-            </Btn>
+
+          <div className="mt-2.5">
+            <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+              Статья
+            </div>
+            <Chips
+              options={cats.map((c) => ({ id: c.id, label: c.name }))}
+              value={draft.categoryId}
+              onChange={(id) => setDraft({ ...draft, categoryId: id })}
+              onAdd={async (name) => {
+                const r = await addCategory.mutateAsync({ kind, name });
+                setDraft((d) => (d ? { ...d, categoryId: r.item.id } : d));
+                toast.success("Статья добавлена", name);
+              }}
+            />
           </div>
         </div>
       )}
@@ -228,7 +255,7 @@ export function FinanceFlows({
                 className="grid grid-cols-[52px_1fr_auto] items-center gap-2 rounded-xl border border-border bg-white px-3 py-2.5 sm:grid-cols-[64px_minmax(0,1fr)_210px_140px_auto]"
               >
                 <div className="text-[12px] font-semibold text-muted-2">{dayLabel(e.at)}</div>
-                <div className="min-w-0 sm:order-none">
+                <div className="min-w-0">
                   <div className="truncate text-[14px] font-semibold text-ink">{e.name}</div>
                   <div className="flex items-center gap-1.5 text-[11.5px] text-muted sm:hidden">
                     {cat?.name ?? "без статьи"}
@@ -240,7 +267,7 @@ export function FinanceFlows({
                   {e.source === "recurring" && (
                     <span
                       title="Постоянная издержка — появляется каждый период сама"
-                      className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10.5px] font-semibold text-blue-700"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10.5px] font-semibold text-blue-700"
                     >
                       <Repeat size={10} /> постоянная
                     </span>
@@ -248,7 +275,7 @@ export function FinanceFlows({
                 </div>
                 <div
                   className={cn(
-                    "text-right font-display text-[15px] font-bold tabular-nums",
+                    "whitespace-nowrap text-right font-display text-[15px] font-bold tabular-nums",
                     kind === "income" ? "text-emerald-700" : "text-ink",
                   )}
                 >

@@ -57,6 +57,8 @@ export type FinancePerson = {
   name: string;
   role: string | null;
   salaryDefault: number;
+  /** Процент с продаж сверх оклада. */
+  salesPct: number;
   active: boolean;
   sortOrder: number;
 };
@@ -67,7 +69,11 @@ export type FinancePayrollRow = {
   personId: number | null;
   personName: string;
   salary: number;
-  /** Процент с продаж за период — сумма сверх оклада. */
+  /** Продажи периода, с которых считается процент. */
+  salesBase: number;
+  /** Процент, действовавший в этом периоде. */
+  salesPct: number;
+  /** Премия: база × процент, но может быть вписана руками. */
   salesBonus: number;
   note: string | null;
 };
@@ -81,17 +87,39 @@ export function useFinanceCategories() {
   });
 }
 
+type EntriesResponse = {
+  items: FinanceEntry[];
+  periodKey: string;
+  periods: string[];
+  bounds: { from: string; to: string };
+};
+
 export function useFinanceEntries(periodKey: string | undefined, back = 13) {
   return useQuery({
     queryKey: [...KEY, "entries", periodKey, back],
     enabled: !!periodKey,
     queryFn: async () =>
-      await api.get<{
-        items: FinanceEntry[];
-        periodKey: string;
-        periods: string[];
-        bounds: { from: string; to: string };
-      }>(`/api/finance/entries?period=${periodKey}&back=${back}`),
+      await api.get<EntriesResponse>(`/api/finance/entries?period=${periodKey}&back=${back}`),
+  });
+}
+
+/** Свой диапазон дат — «посмотреть за своё», а не только за период. */
+export function useFinanceEntriesRange(from: string | undefined, to: string | undefined) {
+  return useQuery({
+    queryKey: [...KEY, "entries-range", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () =>
+      await api.get<EntriesResponse>(`/api/finance/entries?from=${from}&to=${to}`),
+  });
+}
+
+export function useFinancePayrollRange(from: string | undefined, to: string | undefined) {
+  return useQuery({
+    queryKey: [...KEY, "payroll-range", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () =>
+      (await api.get<{ items: FinancePayrollRow[] }>(`/api/finance/payroll?from=${from}&to=${to}`))
+        .items,
   });
 }
 
@@ -216,6 +244,7 @@ export type PersonInput = {
   name: string;
   role?: string | null;
   salaryDefault?: number;
+  salesPct?: number;
   active?: boolean;
 };
 
@@ -237,7 +266,17 @@ export function useDeleteFinancePerson() {
 
 export function useUpdateFinancePayroll() {
   return useFinanceMutation(
-    ({ id, ...body }: { id: number; salary?: number; salesBonus?: number; note?: string | null }) =>
+    ({
+      id,
+      ...body
+    }: {
+      id: number;
+      salary?: number;
+      salesBase?: number;
+      salesPct?: number;
+      salesBonus?: number;
+      note?: string | null;
+    }) =>
       api.patch<{ item: FinancePayrollRow }>(`/api/finance/payroll/${id}`, body),
   );
 }

@@ -772,10 +772,13 @@ function ScooterNumberTitle({
   name,
   model,
   size = "md",
+  electric = false,
 }: {
   name: string;
   model: string;
   size?: "sm" | "md";
+  /** Ряд номера: у электро кружок зелёный (правки 7.0, п.5). */
+  electric?: boolean;
 }) {
   const m = name.match(/#\s*(\d+)/);
   const num = m ? m[1] : null;
@@ -789,7 +792,8 @@ function ScooterNumberTitle({
       {num != null && (
         <span
           className={cn(
-            "inline-flex shrink-0 items-center justify-center rounded-full bg-ink px-1.5 font-display font-bold tabular-nums text-white",
+            "inline-flex shrink-0 items-center justify-center rounded-full px-1.5 font-display font-bold tabular-nums text-white",
+            electric ? "bg-green-600" : "bg-ink",
             dot,
           )}
         >
@@ -886,7 +890,12 @@ function ScooterHorizontalRow({
 
       {/* Метаданные справа */}
       <div className="flex-1 min-w-0">
-        <ScooterNumberTitle name={displayName} model={displayModel} size="md" />
+        <ScooterNumberTitle
+          name={displayName}
+          model={displayModel}
+          size="md"
+          electric={scooter?.slotPool === "electric"}
+        />
         {scooter && (
           <div className="mt-2 text-[12px] text-muted">
             Пробег:{" "}
@@ -1024,7 +1033,12 @@ function ScooterCompact({
       )}
       {/* Метаданные — СЛЕВА (текст) */}
       <div className="relative z-10 flex-1 min-w-0">
-        <ScooterNumberTitle name={displayName} model={displayModel} size="sm" />
+        <ScooterNumberTitle
+          name={displayName}
+          model={displayModel}
+          size="sm"
+          electric={scooter?.slotPool === "electric"}
+        />
         {scooter && (
           <div className="mt-1.5 text-[11.5px] text-muted">
             Пробег{" "}

@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { periodFor } from "@/lib/billingPeriod";
 import type { FinanceCategory, FinanceEntry } from "@/lib/api/finance";
 import { fmtMoney, type FinanceTab } from "./Finance";
 import { EmptyHint, SectionCard } from "./ui";
@@ -26,29 +25,28 @@ const short = (key: string): string => {
 
 export function FinanceOverview({
   entries,
+  prevEntries,
   categories,
-  periodKey,
   periods,
   payrollTotal,
+  payrollByPeriod = {},
   onOpenTab,
 }: {
+  /** Движения выбранного отрезка. */
   entries: FinanceEntry[];
+  /** Такой же по длине отрезок перед ним — для стрелок «стало больше/меньше». */
+  prevEntries: FinanceEntry[];
   categories: FinanceCategory[];
-  periodKey: string;
   periods: string[];
   payrollTotal: number;
+  /** ФОТ по периодам — чтобы столбик расхода совпадал с плиткой. */
+  payrollByPeriod?: Record<string, number>;
   onOpenTab: (t: FinanceTab) => void;
 }) {
-  const prevKey = useMemo(() => {
-    const [y, m, d] = periodKey.split("-").map(Number);
-    const start = new Date(y!, (m ?? 1) - 1, d ?? 1);
-    return keyOf(periodFor(new Date(start.getTime() - 86_400_000)).start);
-  }, [periodKey]);
-
-  const byCat = (kind: "income" | "expense", key: string) => {
+  const byCat = (kind: "income" | "expense", list: FinanceEntry[]) => {
     const rows = new Map<string, { name: string; sum: number; fixed: boolean }>();
-    for (const e of entries) {
-      if (e.kind !== kind || e.periodKey !== key) continue;
+    for (const e of list) {
+      if (e.kind !== kind) continue;
       const cat = categories.find((c) => c.id === e.categoryId);
       const name = cat?.name ?? "Без статьи";
       const cur = rows.get(name) ?? { name, sum: 0, fixed: cat?.fixed ?? false };
@@ -58,10 +56,10 @@ export function FinanceOverview({
     return [...rows.values()].sort((a, b) => b.sum - a.sum);
   };
 
-  const income = byCat("income", periodKey);
-  const incomePrev = byCat("income", prevKey);
-  const expense = byCat("expense", periodKey);
-  const expensePrev = byCat("expense", prevKey);
+  const income = byCat("income", entries);
+  const incomePrev = byCat("income", prevEntries);
+  const expense = byCat("expense", entries);
+  const expensePrev = byCat("expense", prevEntries);
   if (payrollTotal > 0) expense.unshift({ name: "ФОТ", sum: payrollTotal, fixed: true });
 
   const incomeSum = income.reduce((s, r) => s + r.sum, 0);
@@ -78,9 +76,9 @@ export function FinanceOverview({
       const exp = entries
         .filter((e) => e.kind === "expense" && e.periodKey === k)
         .reduce((s, e) => s + e.amount, 0);
-      return { key: k, inc, exp: exp + (k === periodKey ? payrollTotal : 0) };
+      return { key: k, inc, exp: exp + (payrollByPeriod[k] ?? 0) };
     });
-  }, [entries, periods, periodKey, payrollTotal]);
+  }, [entries, periods, payrollByPeriod]);
   const chartMax = Math.max(1, ...chart.map((c) => Math.max(c.inc, c.exp)));
   // Один период — сравнивать не с чем, столбики только занимают место.
   const hasHistory = chart.filter((c) => c.inc > 0 || c.exp > 0).length >= 2;
@@ -115,7 +113,7 @@ export function FinanceOverview({
                 <div
                   className={cn(
                     "text-[11px] font-semibold",
-                    c.key === periodKey ? "text-ink" : "text-muted-2",
+                    c.key === periods[0] ? "text-ink" : "text-muted-2",
                   )}
                 >
                   {short(c.key)}
@@ -160,10 +158,6 @@ export function FinanceOverview({
       </div>
     </div>
   );
-}
-
-function keyOf(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function Breakdown({
