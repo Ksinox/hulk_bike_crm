@@ -225,7 +225,7 @@ export function FinanceFlows({
             return (
               <div
                 key={e.id}
-                className="grid grid-cols-[52px_1fr_auto] items-center gap-2 rounded-xl border border-border bg-white px-3 py-2.5 sm:grid-cols-[64px_180px_1fr_auto_auto]"
+                className="grid grid-cols-[52px_1fr_auto] items-center gap-2 rounded-xl border border-border bg-white px-3 py-2.5 sm:grid-cols-[64px_minmax(0,1fr)_210px_140px_auto]"
               >
                 <div className="text-[12px] font-semibold text-muted-2">{dayLabel(e.at)}</div>
                 <div className="min-w-0 sm:order-none">
