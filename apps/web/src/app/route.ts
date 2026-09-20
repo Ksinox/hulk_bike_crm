@@ -15,6 +15,8 @@ export type RouteId =
   | "incidents"
   | "tasks"
   | "analytics"
+  // Блок «Финансы» (20.09): приход, расход, прибыль. Виден по праву.
+  | "finance"
   | "docs"
   | "staff"
   | "storage"

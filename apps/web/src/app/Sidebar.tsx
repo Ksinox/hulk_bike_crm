@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   FileText,
   Home,
+  Landmark,
   LogOut,
   Receipt,
   Scale,
@@ -27,6 +28,7 @@ import { UpdateBanner, useDesktopUpdate } from "./UpdateBanner";
 import { isElectron } from "@/platform";
 import type { RouteId } from "./route";
 import { useMe } from "@/lib/api/auth";
+import { usePerms } from "@/lib/permissions";
 import { useUnreadChangelog } from "@/pages/whats-new/useUnreadChangelog";
 import { countFreshProgress } from "@/pages/progress/useFreshProgress";
 import { useApplications } from "@/lib/api/clientApplications";
@@ -38,7 +40,7 @@ type NavItem = {
   ready?: boolean;
 };
 
-function buildMainItems(canManageStaff: boolean): NavItem[] {
+function buildMainItems(canManageStaff: boolean, canFinance: boolean): NavItem[] {
   /**
    * Правка 31.08 (заказчик): порядок — по тому, как разделом пользуются.
    *
@@ -71,6 +73,10 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
   // Разделы «скоро» — всегда в конце списка.
   // Аналитика открыта с 06.09 — доска показателей и экран на второй монитор.
   items.push({ id: "analytics", label: "Аналитика", icon: BarChart3, ready: true });
+  // «Финансы» (20.09) — деньги организации. Нет права — пункта нет вовсе.
+  if (canFinance) {
+    items.push({ id: "finance", label: "Финансы", icon: Landmark, ready: true });
+  }
   items.push(
     { id: "incidents", label: "Инциденты", icon: CircleAlert },
     { id: "tasks", label: "Задачи", icon: ClipboardCheck },
@@ -104,7 +110,8 @@ export function Sidebar({
   const { phase, version } = useDesktopUpdate();
   const { data: me } = useMe();
   const canManageStaff = me?.role === "creator" || me?.role === "director";
-  const mainItems = buildMainItems(canManageStaff);
+  const perms = usePerms();
+  const mainItems = buildMainItems(canManageStaff, perms["data.finance"]);
   // 15.09: метка «новое» у новых разделов релиза (7 дней или до первого захода).
   const isNewSection = useNewSections();
   const { unreadCount: changelogUnread } = useUnreadChangelog();

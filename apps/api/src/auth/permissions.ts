@@ -24,6 +24,11 @@ export const PERMISSIONS = {
     label: "Доли партнёров",
     byDefault: false,
   },
+  /** Блок «Финансы» (20.09): приход, расход, прибыль, ФОТ. */
+  "data.finance": {
+    label: "Финансы: приход, расход, прибыль",
+    byDefault: false,
+  },
 } as const;
 
 export type PermissionKey = keyof typeof PERMISSIONS;

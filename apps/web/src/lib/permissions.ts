@@ -10,7 +10,11 @@ import { useMe, type AuthUser } from "@/lib/api/auth";
  * Список — зеркало apps/api/src/auth/permissions.ts. Новое право:
  * строка там (ключ и умолчание) и строка здесь (подписи для директора).
  */
-export type PermissionKey = "data.profit" | "data.repairProfit" | "data.partnerShares";
+export type PermissionKey =
+  | "data.profit"
+  | "data.repairProfit"
+  | "data.partnerShares"
+  | "data.finance";
 
 export type PermissionDef = {
   key: PermissionKey;
@@ -38,6 +42,13 @@ export const PERMISSION_DEFS: PermissionDef[] = [
     key: "data.partnerShares",
     label: "Доли партнёров",
     where: "Партнёрка: инвесторы, их процент и начисления · доля партнёра в карточке скутера",
+    byDefault: false,
+  },
+  {
+    key: "data.finance",
+    label: "Финансы: приход, расход, прибыль",
+    where:
+      "Раздел «Финансы»: приход и расход по статьям, постоянные издержки, ФОТ, прибыль за период. Нет права — раздела в меню нет.",
     byDefault: false,
   },
 ];

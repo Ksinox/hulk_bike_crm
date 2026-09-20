@@ -40,6 +40,8 @@ export type ActivityEntity =
   | "service_order"
   // Правки 7.0: механики сторонних ремонтов.
   | "service_mechanic"
+  // Блок «Финансы» (20.09): статьи, движения денег, постоянные издержки, ФОТ.
+  | "finance"
   | "settings";
 
 /**

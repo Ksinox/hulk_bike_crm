@@ -30,6 +30,7 @@ import { Documents } from "@/pages/documents/Documents";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { Partners } from "@/pages/partners/Partners";
 import { Sales } from "@/pages/sales/Sales";
+import { Finance } from "@/pages/finance/Finance";
 import { Analytics } from "@/pages/analytics/Analytics";
 import { Buyout } from "@/pages/buyout/Buyout";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
@@ -243,6 +244,14 @@ function MobilePage({
     case "settings":
     case "storage":
       return <MobileSettings />;
+    case "finance":
+      // Блок «Финансы» (20.09) свёрстан адаптивно: на телефоне те же данные
+      // карточками, вкладки прокручиваются вбок.
+      return (
+        <div className="px-1 pb-4">
+          <Finance embedded />
+        </div>
+      );
     case "docs":
       // Паритет (20.09): шаблоны и прейскурант правятся и с телефона.
       return (

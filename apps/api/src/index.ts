@@ -20,6 +20,7 @@ import { authRoutes } from "./routes/auth.js";
 import { usersRoutes } from "./routes/users.js";
 import { approvalsRoutes } from "./routes/approvals.js";
 import { scooterModelsRoutes } from "./routes/scooter-models.js";
+import { financeRoutes } from "./routes/finance.js";
 import { equipmentRoutes } from "./routes/equipment.js";
 import { scooterMaintenanceRoutes } from "./routes/scooter-maintenance.js";
 import { activityRoutes } from "./routes/activity.js";
@@ -212,6 +213,7 @@ async function bootstrap() {
     // Блок «Продажи» (31.08): сделки, менеджеры, план, договор купли-продажи
     const { salesRoutes } = await import("./routes/sales.js");
     await protectedApp.register(salesRoutes, { prefix: "/api/sales" });
+    await protectedApp.register(financeRoutes, { prefix: "/api/finance" });
     // Блок «Аренда с выкупом» (01.09): сделки, график платежей, договор
     const { buyoutRoutes } = await import("./routes/buyout.js");
     await protectedApp.register(buyoutRoutes, { prefix: "/api/buyout" });

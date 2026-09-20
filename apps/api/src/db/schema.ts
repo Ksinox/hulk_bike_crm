@@ -2696,3 +2696,114 @@ export const serviceOrderItemsRelations = relations(serviceOrderItems, ({ one })
     references: [serviceOrders.id],
   }),
 }));
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Блок «Финансы» (20.09) — форма ДДС.
+ *
+ * Изолирован от аренд, ремонтов и продаж: суммы вносятся руками, чтобы
+ * цифры блока не спорили с операционным учётом. Период — общий расчётный
+ * период CRM; ключ периода (`periodKey`) — дата его первого дня.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+export const financeCategories = pgTable("finance_categories", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  /** income — приход, expense — расход. */
+  kind: text("kind").notNull(),
+  name: text("name").notNull(),
+  /** Постоянная статья: аренда помещения, связь, коммунальные. */
+  fixed: boolean("fixed").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Постоянная издержка: шаблон, который повторяется в каждом периоде. */
+export const financeRecurring = pgTable("finance_recurring", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  kind: text("kind").notNull().default("expense"),
+  categoryId: bigint("category_id", { mode: "number" }),
+  name: text("name").notNull(),
+  amount: integer("amount").notNull().default(0),
+  /** Ключ периода, с которого шаблон действует. */
+  startPeriod: text("start_period").notNull(),
+  active: boolean("active").notNull().default(true),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+});
+
+export const financeEntries = pgTable(
+  "finance_entries",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    kind: text("kind").notNull(),
+    categoryId: bigint("category_id", { mode: "number" }),
+    name: text("name").notNull(),
+    amount: integer("amount").notNull().default(0),
+    at: date("at").notNull(),
+    periodKey: text("period_key").notNull(),
+    /** manual — внесли руками, recurring — создано из постоянной издержки. */
+    source: text("source").notNull().default("manual"),
+    recurringId: bigint("recurring_id", { mode: "number" }),
+    note: text("note"),
+    createdBy: bigint("created_by", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => ({
+    periodIdx: index("finance_entries_period_idx").on(t.periodKey),
+  }),
+);
+
+/** Человек в ФОТ. Это не учётка CRM: у механика и подсобника логина нет. */
+export const financePeople = pgTable("finance_people", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  name: text("name").notNull(),
+  role: text("role"),
+  salaryDefault: integer("salary_default").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+});
+
+/** ФОТ за период: оклад + процент с продаж. */
+export const financePayroll = pgTable(
+  "finance_payroll",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    periodKey: text("period_key").notNull(),
+    personId: bigint("person_id", { mode: "number" }),
+    /** Имя на момент периода — переименование не переписывает прошлое. */
+    personName: text("person_name").notNull(),
+    salary: integer("salary").notNull().default(0),
+    salesBonus: integer("sales_bonus").notNull().default(0),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    periodPersonUq: uniqueIndex("finance_payroll_period_person_uq").on(
+      t.periodKey,
+      t.personId,
+    ),
+  }),
+);

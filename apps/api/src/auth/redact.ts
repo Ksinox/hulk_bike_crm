@@ -54,6 +54,8 @@ const DENY_RULES: { prefix: string; perm: PermissionKey }[] = [
   // Карточка инвестора, начисления и выплаты — целиком про доли.
   { prefix: "/api/investors/", perm: "data.partnerShares" },
   { prefix: "/api/scooters/partner-share", perm: "data.partnerShares" },
+  // Блок «Финансы» (20.09) — целиком про деньги организации.
+  { prefix: "/api/finance/", perm: "data.finance" },
 ];
 
 /** Ключи в meta журнала и фрагменты текста, которые выдают закрытые числа. */
@@ -61,6 +63,8 @@ const JOURNAL_META_KEYS: Record<PermissionKey, string[]> = {
   "data.profit": ["purchasePrice", "profit", "marginPct", "commission", "commissionPct", "managerCommission", "managerCommissionPct"],
   "data.repairProfit": ["cost", "profit", "mechanicShare", "ourProfit", "mechanicPercent"],
   "data.partnerShares": ["partnerShare", "share", "accrued"],
+  // Блок «Финансы»: суммы прихода/расхода и ФОТ.
+  "data.finance": ["amount", "salary", "salesBonus", "income", "expense"],
 };
 /**
  * Текст записи журнала собран из фрагментов через « · ». Фрагмент про
