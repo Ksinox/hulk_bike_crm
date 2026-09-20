@@ -82,7 +82,8 @@ export function FinanceOverview({
     });
   }, [entries, periods, periodKey, payrollTotal]);
   const chartMax = Math.max(1, ...chart.map((c) => Math.max(c.inc, c.exp)));
-  const hasHistory = chart.some((c) => c.inc > 0 || c.exp > 0);
+  // Один период — сравнивать не с чем, столбики только занимают место.
+  const hasHistory = chart.filter((c) => c.inc > 0 || c.exp > 0).length >= 2;
 
   if (incomeSum === 0 && expenseSum === 0) {
     return (

@@ -72,8 +72,13 @@ export async function run(page, ctx) {
     }));
   const text = (n = 220) => page.evaluate((n) => document.body.innerText.replace(/\s+/g, " ").slice(0, n), n);
 
-  // раздел в меню
-  const opened = await click(/^Финансы$/);
+  // раздел в меню (на узком экране — через «Ещё»)
+  let opened = await click(/^Финансы$/);
+  if (!opened) {
+    await click(/^Ещё$/);
+    await ctx.sleep(1000);
+    opened = await click(/^Финансы$/);
+  }
   console.log("пункт меню:", opened);
   await ctx.sleep(2500);
   console.log("экран:", await text(160), "|", JSON.stringify(await overflow()));
@@ -91,6 +96,7 @@ export async function run(page, ctx) {
   await type('input[placeholder="Выручка аренды"]', "ТЕСТ выручка аренды");
   await page.evaluate(() => {
     const el = [...document.querySelectorAll("input")].find((i) => i.inputMode === "numeric");
+    if (!el) return;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
     setter.call(el, "612400");
     el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -107,6 +113,7 @@ export async function run(page, ctx) {
   await ctx.sleep(900);
   await page.evaluate(() => {
     const el = [...document.querySelectorAll("input")].find((i) => i.inputMode === "numeric");
+    if (!el) return;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
     setter.call(el, "598000");
     el.dispatchEvent(new Event("input", { bubbles: true }));

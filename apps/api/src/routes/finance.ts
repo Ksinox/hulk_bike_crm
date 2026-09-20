@@ -571,11 +571,19 @@ export async function financeRoutes(app: FastifyInstance) {
       .update(financePeople)
       .set({ archivedAt: new Date(), active: false })
       .where(eq(financePeople.id, id));
+    // Человека убрали — в текущем и будущих периодах его в ФОТ быть не должно,
+    // иначе расход продолжает считать зарплату уволенному. Прошлые периоды не
+    // трогаем: там деньги уже были выплачены.
+    const a = await anchors();
+    const cur = keyOf(new Date(), a);
+    await db
+      .delete(financePayroll)
+      .where(and(eq(financePayroll.personId, id), gte(financePayroll.periodKey, cur)));
     await logActivity(req, {
       entity: "finance",
       entityId: id,
       action: "deleted",
-      summary: `Финансы, ФОТ: ${before.name} убран из списка (прошлые месяцы остались)`,
+      summary: `Финансы, ФОТ: ${before.name} убран из списка (прошлые периоды остались как были)`,
     });
     return { ok: true };
   });
