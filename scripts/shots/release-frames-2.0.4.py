@@ -84,6 +84,10 @@ square("v204-sale-edit-now", (855, 140, 1430, 700), "d-deal-now")
 phone_crop("v204-job-m-was", (0, 60, 780, 900), "m-job-was")
 phone_crop("v204-job-m-now", (0, 60, 780, 900), "m-job-now")
 
+# ── 8б. Паритет: дело должника с телефона ──
+phone_crop("v204-debtors-m-was", (0, 60, 780, 900), "m-parity-was")
+phone_crop("v204-debtor-case-m-now", (0, 60, 780, 900), "m-parity-now")
+
 # ── 9. Планшет: родная клавиатура (кадры 820×1180) ──
 phone_crop("v204-pad-port-was", (0, 380, 820, 1180), "m-pad-was")
 phone_crop("v204-pad-port-now", (0, 0, 820, 800), "m-pad-now")

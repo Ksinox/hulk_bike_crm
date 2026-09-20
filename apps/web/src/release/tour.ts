@@ -918,7 +918,7 @@ const RELEASE_2_0_4: ReleaseTourConfig = {
       kind: "changed",
       title: "Всё то же — с телефона",
       route: "service",
-      headline: "Ремонт, дело должника, прейскурант, модели и архив — теперь и с телефона.",
+      headline: "Дело должника, ремонт, прейскурант, модели и архив — теперь и с телефона.",
       why: "Часть работы упиралась в компьютер: карточка ремонта на телефоне была только для чтения, дело должника и справочники — тоже.",
       points: [
         "Ремонт: отметки, заметка, фото с камеры, «Готов к аренде»",
@@ -927,10 +927,10 @@ const RELEASE_2_0_4: ReleaseTourConfig = {
       ],
       audience: "all",
       devices: ["phone"],
-      before: { phone: `${R204}/m-job-was.jpg` },
-      img: { phone: `${R204}/m-job-now.jpg` },
+      before: { phone: `${R204}/m-parity-was.jpg` },
+      img: { phone: `${R204}/m-parity-now.jpg` },
       zoom: {
-        phone: { before: `${P}/v204-job-m-was.jpg`, after: `${P}/v204-job-m-now.jpg` },
+        phone: { before: `${P}/v204-debtors-m-was.jpg`, after: `${P}/v204-debtor-case-m-now.jpg` },
       },
       imgPos: { phone: "center top" },
     },
