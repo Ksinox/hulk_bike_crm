@@ -10,10 +10,11 @@ import { currentBillingPeriod } from "@/lib/billingPeriod";
  * "с опережением"? Непонятно. Это вообще не надо». Поэтому теперь только
  * честный процент от плана и один критерий цвета.
  *
- * Правки 7.0 (19.09, п.12) — геймификация, пороги заказчика:
- *   • red    — меньше 33% плана;
- *   • orange — от 33 до 50% (между «красным» и «жёлтым» заказчик порога
- *              не назвал — промежуточный оранжевый);
+ * Правки 7.0 (19.09, п.12) — геймификация, пороги ровно как в задании
+ * заказчика (20.09: «нет, надо так, как сказано в ТЗ» — промежуточный
+ * оранжевый убран, цветов три):
+ *   • red    — меньше 50% плана (в ТЗ «меньше 33 — красный», жёлтый
+ *              начинается только с 50, поэтому до 50 остаётся красный);
  *   • yellow — от 50%;
  *   • green  — от 90%;
  *   • done   — план выполнен (100%+): зелёный + галочка.
@@ -36,12 +37,12 @@ export function planTail(display: string, planText: string): string {
   return tail;
 }
 
-export type PlanStatus = "red" | "orange" | "yellow" | "green" | "done";
+export type PlanStatus = "red" | "yellow" | "green" | "done";
 
 /** Порог «идём нормально» (советы, гейдж): половина плана. */
 export const GOOD_FROM_PCT = 50;
-/** Пороги цвета (правки 7.0). */
-export const RED_BELOW_PCT = 33;
+/** Пороги цвета (правки 7.0): красный до 50, жёлтый от 50, зелёный от 90. */
+export const RED_BELOW_PCT = GOOD_FROM_PCT;
 export const GREEN_FROM_PCT = 90;
 
 export type PlanState = {
@@ -66,9 +67,7 @@ export function planState(
         ? "green"
         : pct >= GOOD_FROM_PCT
           ? "yellow"
-          : pct >= RED_BELOW_PCT
-            ? "orange"
-            : "red";
+          : "red";
   return { pct, status, done: pct >= 100 };
 }
 
@@ -102,7 +101,7 @@ function clamp01(v: number): number {
   return Math.min(1, Math.max(0.02, v));
 }
 
-/** Палитра: красный → оранжевый → жёлтый → зелёный; выполнено — зелёный. */
+/** Палитра: красный → жёлтый → зелёный; выполнено — зелёный. */
 export const STATUS_UI: Record<
   PlanStatus,
   {
@@ -145,16 +144,6 @@ export const STATUS_UI: Record<
     chipWall: "bg-amber-300/20 text-amber-100",
     hex: "#F59E0B",
     hexWall: "#FCD34D",
-  },
-  orange: {
-    ink: "text-orange-700",
-    inkWall: "text-orange-300",
-    bar: "bg-orange-500",
-    barWall: "bg-orange-400",
-    chip: "bg-orange-500/15 text-orange-900",
-    chipWall: "bg-orange-400/20 text-orange-100",
-    hex: "#EA580C",
-    hexWall: "#F97316",
   },
   red: {
     ink: "text-red-600",
