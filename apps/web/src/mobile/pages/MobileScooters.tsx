@@ -514,7 +514,7 @@ function ScooterTile({
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-display text-[15px] font-bold text-ink">
+          <div className="flex min-w-0 font-display text-[15px] font-bold text-ink">
             <ScooterName
               name={scooter.name}
               number={scooter.rentalSlot ?? undefined}

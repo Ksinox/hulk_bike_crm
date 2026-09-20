@@ -74,8 +74,8 @@ export function ScooterName({
   const poolOf = useSlotPoolOf();
   const model = scooterModelName(name);
   return (
-    <span className={cn("inline-flex items-center gap-1.5", className)}>
-      <span>{model}</span>
+    <span className={cn("inline-flex min-w-0 max-w-full items-center gap-1.5", className)}>
+      <span className="truncate">{model}</span>
       <ScooterNumberBadge
         number={number ?? null}
         size={size}
