@@ -272,12 +272,12 @@ export function MobileScooters() {
       {modelChips.length > 0 && (
         <MobileChips options={modelChips} value={modelFilter} onChange={setModelFilter} />
       )}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 tab:flex-wrap">
         <button
           type="button"
           onClick={() => setBatchesOpen(true)}
           data-tour="batches-m"
-          className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-surface px-3 text-[13.5px] font-semibold text-ink shadow-card-sm"
+          className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-surface px-3 text-[13.5px] font-semibold text-ink shadow-card-sm tab:flex-none tab:px-5"
           title="Сводка по партиям техники"
         >
           <Layers size={16} /> Партии
@@ -285,7 +285,7 @@ export function MobileScooters() {
         <button
           type="button"
           onClick={() => setJournalOpen(true)}
-          className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-surface px-3 text-[13.5px] font-semibold text-ink shadow-card-sm"
+          className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-surface px-3 text-[13.5px] font-semibold text-ink shadow-card-sm tab:flex-none tab:px-5"
           title="Журнал действий с техникой"
         >
           <ScrollText size={16} /> Журнал
@@ -301,8 +301,9 @@ export function MobileScooters() {
         </button>
       </div>
 
-      {/* Паритет (20.09): модели, экипировка и архив — с телефона тоже. */}
-      <div className="flex items-center gap-2">
+      {/* Паритет (20.09): модели, экипировка и архив — с телефона тоже.
+          Планшет: кнопки по содержимому, а не во всю ширину. */}
+      <div className="flex items-center gap-2 tab:-mt-1">
         {(
           [
             { id: "models" as const, label: "Модели", icon: Tag },
@@ -316,7 +317,7 @@ export function MobileScooters() {
               key={c.id}
               type="button"
               onClick={() => setCatalog(c.id)}
-              className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-surface px-2 text-[13px] font-semibold text-ink shadow-card-sm"
+              className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-surface px-2 text-[13px] font-semibold text-ink shadow-card-sm tab:flex-none tab:px-5"
             >
               <Icon size={15} /> {c.label}
             </button>
@@ -367,7 +368,7 @@ export function MobileScooters() {
           hint={search ? "Ничего не нашлось" : "В этом фильтре пусто"}
         />
       ) : (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2 tab:grid-cols-3 tab:gap-3 tabw:grid-cols-4">
           {filtered.map((s) => (
             <ScooterTile
               key={s.id}

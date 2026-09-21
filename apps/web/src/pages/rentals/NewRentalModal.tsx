@@ -31,7 +31,8 @@ import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
 import { useApiEquipment } from "@/lib/api/equipment";
 import { DatePicker } from "@/components/ui/date-picker";
-import { useIsMobile } from "@/lib/useIsMobile";
+import { useIsMobile, useTabletLayout } from "@/lib/useIsMobile";
+import { TABLET_DIALOG_OVERLAY, TABLET_DIALOG_PANEL } from "@/mobile/tablet";
 import { ChevronLeft, ArrowRight } from "lucide-react";
 import { ScooterName } from "@/components/ScooterName";
 
@@ -129,6 +130,24 @@ export function NewRentalModal({
   // Мобильный мастер: форма разбивается на 4 шага (Клиент → Скутер →
   // Срок и тариф → Экипировка/залог/оплата). На десктопе все блоки сразу.
   const isMobile = useIsMobile();
+  /**
+   * Планшет: мастер во весь экран. Шагов здесь НЕ делаем — на 1180px все
+   * четыре блока встают в две колонки и видны разом, как на компьютере.
+   * Пошаговый режим (stepMode) остаётся телефону, где иначе не помещается.
+   */
+  const tabletLayout = useTabletLayout();
+  const stepMode = isMobile && !tabletLayout;
+  /** Планшет: каждый блок прокручивается сам, окно целиком — никогда. */
+  // shrink-0: в прокручиваемой колонке блок не должен ужиматься под
+  // соседа — иначе содержимое наезжает на следующий блок.
+  const sectionCls = tabletLayout ? "shrink-0" : undefined;
+  /**
+   * Планшет: две колонки по два блока. `display:contents` на компьютере и
+   * телефоне делает обёртку невидимой для раскладки — разметка там прежняя.
+   */
+  const colCls = tabletLayout
+    ? "scrollbar-thin flex min-h-0 flex-col pr-1 landscape:overflow-y-auto"
+    : "contents";
   const [step, setStep] = useState(1);
 
   const [clientId, setClientId] = useState<number | null>(
@@ -603,6 +622,7 @@ export function NewRentalModal({
     <div
       className={cn(
         "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto overflow-x-hidden bg-ink/55 p-0 backdrop-blur-sm sm:p-6",
+        tabletLayout && TABLET_DIALOG_OVERLAY,
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
@@ -610,6 +630,7 @@ export function NewRentalModal({
         className={cn(
           // Мобайл: полноэкранно (min-h-100dvh, без скруглений). Десктоп: карточка 780.
           "min-h-[100dvh] w-full overflow-hidden bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[780px] sm:rounded-2xl",
+          tabletLayout && TABLET_DIALOG_PANEL,
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -633,8 +654,13 @@ export function NewRentalModal({
         </div>
 
         {/* Мобильный прогресс шагов мастера */}
-        {isMobile && (
-          <div className="flex items-center gap-2 border-b border-border bg-surface px-4 py-2.5">
+        {stepMode && (
+          <div
+            className={cn(
+              "flex items-center gap-2 border-b border-border bg-surface px-4 py-2.5",
+              tabletLayout && "px-7 py-3",
+            )}
+          >
             {STEP_TITLES.map((t, i) => {
               const n = i + 1;
               const done = n < step;
@@ -663,9 +689,23 @@ export function NewRentalModal({
           </div>
         )}
 
-        <div className="max-h-[calc(100vh-220px)] overflow-y-auto px-5 py-4 sm:max-h-[calc(100vh-220px)]">
+        <div
+          className={cn(
+            "max-h-[calc(100vh-220px)] overflow-y-auto px-5 py-4 sm:max-h-[calc(100vh-220px)]",
+            // Планшет: тело занимает всё, что осталось между шапкой и кнопками.
+            // Планшет: всё содержимое в две колонки, без прокрутки.
+            // Планшет лёжа: четыре блока = четыре клетки, каждая со своей
+            // прокруткой — окно целиком не едет. Стоя высоты хватает на всё,
+            // поэтому блоки идут как есть, а прокручивается само тело.
+            // Планшет лёжа: две колонки, каждая прокручивается сама — окно
+            // целиком не едет. Стоя высоты хватает, прокручивается тело.
+            tabletLayout &&
+              "grid min-h-0 flex-1 grid-cols-2 gap-x-7 !max-h-none px-7 py-5 landscape:overflow-hidden portrait:content-start portrait:overflow-y-auto",
+          )}
+        >
           {/* 1 Клиент */}
-          <Section num={1} title="Клиент" mobile={isMobile} current={step}>
+          <div className={colCls}>
+          <Section num={1} title="Клиент" mobile={stepMode} current={step} className={sectionCls}>
             {client ? (
               <ClientChip
                 client={client}
@@ -681,6 +721,7 @@ export function NewRentalModal({
                 clients={filteredClients}
                 onPick={(id) => setClientId(id)}
                 onNew={() => setNewClientOpen(true)}
+                tablet={tabletLayout}
               />
             ) : (
               <div className="flex flex-col gap-2">
@@ -787,7 +828,7 @@ export function NewRentalModal({
           </Section>
 
           {/* 2 Скутер */}
-          <Section num={2} title="Скутер" mobile={isMobile} current={step}>
+          <Section num={2} title="Скутер" mobile={stepMode} current={step} className={sectionCls}>
             {scooterName ? (
               <button
                 type="button"
@@ -818,6 +859,7 @@ export function NewRentalModal({
                 power={powerFilter}
                 onPower={hasBothPower ? setPowerFilter : undefined}
                 onPick={(name) => setScooterName(name)}
+                tablet={tabletLayout}
               />
             ) : (
               <>
@@ -912,7 +954,7 @@ export function NewRentalModal({
           </Section>
 
           {/* 3 Срок и тариф */}
-          <Section num={3} title="Срок и тариф" mobile={isMobile} current={step}>
+          <Section num={3} title="Срок и тариф" mobile={stepMode} current={step} className={sectionCls}>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <label className="text-[12px] font-semibold text-ink">
                 Дата выдачи
@@ -1125,9 +1167,11 @@ export function NewRentalModal({
               </div>
             )}
           </Section>
+          </div>
+          <div className={colCls}>
 
           {/* 4 Экипировка + залог + оплата */}
-          <Section num={4} title="Экипировка, залог и оплата" mobile={isMobile} current={step}>
+          <Section num={4} title="Экипировка, залог и оплата" mobile={stepMode} current={step} className={sectionCls}>
             <div>
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
                 Выданная экипировка {equipmentExtra > 0 && (
@@ -1383,15 +1427,26 @@ export function NewRentalModal({
               />
             )}
           </Section>
+          </div>
         </div>
 
-        {isMobile ? (
+        {stepMode ? (
           /* Мобильный футер мастера: Назад · Далее (последний шаг — Создать). */
-          <div className="flex items-center gap-2 border-t border-border bg-surface px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
+          <div
+            className={cn(
+              "flex items-center gap-2 border-t border-border bg-surface px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]",
+              // Планшет: действия прижаты вправо, как в компьютерных мастерах,
+              // и крупные — кнопка на всю ширину 1180px выглядит нелепо.
+              tabletLayout && "justify-end gap-3 px-7 py-4",
+            )}
+          >
             <button
               type="button"
               onClick={() => (step === 1 ? requestClose() : setStep((s) => s - 1))}
-              className="flex min-h-[48px] items-center justify-center gap-1 rounded-xl border border-border px-4 text-[14px] font-semibold text-muted active:bg-surface-soft"
+              className={cn(
+                "flex min-h-[48px] items-center justify-center gap-1 rounded-xl border border-border px-4 text-[14px] font-semibold text-muted active:bg-surface-soft",
+                tabletLayout && "h-14 min-w-[170px] text-[15px]",
+              )}
             >
               <ChevronLeft size={18} />
               {step === 1 ? "Отмена" : "Назад"}
@@ -1403,6 +1458,7 @@ export function NewRentalModal({
                 onClick={() => canAdvanceStep(step) && setStep((s) => s + 1)}
                 className={cn(
                   "flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold transition-colors",
+                  tabletLayout && "h-14 flex-none min-w-[300px] text-[16px]",
                   canAdvanceStep(step)
                     ? "bg-blue-600 text-white active:bg-blue-700"
                     : "cursor-not-allowed bg-surface-soft text-muted-2",
@@ -1417,6 +1473,7 @@ export function NewRentalModal({
                 onClick={() => void handleSave()}
                 className={cn(
                   "flex min-h-[48px] flex-1 items-center justify-center rounded-xl text-[14px] font-bold transition-colors",
+                  tabletLayout && "h-14 flex-none min-w-[300px] text-[16px]",
                   canSave && !saving
                     ? "bg-blue-600 text-white active:bg-blue-700"
                     : "cursor-not-allowed bg-surface-soft text-muted-2",
@@ -1427,7 +1484,12 @@ export function NewRentalModal({
             )}
           </div>
         ) : (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-soft px-5 py-3">
+          <div
+            className={cn(
+              "flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-soft px-5 py-3",
+              tabletLayout && "px-7 py-4",
+            )}
+          >
             <span className="min-w-0 flex-1 truncate text-[11px] text-muted-2">
               После создания нужно подтвердить выдачу (договор, аренда, залог).
             </span>
@@ -1435,7 +1497,10 @@ export function NewRentalModal({
               <button
                 type="button"
                 onClick={requestClose}
-                className="rounded-full border border-border bg-surface px-4 py-1.5 text-[12px] font-semibold text-muted hover:bg-border"
+                className={cn(
+                  "rounded-full border border-border bg-surface px-4 py-1.5 text-[12px] font-semibold text-muted hover:bg-border",
+                  tabletLayout && "h-14 min-w-[170px] text-[15px]",
+                )}
               >
                 Отмена
               </button>
@@ -1445,6 +1510,7 @@ export function NewRentalModal({
                 onClick={() => void handleSave()}
                 className={cn(
                   "rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",
+                  tabletLayout && "h-14 min-w-[300px] text-[16px]",
                   canSave
                     ? "bg-blue-600 text-white hover:bg-blue-700"
                     : "cursor-not-allowed bg-surface-soft text-muted-2",
@@ -1534,6 +1600,7 @@ function Section({
   children,
   mobile,
   current,
+  className,
 }: {
   num: number;
   title: string;
@@ -1541,10 +1608,12 @@ function Section({
   // На мобиле (mobile=true) показываем только секцию активного шага current.
   mobile?: boolean;
   current?: number;
+  /** Планшет: блок живёт в своей клетке сетки и прокручивается сам. */
+  className?: string;
 }) {
   if (mobile && current != null && current !== num) return null;
   return (
-    <section className="mb-5 last:mb-0">
+    <section className={cn("mb-5 last:mb-0", className)}>
       {/* На мобиле номер-шага дублируется в прогресс-баре сверху — здесь скрываем. */}
       <header className={cn("mb-2 flex items-center gap-2", mobile && "hidden")}>
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-50 text-[11px] font-bold text-blue-700">
@@ -1632,16 +1701,20 @@ function MobileClientPicker({
   clients,
   onPick,
   onNew,
+  tablet = false,
 }: {
   query: string;
   onQuery: (v: string) => void;
   clients: Client[];
   onPick: (id: number) => void;
   onNew: () => void;
+  /** Планшет: поиск и кнопка в строку, клиенты — в две колонки. */
+  tablet?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="relative">
+      <div className={cn(tablet && "flex items-center gap-3")}>
+      <div className="relative flex-1">
         <Search
           size={16}
           className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
@@ -1657,11 +1730,23 @@ function MobileClientPicker({
       <button
         type="button"
         onClick={onNew}
-        className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-ink text-[14px] font-bold text-white active:bg-ink-2"
+        className={cn(
+          "flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-ink text-[14px] font-bold text-white active:bg-ink-2",
+          tablet && "h-12 shrink-0 px-6 text-[15px]",
+        )}
       >
         <UserPlus size={16} /> Новый клиент
       </button>
-      <div className="flex flex-col gap-1.5">
+      </div>
+      <div
+        className={cn(
+          "flex flex-col gap-1.5",
+          // Планшет: список живёт в своей половине экрана и прокручивается
+          // сам — прокрутки всего окна при этом нет.
+          // высоту задаёт клетка сетки — своего потолка списку не нужно
+          tablet && "portrait:max-h-[360px] portrait:overflow-y-auto",
+        )}
+      >
         {clients.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border py-6 text-center text-[13px] text-muted">
             Не найдено — создайте нового
@@ -1708,6 +1793,7 @@ function MobileScooterPicker({
   power,
   onPower,
   onPick,
+  tablet = false,
 }: {
   scooters: {
     name: string;
@@ -1724,6 +1810,8 @@ function MobileScooterPicker({
   power: "all" | "petrol" | "electric";
   onPower?: (p: "all" | "petrol" | "electric") => void;
   onPick: (name: string) => void;
+  /** Планшет: плитки техники прокручиваются внутри своей половины экрана. */
+  tablet?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2.5">
@@ -1789,7 +1877,12 @@ function MobileScooterPicker({
           Нет свободных скутеров
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
+        <div
+          className={cn(
+            "grid grid-cols-2 gap-2",
+            tablet && "portrait:max-h-[360px] portrait:overflow-y-auto",
+          )}
+        >
           {scooters.map((s) => (
             <button
               key={s.name}

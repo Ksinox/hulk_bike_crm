@@ -7,6 +7,7 @@ import { usePersistedFormState } from "@/lib/usePersistedState";
 import { Switch } from "@/components/ui/switch";
 import { PayMethodPicker, splitByMethod, type PayMethod } from "@/components/PayMethodPicker";
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import { useCreateServiceOrder, type SavedToPrice, type ServiceOrder } from "@/lib/api/service-orders";
 import { ItemsSection, PricePicker, type ItemPatch, type NewRowValue } from "./ServiceItemsEditor";
 import { MechanicChips } from "./ServiceMechanics";
@@ -82,6 +83,11 @@ export function ServiceOrderForm({
   onCreated: (order: ServiceOrder, savedToPrice: SavedToPrice[]) => void;
 }) {
   const canRepairProfit = useCan("data.repairProfit");
+  /** Планшет: форма ремонта в две колонки, каждая прокручивается сама. */
+  const tabletLayout = useTabletLayout();
+  const colCls = tabletLayout
+    ? "scrollbar-thin flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1"
+    : "contents";
   const create = useCreateServiceOrder();
   const { data: mechanics = [] } = useServiceMechanics();
   const hasMechanics = mechanics.some((m) => !m.archivedAt);
@@ -207,7 +213,16 @@ export function ServiceOrderForm({
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4" data-service-form>
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto px-5 py-4",
+          // Планшет: слева — кто и что чиним, справа — работы, запчасти и
+          // деньги. Иначе форма уезжала в прокрутку на полтора экрана.
+          tabletLayout && "grid grid-cols-2 items-start gap-x-7 overflow-hidden px-7 py-5",
+        )}
+        data-service-form
+      >
+        <div className={colCls}>
         {restored && (
           <div className="mb-4 flex items-center gap-3 rounded-2xl bg-blue-50 px-4 py-2.5 text-[12.5px] text-blue-800">
             <span className="min-w-0 flex-1">Продолжаем черновик — введённое не потерялось.</span>
@@ -288,6 +303,8 @@ export function ServiceOrderForm({
           </Group>
         )}
 
+        </div>
+        <div className={colCls}>
         <ItemsSection
           kind="work"
           items={draft.items.filter((i) => i.kind === "work")}
@@ -397,12 +414,15 @@ export function ServiceOrderForm({
           </div>
         </div>
 
+        </div>
       </div>
 
       <footer
         className={cn(
           "flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-5 py-3",
           touch && "pb-[calc(12px+env(safe-area-inset-bottom))]",
+          // Планшет: действия справа, кнопка во всю ширину тут не нужна.
+          tabletLayout && "justify-end gap-3 px-7 py-4",
         )}
       >
         {(error || (tried && (!nameOk || !vehicleOk))) && (
@@ -423,6 +443,7 @@ export function ServiceOrderForm({
           className={cn(
             "shrink-0 rounded-xl bg-surface-soft font-bold text-muted hover:text-ink",
             touch ? "h-12 px-4 text-[14px]" : "h-11 px-5 text-[13px]",
+            tabletLayout && "h-14 min-w-[150px] text-[15px]",
           )}
         >
           Отмена
@@ -434,6 +455,7 @@ export function ServiceOrderForm({
           className={cn(
             "whitespace-nowrap rounded-xl bg-ink font-bold text-white disabled:opacity-50",
             touch ? "h-12 flex-1 px-3 text-[14px]" : "h-11 px-6 text-[13.5px]",
+            tabletLayout && "h-14 !flex-none min-w-[300px] text-[16px]",
             !canSave && !create.isPending && "opacity-60",
           )}
         >

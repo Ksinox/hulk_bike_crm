@@ -111,6 +111,9 @@ export function DebtorsMorning({
         </div>
       </div>
 
+      {/* Планшет: срочное и очередь — рядом, а не лентой сверху вниз. */}
+      <div className="tab:grid tab:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] tab:gap-6">
+      <div className="min-w-0">
       {/* Hero — самое срочное */}
       {hottest && (
         <>
@@ -161,6 +164,8 @@ export function DebtorsMorning({
         </>
       )}
 
+      </div>
+      <div className="min-w-0">
       {/* Очередь */}
       {queue.length > 0 && (
         <>
@@ -199,6 +204,8 @@ export function DebtorsMorning({
           </div>
         </>
       )}
+      </div>
+      </div>
 
       {/* Сводка — клик ведёт в полный список дел */}
       <button

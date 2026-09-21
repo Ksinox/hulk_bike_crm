@@ -171,7 +171,9 @@ export function MobileSettings() {
       </div>
 
       {isAdmin && (
-        <>
+        /* Планшет: настройки в две колонки — иначе каждая карточка тянется
+           во всю ширину экрана, а половина места пустует. */
+        <div className="grid grid-cols-1 gap-4 tab:grid-cols-2">
           <SettingCard
             title="Расчётный период"
             hint="День месяца, с которого начинается финансовый период. При смене прошлые месяцы в KPI не пересчитываются."
@@ -220,7 +222,7 @@ export function MobileSettings() {
               <SaveBtn onClick={saveWorkHours} pending={setMut.isPending} />
             </div>
           </SettingCard>
-        </>
+        </div>
       )}
 
       {/* Пункт 1: ключ директора — установка/смена с телефона (паритет). */}

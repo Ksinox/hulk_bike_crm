@@ -187,6 +187,9 @@ export function MobileDashboard({
         />
       )}
 
+      {/* Планшет: блоки сводки — в две колонки. На телефоне это лента сверху
+          вниз, а на широком экране половина ширины пустовала. */}
+      <div className="flex flex-col gap-3 tab:grid tab:grid-cols-2 tab:items-start tab:gap-4">
       {/* Напоминания: кому звонить про платёж по выкупу и когда выплата
           инвестору. Паритет с десктопом (01.09). */}
       {reminders.length > 0 && (
@@ -338,6 +341,8 @@ export function MobileDashboard({
       {revenueOpen && (
         <MobileRevenueScreen scope="all" onClose={() => setRevenueOpen(false)} />
       )}
+
+      </div>
 
       {/* Полный список просрочек («Все →»): ВСЕ должники, у каждого — звонок
           (кнопка справа) и тап по строке → карточка аренды. Модуль «Должники»

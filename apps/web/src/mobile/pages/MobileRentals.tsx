@@ -39,6 +39,7 @@ import {
   MobileSearch,
   type ChipOption,
 } from "../ui";
+import { TABLET_LIST_2 } from "../tablet";
 
 type Filter = "active" | "overdue" | "return_today" | "returned" | "completed";
 
@@ -253,11 +254,13 @@ export function MobileRentals() {
     // pb-20: нижний отступ, чтобы плавающая кнопка (FAB) не перекрывала
     // последнюю строку списка.
     <div className="flex flex-col gap-3 pb-20">
+      {/* Планшет: выручка и «Заявки» встают в один ряд — на телефоне стопкой. */}
+      <div className="flex flex-col gap-3 tab:flex-row tab:items-stretch">
       {/* Выручка по арендам — тап открывает банковскую сводку. */}
       <button
         type="button"
         onClick={() => setRevenueOpen(true)}
-        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-4 text-left text-white shadow-card active:scale-[0.99]"
+        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-4 text-left text-white shadow-card active:scale-[0.99] tab:flex-1"
       >
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-white/70">
@@ -275,16 +278,24 @@ export function MobileRentals() {
 
       {/* Правка 31.08: заявки на аренду живут внутри раздела — на телефоне
           кнопка открывает список сразу (наведения на тач-экране нет). */}
-      <ApplicationsButton purpose="rent" className="w-full justify-center py-2.5" />
+      <ApplicationsButton
+        purpose="rent"
+        className="w-full justify-center py-2.5 tab:w-[260px] tab:self-start"
+      />
+      </div>
 
+      {/* Планшет: поиск и переключатель техники — в одной строке. */}
+      <div className="flex flex-col gap-3 tab:flex-row tab:items-center">
+      <div className="min-w-0 flex-1">
       <MobileSearch
         value={search}
         onChange={setSearch}
         placeholder="Клиент, скутер, телефон, №…"
       />
+      </div>
       {/* Правка 27.08: табы техники (виден только при наличии партнёрской) */}
       {partnerNames.size > 0 && (
-        <div className="flex items-center rounded-full bg-surface p-0.5 shadow-card-sm">
+        <div className="flex items-center rounded-full bg-surface p-0.5 shadow-card-sm tab:w-[360px] tab:shrink-0">
           {(
             [
               ["petrol", "Бензиновые"],
@@ -312,6 +323,7 @@ export function MobileRentals() {
           ))}
         </div>
       )}
+      </div>
       <MobileChips options={chips} value={filter} onChange={setFilter} />
       {filter === "returned" && (
         <div className="flex items-center gap-2">
@@ -346,7 +358,7 @@ export function MobileRentals() {
           hint={search ? "Ничего не нашлось по запросу" : "В этом фильтре пусто"}
         />
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className={TABLET_LIST_2}>
           {filtered.map((r) => {
             const c = clientById.get(r.clientId) ?? null;
             return (

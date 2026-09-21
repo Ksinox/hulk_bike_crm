@@ -18,6 +18,7 @@ import {
   MobileSearch,
   type ChipOption,
 } from "../ui";
+import { TABLET_LIST_2 } from "../tablet";
 
 type Filter = "all" | "active" | "debt" | "black";
 
@@ -116,7 +117,7 @@ export function MobileClients() {
           hint={search ? "Ничего не нашлось" : "В этом фильтре пусто"}
         />
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className={TABLET_LIST_2}>
           {filtered.map((c) => (
             <ClientRow
               key={c.id}

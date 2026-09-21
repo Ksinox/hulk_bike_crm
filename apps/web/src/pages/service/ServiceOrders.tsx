@@ -273,7 +273,7 @@ export function ServiceOrders() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-1 gap-2 tab:grid-cols-2 tab:gap-3">
           {list.map((o) => (
             <OrderRow key={o.id} order={o} onOpen={() => setOpenId(o.id)} />
           ))}

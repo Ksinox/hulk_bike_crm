@@ -155,9 +155,26 @@ export function useIsPhoneWidth(): boolean {
     const update = () => setPhone(compute());
     update();
     window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
   }, []);
   return phone;
+}
+
+/**
+ * Планшетная раскладка: палец — основной указатель, но ширина уже не
+ * телефонная (≥768px). Правка заказчика 21.09: «планшет — это не телефон
+ * пошире и не сжатый компьютер». По этому признаку окна мастеров и форм
+ * раскрываются во весь экран и раскладываются в колонки, а на телефоне
+ * остаётся пошаговый лист, на компьютере — привычная модалка.
+ */
+export function useTabletLayout(): boolean {
+  const mobile = useIsMobile();
+  const phone = useIsPhoneWidth();
+  return mobile && !phone;
 }
 
 export function useIsCompactScreen(): boolean {

@@ -12,6 +12,8 @@ import {
   UserPlus,
   X, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTabletLayout } from "@/lib/useIsMobile";
+import { TABLET_DIALOG_OVERLAY, TABLET_DIALOG_PANEL } from "@/mobile/tablet";
 import { toast } from "@/lib/toast";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
@@ -96,6 +98,8 @@ export function NewBuyoutWizard({
   const deal: BuyoutDeal | null =
     (dealId != null && dealsData?.items.find((d) => d.id === dealId)) || null;
 
+  /** Планшет: мастер во весь экран, справа — расчёт выкупа. */
+  const tabletLayout = useTabletLayout();
   const [step, setStep] = useState(0);
   const [clientId, setClientId] = useState<number | null>(
     deal?.clientId ?? presetClientId ?? null,
@@ -335,8 +339,18 @@ export function NewBuyoutWizard({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-0 animate-backdrop-in sm:items-center sm:p-4">
-      <div className="flex h-[100dvh] w-full max-w-[720px] flex-col overflow-hidden bg-surface shadow-card-lg animate-modal-in sm:h-auto sm:max-h-[92vh] sm:rounded-2xl">
+    <div
+      className={cn(
+        "fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-0 animate-backdrop-in sm:items-center sm:p-4",
+        tabletLayout && TABLET_DIALOG_OVERLAY,
+      )}
+    >
+      <div
+        className={cn(
+          "flex h-[100dvh] w-full max-w-[720px] flex-col overflow-hidden bg-surface shadow-card-lg animate-modal-in sm:h-auto sm:max-h-[92vh] sm:rounded-2xl",
+          tabletLayout && TABLET_DIALOG_PANEL,
+        )}
+      >
         <header className="shrink-0 border-b border-border px-4 py-3 sm:px-5">
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">
@@ -386,8 +400,19 @@ export function NewBuyoutWizard({
         <div
           ref={bodyRef}
           onKeyDown={onKeyDown}
-          className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5"
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto p-4 sm:p-5",
+            tabletLayout &&
+              "grid grid-cols-[minmax(0,1fr)_340px] items-start gap-7 overflow-hidden px-7 py-5",
+          )}
         >
+          <div
+            className={cn(
+              tabletLayout
+                ? "scrollbar-thin flex h-full min-h-0 flex-col overflow-y-auto pr-1"
+                : "contents",
+            )}
+          >
           {step === 0 && (
             <div className="flex flex-col gap-3">
               <Hint text="Клиент забирает технику сразу, поэтому паспортные данные обязательны — они уходят в договор. Нового клиента можно завести здесь же или отправить ему анкету." />
@@ -980,14 +1005,64 @@ export function NewBuyoutWizard({
               </div>
             </div>
           )}
+          </div>
+
+          {/* Планшет: расчёт всегда на виду — оператор видит, что получится,
+              не дожидаясь шага «График». */}
+          {tabletLayout && (
+            <aside className="scrollbar-thin flex h-full min-h-0 flex-col gap-2 overflow-y-auto rounded-2xl border border-border bg-surface-soft p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+                Расчёт выкупа
+              </div>
+              <CalcRow label="Клиент" value={client?.name ?? "—"} />
+              <CalcRow label="Техника" value={scooter?.name ?? "—"} />
+              <CalcRow
+                label="Цена техники"
+                value={calc.base ? `${calc.base.toLocaleString("ru-RU")} ₽` : "—"}
+              />
+              <CalcRow
+                label="Наценка за срок"
+                value={calc.markup ? `${calc.markup.toLocaleString("ru-RU")} ₽` : "—"}
+              />
+              <CalcRow
+                label="Итого к выкупу"
+                value={calc.total ? `${calc.total.toLocaleString("ru-RU")} ₽` : "—"}
+                accent
+              />
+              <CalcRow
+                label="Первый взнос"
+                value={calc.downNum ? `${calc.downNum.toLocaleString("ru-RU")} ₽` : "—"}
+              />
+              <CalcRow
+                label={period === "week" ? "Платёж в неделю" : "Платёж в месяц"}
+                value={calc.payment ? `${calc.payment.toLocaleString("ru-RU")} ₽` : "—"}
+              />
+              <CalcRow
+                label="Платежей"
+                value={calc.count ? `${calc.count}` : "—"}
+              />
+              <CalcRow
+                label="Паспорт"
+                value={client ? (hasPassport ? "есть" : "не заполнен") : "—"}
+              />
+            </aside>
+          )}
         </div>
 
-        <footer className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-3 sm:px-5">
+        <footer
+          className={cn(
+            "flex shrink-0 items-center gap-2 border-t border-border px-4 py-3 sm:px-5",
+            tabletLayout && "px-7 py-4",
+          )}
+        >
           {step > 0 && (
             <button
               type="button"
               onClick={() => setStep((s) => s - 1)}
-              className="inline-flex h-11 items-center gap-1 rounded-full px-4 text-[13px] font-semibold text-muted hover:text-ink"
+              className={cn(
+                "inline-flex h-11 items-center gap-1 rounded-full px-4 text-[13px] font-semibold text-muted hover:text-ink",
+                tabletLayout && "h-14 min-w-[150px] justify-center text-[15px]",
+              )}
             >
               <ChevronLeft size={16} /> Назад
             </button>
@@ -1001,7 +1076,10 @@ export function NewBuyoutWizard({
               type="button"
               onClick={next}
               disabled={!canNext || busy}
-              className="inline-flex h-11 items-center gap-1.5 rounded-full bg-blue-600 px-6 text-[14px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
+              className={cn(
+                "inline-flex h-11 items-center gap-1.5 rounded-full bg-blue-600 px-6 text-[14px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50",
+                tabletLayout && "h-14 min-w-[260px] justify-center text-[16px]",
+              )}
             >
               Далее <ChevronRight size={16} />
             </button>
@@ -1010,7 +1088,10 @@ export function NewBuyoutWizard({
               type="button"
               onClick={finish}
               disabled={busy}
-              className="inline-flex h-11 items-center gap-1.5 rounded-full bg-blue-600 px-6 text-[14px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
+              className={cn(
+                "inline-flex h-11 items-center gap-1.5 rounded-full bg-blue-600 px-6 text-[14px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50",
+                tabletLayout && "h-14 min-w-[280px] justify-center text-[16px]",
+              )}
             >
               <Check size={16} /> Подписать и начать выкуп
             </button>
@@ -1093,6 +1174,31 @@ function Row({
         className={cn(
           "min-w-0 flex-1 truncate text-[13.5px] font-semibold",
           warn ? "text-orange-ink" : "text-ink",
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/** Строка планшетного расчёта выкупа. */
+function CalcRow({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-border/60 py-1.5 last:border-b-0">
+      <span className="shrink-0 text-[12.5px] text-muted">{label}</span>
+      <span
+        className={cn(
+          "min-w-0 truncate text-right font-semibold",
+          accent ? "text-[15px] text-blue-700" : "text-[13.5px] text-ink",
         )}
       >
         {value}

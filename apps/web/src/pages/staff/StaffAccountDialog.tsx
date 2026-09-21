@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { KeyRound, Loader2, LogOut, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTabletLayout } from "@/lib/useIsMobile";
+import { TABLET_DIALOG_PANEL } from "@/mobile/tablet";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { Switch } from "@/components/ui/switch";
@@ -176,6 +178,8 @@ export function StaffAccountDialog({
   };
 
   const pending = createMut.isPending || patchMut.isPending;
+  /** Планшет: окно во весь экран, кнопки и поля под палец. */
+  const tabletLayout = useTabletLayout();
 
   return (
     // Окно фиксированной высоты: шапка и кнопки на месте, прокручивается
@@ -185,7 +189,10 @@ export function StaffAccountDialog({
         role="dialog"
         aria-modal="true"
         aria-label={creating ? "Новый сотрудник" : `Аккаунт: ${user.name}`}
-        className="flex h-[100dvh] w-full flex-col overflow-hidden bg-surface-soft shadow-card-lg sm:h-auto sm:max-h-[calc(100dvh-48px)] sm:max-w-[1040px] sm:rounded-2xl"
+        className={cn(
+          "flex h-[100dvh] w-full flex-col overflow-hidden bg-surface-soft shadow-card-lg sm:h-auto sm:max-h-[calc(100dvh-48px)] sm:max-w-[1040px] sm:rounded-2xl",
+          tabletLayout && TABLET_DIALOG_PANEL,
+        )}
       >
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3.5">
           <div className="min-w-0">
@@ -210,7 +217,13 @@ export function StaffAccountDialog({
           </button>
         </header>
 
-        <div className="grid min-h-0 flex-1 items-start gap-4 overflow-y-auto overscroll-contain p-4 sm:p-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <div
+          className={cn(
+            "grid min-h-0 flex-1 items-start gap-4 overflow-y-auto overscroll-contain p-4 sm:p-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]",
+            // Планшет: две колонки и в портрете тоже — ширины хватает.
+            tabletLayout && "grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-6 px-7 py-5",
+          )}
+        >
           {/* ---------------- форма ---------------- */}
           <div className="flex min-w-0 flex-col gap-4">
             <Card title="Кто это">
@@ -413,12 +426,20 @@ export function StaffAccountDialog({
           </div>
         </div>
 
-        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-surface px-5 py-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+        <footer
+          className={cn(
+            "flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-surface px-5 py-3 pb-[max(12px,env(safe-area-inset-bottom))]",
+            tabletLayout && "gap-3 px-7 py-4",
+          )}
+        >
           {err && <span className="mr-auto text-[12.5px] font-semibold text-red-ink">{err}</span>}
           <button
             type="button"
             onClick={onClose}
-            className="h-11 rounded-full px-5 text-[13.5px] font-semibold text-muted hover:text-ink"
+            className={cn(
+              "h-11 rounded-full px-5 text-[13.5px] font-semibold text-muted hover:text-ink",
+              tabletLayout && "h-14 min-w-[150px] text-[15px]",
+            )}
           >
             Отмена
           </button>
@@ -426,7 +447,10 @@ export function StaffAccountDialog({
             type="button"
             onClick={submit}
             disabled={!canSave || !dirty || pending}
-            className="inline-flex h-11 items-center gap-1.5 rounded-full bg-ink px-5 text-[13.5px] font-bold text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-surface-soft disabled:text-muted-2"
+            className={cn(
+              "inline-flex h-11 items-center gap-1.5 rounded-full bg-ink px-5 text-[13.5px] font-bold text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-surface-soft disabled:text-muted-2",
+              tabletLayout && "h-14 min-w-[240px] justify-center text-[16px]",
+            )}
           >
             {pending && <Loader2 size={14} className="animate-spin" />}
             {creating ? "Создать аккаунт" : "Сохранить"}

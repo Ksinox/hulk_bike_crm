@@ -84,18 +84,24 @@ export function MobileStaff() {
 
   return (
     <div className="flex flex-col gap-2">
-      <button
-        type="button"
-        onClick={() => setAddOpen(true)}
-        className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-ink text-[14px] font-bold text-white active:scale-[0.99]"
-      >
-        <Plus size={18} /> Новый сотрудник
-      </button>
+      {/* Планшет: кнопка по содержимому справа, а не полосой во всю ширину. */}
+      <div className="flex tab:justify-end">
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-ink text-[14px] font-bold text-white active:scale-[0.99] tab:w-auto tab:px-6"
+        >
+          <Plus size={18} /> Новый сотрудник
+        </button>
+      </div>
       {/* 15.09: кто посмотрел обновление. */}
       <ReleaseViewsPanel compact />
-      {sorted.map((u) => (
-        <StaffRow key={u.id} user={u} onOpen={() => setEditUser(u)} />
-      ))}
+      {/* Планшет: карточки людей в две колонки. */}
+      <div className="grid grid-cols-1 gap-2 tab:grid-cols-2 tab:gap-3">
+        {sorted.map((u) => (
+          <StaffRow key={u.id} user={u} onOpen={() => setEditUser(u)} />
+        ))}
+      </div>
 
       {addOpen && (
         <StaffAccountDialog

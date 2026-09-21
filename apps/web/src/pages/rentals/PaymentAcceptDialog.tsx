@@ -86,7 +86,7 @@ import {
   operatorDelayDays,
   ruToIsoDate,
 } from "./overdueAsOf";
-import { useIsMobile } from "@/lib/useIsMobile";
+import { useIsMobile, useIsPhoneWidth } from "@/lib/useIsMobile";
 import { MobileNumPad } from "@/mobile/MobileNumPad";
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 
@@ -213,6 +213,13 @@ export function PaymentAcceptDialog({
   //  2 — оплата (нативная клавиатура «платит сейчас» + способ → Завершить).
   // Десктоп использует прежний двухколоночный completingPanel без изменений.
   const isMobile = useIsMobile();
+  /**
+   * Планшет — не «телефон пошире» и не сжатый компьютер: у него своя
+   * раскладка. Экран большой, поэтому мастер идёт во весь экран и в две
+   * колонки — всё видно сразу, без прокрутки и без окна по центру.
+   */
+  const isPhoneWidth = useIsPhoneWidth();
+  const tabletLayout = isMobile && !isPhoneWidth;
   const [cStep, setCStep] = useState(0);
   const [cStepDir, setCStepDir] = useState<"fwd" | "back">("fwd");
   const [payNumpadOpen, setPayNumpadOpen] = useState(false);
@@ -4464,7 +4471,7 @@ export function PaymentAcceptDialog({
         {actPreview}
         <div className="fixed inset-0 z-[100] flex flex-col bg-surface lg:items-center lg:bg-ink/45 lg:backdrop-blur-sm animate-fade-in">
           {/* Планшет: мастер колонкой по центру (mobile/tablet.ts). */}
-          <div className={TABLET_WIZARD_PANEL}>
+          <div className={cn(tabletLayout ? "flex min-h-0 w-full flex-1 flex-col bg-surface" : TABLET_WIZARD_PANEL)}>
           {/* HEADER */}
           <div className="flex items-center gap-2 border-b border-border bg-surface-soft px-3 py-2.5">
             <button
@@ -4491,14 +4498,26 @@ export function PaymentAcceptDialog({
               style={{ width: `${((payStep + 1) / stepCount) * 100}%` }}
             />
           </div>
-          <div className="px-4 pb-1 pt-3">
-            <div className="text-[12px] font-bold uppercase tracking-wider text-blue-700">
+          <div className={cn("pb-1 pt-3", tabletLayout ? "px-7" : "px-4")}>
+            <div
+              className={cn(
+                "font-bold uppercase tracking-wider text-blue-700",
+                tabletLayout ? "text-[14px]" : "text-[12px]",
+              )}
+            >
               Шаг {payStep + 1} · {stepTitle[curStep]}
             </div>
           </div>
 
-          {/* BODY */}
-          <div key={payStep} className={cn("flex-1 overflow-y-auto px-4 pb-3", pAnim)}>
+          {/* BODY. На планшете поля шире: контент дышит, а не липнет к краям. */}
+          <div
+            key={payStep}
+            className={cn(
+              "flex-1 overflow-y-auto pb-3",
+              tabletLayout ? "px-7" : "px-4",
+              pAnim,
+            )}
+          >
             {/* ----- ШАГ «ДАТА ОПЛАТЫ» (только при просрочке) ----- */}
             {curStep === "date" && (
               <div className="flex flex-col gap-3 pt-1 [&_table]:mx-auto" data-pay-date-step>
@@ -4680,9 +4699,9 @@ export function PaymentAcceptDialog({
               </div>
             )}
 
-            {/* ----- ШАГ «ПРОДЛЕНИЕ» (та же логика, что на десктопе) ----- */}
+            {/* ----- ШАГ «ПРОДЛЕНИЕ» ----- */}
             {curStep === "extend" && (
-              <div className="flex flex-col gap-3 pt-1">
+              <div className={cn("flex flex-col", tabletLayout ? "h-full gap-4 pt-1" : "gap-3 pt-1")}>
                 {!canExtend ? (
                   <div className="rounded-2xl border border-border bg-surface-soft px-4 py-6 text-center text-[13px] text-muted-2">
                     Продление недоступно для этой аренды.
@@ -4707,150 +4726,189 @@ export function PaymentAcceptDialog({
                       </button>
                     </div>
 
-                    {extendOn && (
-                      <>
-                        {!priorHintDismissed && (
-                          <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-3.5 py-3">
-                            <div className="text-[12.5px] font-bold text-blue-800">Применить прошлые условия?</div>
-                            <div className="mt-0.5 text-[11.5px] text-blue-700/90">
-                              ~{priorDays} дн · {TARIFF_PERIOD_LABEL[rental.tariffPeriod]} · {rental.rate} ₽/{rental.rateUnit === "week" ? "нед" : "сут"}{rental.customTariff ? " · свой" : ""}
-                            </div>
-                            <div className="mt-2 flex gap-2">
-                              <button type="button" onClick={applyPriorConditions} className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-3.5 py-1.5 text-[12px] font-semibold text-white">
-                                <Check size={12} /> Да, применить
-                              </button>
-                              <button type="button" onClick={() => setPriorHintDismissed(true)} className="inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-muted">Нет</button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Как на компьютере: по дням — или по сумме, которую даёт клиент. */}
-                        <div className="grid grid-cols-2 gap-1 rounded-2xl bg-surface-soft p-1" role="radiogroup" aria-label="Как продлеваем">
-                          {(
-                            [
-                              ["days", "По дням"],
-                              ["amount", "По сумме клиента"],
-                            ] as const
-                          ).map(([m, lbl]) => (
-                            <button
-                              key={m}
-                              type="button"
-                              role="radio"
-                              aria-checked={mode === m}
-                              onClick={() => {
-                                setMode(m);
-                                if (m === "amount" && selectedTariff !== "custom") setTariffPinned(false);
-                              }}
-                              className={cn(
-                                "h-11 rounded-xl text-[13.5px] font-semibold transition-colors",
-                                mode === m ? "bg-white text-ink shadow-card-sm" : "text-muted",
-                              )}
-                            >
-                              {lbl}
-                            </button>
-                          ))}
-                        </div>
-
-                        {mode === "amount" ? (
-                          <div className="rounded-2xl border border-border bg-surface p-3.5" data-ext-amount>
-                            <button
-                              type="button"
-                              onClick={() => setPayPad("amount")}
-                              className="flex w-full items-center justify-between rounded-2xl border-2 border-blue-200 bg-blue-soft/15 px-4 py-3 text-left active:border-blue-400"
-                            >
-                              <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">Клиент даёт</span>
-                              <span className="flex items-center gap-1.5">
-                                <span className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">
-                                  {amountInput ? `${fmt(Number(amountInput))} ₽` : "—"}
-                                </span>
-                                <Pencil size={15} className="text-blue-600" />
-                              </span>
-                            </button>
-                            <div className="mt-2.5 flex items-center justify-between">
-                              <span className="text-[12.5px] text-muted">
-                                {extDays > 0 ? `хватит на ${extDays} ${extDays === 1 ? "день" : "дн"}` : amountInput ? "недостаточно на сутки" : "введите сумму"}
-                              </span>
-                              <span className="font-display text-[18px] font-extrabold tabular-nums text-blue-700">
-                                {newEnd && extDays > 0 ? `до ${fmtDDMMYYYY(newEnd)}` : "—"}
-                              </span>
-                            </div>
-                            {accepted > 0 && extUpsell && (
-                              <div className="mt-2 rounded-xl bg-surface-soft px-3 py-2 text-[12px] text-ink-2">
-                                Докиньте <b className="tabular-nums text-ink">{fmt(extUpsell.add)} ₽</b> —{" "}
-                                {extDays > 0 ? "продлите до" : "хватит на"} <b className="tabular-nums text-ink">{extUpsell.days}</b> дн.
+                    {extendOn &&
+                      (() => {
+                        /**
+                         * Планшет получает СВОЮ раскладку, а не вытянутую телефонную:
+                         * слева выбор срока и тарифа, справа условия, экипировка и итог.
+                         * Всё помещается в один экран — листать нечего.
+                         */
+                        const blkPrior = !priorHintDismissed && (
+                            <div className={cn("rounded-2xl border border-blue-100 bg-blue-50/70", tabletLayout ? "px-5 py-4" : "px-3.5 py-3")}>
+                              <div className="text-[12.5px] font-bold text-blue-800">Применить прошлые условия?</div>
+                              <div className="mt-0.5 text-[11.5px] text-blue-700/90">
+                                ~{priorDays} дн · {TARIFF_PERIOD_LABEL[rental.tariffPeriod]} · {rental.rate} ₽/{rental.rateUnit === "week" ? "нед" : "сут"}{rental.customTariff ? " · свой" : ""}
                               </div>
-                            )}
-                            {extLeftover > 0 && (
-                              <div className="mt-2 text-[12px] text-orange-ink">
-                                Сверх целых дней остаётся {fmt(extLeftover)} ₽ — верните клиенту или оставьте на депозите.
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                        <div className="rounded-2xl border border-border bg-surface p-3.5">
-                          <div className="mb-2 flex items-center justify-between">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">На сколько {extIsWeekly ? "недель" : "дней"}</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <button type="button" onClick={() => { setOverpayDest("extend"); setExtInputOverride(Math.max(0, (extInputOverride ?? extInputBase) - 1)); }} className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-soft text-[24px] text-muted-2 active:bg-border">−</button>
-                            <div className="flex-1 text-center">
-                              <div className="font-display text-[34px] font-extrabold leading-none tabular-nums text-ink">{extInputBase}</div>
-                              <div className="text-[11px] text-muted">{extIsWeekly ? (extInputBase === 1 ? "неделя" : "недель") : (extInputBase === 1 ? "день" : "дней")}</div>
-                            </div>
-                            <button type="button" onClick={() => { setOverpayDest("extend"); setExtInputOverride((extInputOverride ?? extInputBase) + 1); }} className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-[24px] text-white active:bg-blue-700">+</button>
-                          </div>
-                          <div className="mt-2.5 flex flex-wrap gap-1.5">
-                            {(extIsWeekly ? [0, 1, 2, 4, 8] : [0, 3, 7, 14, 30]).map((n) => {
-                              const active = extIsWeekly ? extWeeks === n : extDays === n;
-                              return (
-                                <button key={n} type="button" onClick={() => { setOverpayDest("extend"); setExtInputOverride(n); if (selectedTariff !== "custom") setTariffPinned(false); }} className={cn("rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors", active ? "border-blue-200 bg-blue-50 text-blue-700" : "border-border text-muted")}>
-                                  {n === 0 ? "Без продл." : extIsWeekly ? `${n} нед` : `${n}д`}
+                              <div className="mt-2 flex gap-2">
+                                <button type="button" onClick={applyPriorConditions} className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-3.5 py-1.5 text-[12px] font-semibold text-white">
+                                  <Check size={12} /> Да, применить
                                 </button>
-                              );
-                            })}
+                                <button type="button" onClick={() => setPriorHintDismissed(true)} className="inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-muted">Нет</button>
+                              </div>
+                            </div>
+                          );
+                        // Как на компьютере: по дням — или по сумме, которую даёт клиент.
+                        const blkMode = (
+                          <div className={cn("grid grid-cols-2 rounded-2xl bg-surface-soft", tabletLayout ? "gap-1.5 p-1.5" : "gap-1 p-1")} role="radiogroup" aria-label="Как продлеваем">
+                            {(
+                              [
+                                ["days", "По дням"],
+                                ["amount", "По сумме клиента"],
+                              ] as const
+                            ).map(([m, lbl]) => (
+                              <button
+                                key={m}
+                                type="button"
+                                role="radio"
+                                aria-checked={mode === m}
+                                onClick={() => {
+                                  setMode(m);
+                                  if (m === "amount" && selectedTariff !== "custom") setTariffPinned(false);
+                                }}
+                                className={cn(
+                                  "h-11 rounded-xl text-[13.5px] font-semibold transition-colors",
+                                  mode === m ? "bg-white text-ink shadow-card-sm" : "text-muted",
+                                )}
+                              >
+                                {lbl}
+                              </button>
+                            ))}
                           </div>
-                        </div>
-                        )}
-
-                        <div className="rounded-2xl border border-border bg-surface p-3.5">
-                          <div className="mb-1.5 flex items-center justify-between">
-                            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">Тариф (по сроку)</span>
-                            <span className="text-[11px] text-muted-2 tabular-nums">{extIsWeekly ? `${extRate} ₽/нед · ≈${extDailyRate} ₽/сут` : `${extRate} ₽/сут`}</span>
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {(["day", "short", "week", "month"] as const).map((p) => {
-                              const active = selectedTariff === p;
-                              return (
-                                <div key={p} className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold", active ? "border-blue-600 bg-blue-50 text-blue-700" : "border-transparent bg-surface-soft text-muted-2 opacity-55")}>
-                                  {active ? <Check size={11} className="text-blue-600" /> : <Lock size={9} className="text-muted-2/60" />}
-                                  {TARIFF_PERIOD_LABEL[p]} · {modelRate(p)}
+                        );
+                        const blkTerm =
+                          mode === "amount" ? (
+                            <div className="rounded-2xl border border-border bg-surface p-3.5" data-ext-amount>
+                              <button
+                                type="button"
+                                onClick={() => setPayPad("amount")}
+                                className="flex w-full items-center justify-between rounded-2xl border-2 border-blue-200 bg-blue-soft/15 px-4 py-3 text-left active:border-blue-400"
+                              >
+                                <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">Клиент даёт</span>
+                                <span className="flex items-center gap-1.5">
+                                  <span className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">
+                                    {amountInput ? `${fmt(Number(amountInput))} ₽` : "—"}
+                                  </span>
+                                  <Pencil size={15} className="text-blue-600" />
+                                </span>
+                              </button>
+                              <div className="mt-2.5 flex items-center justify-between">
+                                <span className="text-[12.5px] text-muted">
+                                  {extDays > 0 ? `хватит на ${extDays} ${extDays === 1 ? "день" : "дн"}` : amountInput ? "недостаточно на сутки" : "введите сумму"}
+                                </span>
+                                <span className="font-display text-[18px] font-extrabold tabular-nums text-blue-700">
+                                  {newEnd && extDays > 0 ? `до ${fmtDDMMYYYY(newEnd)}` : "—"}
+                                </span>
+                              </div>
+                              {accepted > 0 && extUpsell && (
+                                <div className="mt-2 rounded-xl bg-surface-soft px-3 py-2 text-[12px] text-ink-2">
+                                  Докиньте <b className="tabular-nums text-ink">{fmt(extUpsell.add)} ₽</b> —{" "}
+                                  {extDays > 0 ? "продлите до" : "хватит на"} <b className="tabular-nums text-ink">{extUpsell.days}</b> дн.
                                 </div>
-                              );
-                            })}
+                              )}
+                              {extLeftover > 0 && (
+                                <div className="mt-2 text-[12px] text-orange-ink">
+                                  Сверх целых дней остаётся {fmt(extLeftover)} ₽ — верните клиенту или оставьте на депозите.
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                          <div className={cn("rounded-2xl border border-border bg-surface", tabletLayout ? "p-5" : "p-3.5")}>
+                            <div className="mb-2 flex items-center justify-between">
+                              <span className={cn("font-bold uppercase tracking-wider text-muted-2", tabletLayout ? "text-[12.5px]" : "text-[11px]")}>На сколько {extIsWeekly ? "недель" : "дней"}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <button type="button" onClick={() => { setOverpayDest("extend"); setExtInputOverride(Math.max(0, (extInputOverride ?? extInputBase) - 1)); }} className={cn("flex items-center justify-center rounded-2xl bg-surface-soft text-muted-2 active:bg-border", tabletLayout ? "h-16 w-16 text-[30px]" : "h-12 w-12 text-[24px]")}>−</button>
+                              <div className="flex-1 text-center">
+                                <div className={cn("font-display font-extrabold leading-none tabular-nums text-ink", tabletLayout ? "text-[56px]" : "text-[34px]")}>{extInputBase}</div>
+                                <div className={cn("text-muted", tabletLayout ? "mt-1 text-[14px]" : "text-[11px]")}>{extIsWeekly ? (extInputBase === 1 ? "неделя" : "недель") : (extInputBase === 1 ? "день" : "дней")}</div>
+                              </div>
+                              <button type="button" onClick={() => { setOverpayDest("extend"); setExtInputOverride((extInputOverride ?? extInputBase) + 1); }} className={cn("flex items-center justify-center rounded-2xl bg-blue-600 text-white active:bg-blue-700", tabletLayout ? "h-16 w-16 text-[30px]" : "h-12 w-12 text-[24px]")}>+</button>
+                            </div>
+                            <div className="mt-2.5 flex flex-wrap gap-1.5">
+                              {(extIsWeekly ? [0, 1, 2, 4, 8] : [0, 3, 7, 14, 30]).map((n) => {
+                                const active = extIsWeekly ? extWeeks === n : extDays === n;
+                                return (
+                                  <button key={n} type="button" onClick={() => { setOverpayDest("extend"); setExtInputOverride(n); if (selectedTariff !== "custom") setTariffPinned(false); }} className={cn("rounded-full border font-semibold transition-colors", tabletLayout ? "px-5 py-2.5 text-[15px]" : "px-3 py-1.5 text-[12px]", active ? "border-blue-200 bg-blue-50 text-blue-700" : "border-border text-muted")}>
+                                    {n === 0 ? "Без продл." : extIsWeekly ? `${n} нед` : `${n}д`}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
-                          <label className="mt-2 inline-flex cursor-pointer items-center gap-1.5">
-                            <input type="checkbox" checked={selectedTariff === "custom"} onChange={(e) => { setSelectedTariff(e.target.checked ? "custom" : initialTariff); setTariffPinned(e.target.checked); }} className="h-3.5 w-3.5 accent-blue-600" />
-                            <span className="text-[12px] font-semibold text-ink-2">Свой тариф</span>
-                          </label>
-                          {selectedTariff === "custom" && (
-                            <input type="text" inputMode="numeric" value={extCustomRate || ""} onChange={(e) => setExtCustomRate(Math.max(0, parseInt(e.target.value.replace(/\D/g, "") || "0", 10)))} placeholder="3000 (₽/сут)" className="mt-2 w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-[14px] font-bold tabular-nums text-ink outline-none focus:border-blue-500" />
-                          )}
-                        </div>
-
-                        <EquipmentStep rental={rental} equipment={equipment} equipDaily={equipDaily} hasDebtStep={false} onLocalChange={setExtEquipment} />
-
-                        <div className="flex items-center justify-between rounded-2xl bg-surface-soft px-4 py-3">
-                          <div>
-                            <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">Новый возврат</div>
-                            <div className="font-display text-[18px] font-extrabold tabular-nums text-blue-700">{newEnd && extDays > 0 ? fmtDDMMYYYY(newEnd) : "—"}</div>
+                          );
+                        const blkTariff = (
+                          <div className={cn("rounded-2xl border border-border bg-surface", tabletLayout ? "p-5" : "p-3.5")}>
+                            <div className="mb-1.5 flex items-center justify-between">
+                              <span className={cn("font-bold uppercase tracking-wider text-muted-2", tabletLayout ? "text-[12.5px]" : "text-[11px]")}>Тариф (по сроку)</span>
+                              <span className={cn("text-muted-2 tabular-nums", tabletLayout ? "text-[13px]" : "text-[11px]")}>{extIsWeekly ? `${extRate} ₽/нед · ≈${extDailyRate} ₽/сут` : `${extRate} ₽/сут`}</span>
+                            </div>
+                            <div className={cn(tabletLayout ? "grid grid-cols-2 gap-2" : "flex flex-wrap gap-1.5")}>
+                              {(["day", "short", "week", "month"] as const).map((p) => {
+                                const active = selectedTariff === p;
+                                return (
+                                  <div key={p} className={cn("inline-flex items-center gap-1.5 border font-semibold", tabletLayout ? "justify-center rounded-2xl px-3 py-3 text-[14px]" : "rounded-full px-2.5 py-1.5 text-[11px]", active ? "border-blue-600 bg-blue-50 text-blue-700" : "border-transparent bg-surface-soft text-muted-2 opacity-55")}>
+                                    {active ? <Check size={11} className="text-blue-600" /> : <Lock size={9} className="text-muted-2/60" />}
+                                    {TARIFF_PERIOD_LABEL[p]} · {modelRate(p)}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <label className="mt-2 inline-flex cursor-pointer items-center gap-1.5">
+                              <input type="checkbox" checked={selectedTariff === "custom"} onChange={(e) => { setSelectedTariff(e.target.checked ? "custom" : initialTariff); setTariffPinned(e.target.checked); }} className="h-3.5 w-3.5 accent-blue-600" />
+                              <span className={cn("font-semibold text-ink-2", tabletLayout ? "text-[14px]" : "text-[12px]")}>Свой тариф</span>
+                            </label>
+                            {selectedTariff === "custom" && (
+                              <input type="text" inputMode="numeric" value={extCustomRate || ""} onChange={(e) => setExtCustomRate(Math.max(0, parseInt(e.target.value.replace(/\D/g, "") || "0", 10)))} placeholder="3000 (₽/сут)" className="mt-2 w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-[14px] font-bold tabular-nums text-ink outline-none focus:border-blue-500" />
+                            )}
                           </div>
-                          <div className="text-right">
-                            <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">За продление</div>
-                            <div className="font-display text-[18px] font-extrabold tabular-nums text-ink">{fmt(periodTotal)} ₽</div>
+                        );
+                        const blkEquip = <EquipmentStep rental={rental} equipment={equipment} equipDaily={equipDaily} hasDebtStep={false} onLocalChange={setExtEquipment} />;
+                        const blkTotal = (
+                          <div className={cn("flex items-center justify-between rounded-2xl bg-surface-soft", tabletLayout ? "px-5 py-5" : "px-4 py-3")}>
+                            <div>
+                              <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">Новый возврат</div>
+                              <div className={cn("font-display font-extrabold tabular-nums text-blue-700", tabletLayout ? "text-[26px]" : "text-[18px]")}>{newEnd && extDays > 0 ? fmtDDMMYYYY(newEnd) : "—"}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">За продление</div>
+                              <div className={cn("font-display font-extrabold tabular-nums text-ink", tabletLayout ? "text-[26px]" : "text-[18px]")}>{fmt(periodTotal)} ₽</div>
+                            </div>
                           </div>
-                        </div>
-                      </>
-                    )}
+                        );
+                        if (tabletLayout) {
+                          return (
+                            /* Планшет: две колонки под выбор и условия.
+                               Лёжа итог встаёт под правой колонкой — так весь
+                               шаг помещается в экран без прокрутки; стоя
+                               колонки короче, и итог идёт широкой строкой,
+                               чтобы низ экрана не пустовал. */
+                            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] gap-x-5 gap-y-4 landscape:content-start portrait:grid-rows-[auto_1fr]">
+                              <div className="flex min-w-0 flex-col gap-4 landscape:row-span-2">
+                                {blkMode}
+                                {blkTerm}
+                                {blkTariff}
+                              </div>
+                              <div className="flex min-w-0 flex-col gap-4">
+                                {blkPrior}
+                                {blkEquip}
+                              </div>
+                              <div className="col-span-2 portrait:self-end landscape:col-span-1 landscape:col-start-2">
+                                {blkTotal}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <>
+                            {blkPrior}
+                            {blkMode}
+                            {blkTerm}
+                            {blkTariff}
+                            {blkEquip}
+                            {blkTotal}
+                          </>
+                        );
+                      })()}
                   </>
                 )}
               </div>
@@ -4962,14 +5020,24 @@ export function PaymentAcceptDialog({
 
           {/* FOOTER — сумму наличных задаём ЗДЕСЬ (один раз, рядом с кнопкой),
               «Принять» спрашивает подтверждение. Без дублей сумм. */}
-          <div className="border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+          <div
+            className={cn(
+              "border-t border-border bg-surface py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]",
+              tabletLayout ? "px-7" : "px-4",
+            )}
+          >
             {curStep !== "pay" ? (
-              <div className="flex gap-2">
+              /* Планшет: «Далее» — крупная кнопка справа, под большой палец
+                 в правом нижнем углу; «Назад» рядом, но заметно скромнее. */
+              <div className={cn("flex gap-3", tabletLayout && "justify-end")}>
                 {payStep > 0 && (
                   <button
                     type="button"
                     onClick={() => goPayStep(payStep - 1)}
-                    className="h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]"
+                    className={cn(
+                      "rounded-2xl bg-surface-soft font-semibold text-ink-2 transition-transform active:scale-[0.98]",
+                      tabletLayout ? "h-14 min-w-[180px] px-8 text-[16px]" : "h-12 flex-1 text-[15px]",
+                    )}
                   >
                     Назад
                   </button>
@@ -4977,7 +5045,10 @@ export function PaymentAcceptDialog({
                 <button
                   type="button"
                   onClick={nextPayStep}
-                  className="h-12 flex-[2] rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98]"
+                  className={cn(
+                    "rounded-2xl bg-blue-600 font-bold text-white transition-transform active:scale-[0.98]",
+                    tabletLayout ? "h-14 min-w-[320px] px-10 text-[17px]" : "h-12 flex-[2] text-[15px]",
+                  )}
                 >
                   Далее
                 </button>
