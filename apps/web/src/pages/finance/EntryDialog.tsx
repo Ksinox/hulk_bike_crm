@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { DatePicker } from "@/components/ui/date-picker";
 import { SuggestInput } from "@/components/SuggestInput";
-import { useIsMobile } from "@/lib/useIsMobile";
+import { useIsMobile, useIsPhoneWidth } from "@/lib/useIsMobile";
 import type { FinanceCategory, FinanceKind } from "@/lib/api/finance";
 import { fmtMoney } from "./Finance";
 import { Btn, MoneyInput } from "./ui";
@@ -106,7 +106,14 @@ export function EntryDialog({
   onAddCategory: (name: string) => Promise<number | null>;
   onClose: () => void;
 }) {
+  /** Палец: крупные кнопки, без цифровых подсказок к статьям. */
   const isMobile = useIsMobile();
+  /**
+   * Раскладка окна: на телефоне — лист снизу во весь экран, на планшете и
+   * компьютере — окно по центру. Планшет тоже «палец», но экран большой, и
+   * лист во всю ширину там выглядит нелепо.
+   */
+  const sheet = useIsPhoneWidth();
   const cats = useMemo(() => categories.filter((c) => c.kind === kind), [categories, kind]);
   const word = kind === "income" ? "приход" : "расход";
 
@@ -227,7 +234,7 @@ export function EntryDialog({
     <div
       className={cn(
         "flex w-full flex-col overflow-hidden bg-bg shadow-card-lg",
-        isMobile
+        sheet
           ? "max-h-[94dvh] rounded-t-3xl animate-sheet-up"
           : "max-h-[88vh] max-w-[720px] rounded-3xl",
       )}
@@ -531,7 +538,7 @@ export function EntryDialog({
     <div
       className={cn(
         "fixed inset-0 z-[120] flex bg-ink/45 backdrop-blur-sm animate-fade-in",
-        isMobile ? "items-end" : "items-center justify-center p-4",
+        sheet ? "items-end" : "items-center justify-center p-4",
       )}
       onClick={close}
     >

@@ -100,15 +100,14 @@ export async function run(page, ctx) {
 
   // в разделе строк ещё быть не должно — они живут в окне
   const leaked = await page.evaluate(() => {
-    const dialog = [...document.querySelectorAll("div")].find((d) =>
-      /Новый расход/.test(d.innerText || ""),
+    // Список раздела — карточка «Расход за период». Пока не нажали «Записать»,
+    // набранных строк в ней быть не должно.
+    const section = [...document.querySelectorAll("section")].find((s) =>
+      /Расход за период/.test(s.innerText || ""),
     );
-    const all = [...document.querySelectorAll("div")].filter((d) =>
-      /ТЕСТ окно — масло/.test(d.innerText || ""),
-    );
-    return all.every((d) => dialog?.contains(d) ?? false);
+    return !/ТЕСТ окно/.test(section?.innerText ?? "");
   });
-  console.log("строки пока только в окне:", leaked);
+  console.log("в разделе строк ещё нет:", leaked);
 
   console.log("запись:", await click(/^Записать \d+/));
   await ctx.sleep(2500);

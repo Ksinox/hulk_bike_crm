@@ -143,6 +143,23 @@ export function useIsTabletScreen(breakpoint = 1200): boolean {
  *
  * Порог: высота ≤ 860 (1280×720, 1366×768) или ширина ≤ 1440.
  */
+/**
+ * Телефон по ширине экрана (<768px) — для раскладок, где планшет должен вести
+ * себя как компьютер: окно по центру, а не лист снизу во всю ширину.
+ */
+export function useIsPhoneWidth(): boolean {
+  const compute = () => (typeof window === "undefined" ? false : window.innerWidth < 768);
+  const [phone, setPhone] = useState<boolean>(compute);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const update = () => setPhone(compute());
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return phone;
+}
+
 export function useIsCompactScreen(): boolean {
   const compute = () => {
     if (typeof window === "undefined") return false;
