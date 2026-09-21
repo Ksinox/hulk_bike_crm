@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Plus, Trash2, UserRound, X } from "lucide-react";
 import { toast, confirmDialog } from "@/lib/toast";
 import {
@@ -42,9 +42,14 @@ import {
 export function FinancePayroll({
   rows,
   rangeLabel,
+  openSignal,
+  hideAdd,
 }: {
   rows: FinancePayrollRow[];
   rangeLabel: string;
+  /** Планшет: нажатие кнопки в нижней панели добавляет человека. */
+  openSignal?: number;
+  hideAdd?: boolean;
 }) {
   const { data: people = [] } = useFinancePeople();
   const updateRow = useUpdateFinancePayroll();
@@ -57,6 +62,9 @@ export function FinancePayroll({
     salary: number;
     pct: number;
   } | null>(null);
+  useEffect(() => {
+    if (openSignal) setAdding({ name: "", role: "", salary: 0, pct: 0 });
+  }, [openSignal]);
 
   const salaries = rows.reduce((s, r) => s + r.salary, 0);
   const bonuses = rows.reduce((s, r) => s + r.salesBonus, 0);
@@ -106,7 +114,8 @@ export function FinancePayroll({
       title="ФОТ за период"
       hint={`${rangeLabel} · оклад плюс процент с продаж. Сумма попадает в расход периода отдельной строкой.`}
       right={
-        !adding && (
+        !adding &&
+        !hideAdd && (
           <Btn tone="primary" onClick={() => setAdding({ name: "", role: "", salary: 0, pct: 0 })}>
             <Plus size={16} /> Человек
           </Btn>

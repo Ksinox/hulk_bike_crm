@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pencil, Plus, Repeat, Trash2, X } from "lucide-react";
 import { toast, confirmDialog } from "@/lib/toast";
 import { Switch } from "@/components/ui/switch";
@@ -37,14 +37,24 @@ export function FinanceRecurringList({
   categories,
   periodKey,
   entries,
+  openSignal,
+  hideAdd,
 }: {
   categories: FinanceCategory[];
   periodKey: string;
   entries: FinanceEntry[];
+  /** Планшет: нажатие кнопки в нижней панели открывает форму издержки. */
+  openSignal?: number;
+  hideAdd?: boolean;
 }) {
   const { data: items = [] } = useFinanceRecurring();
   const cats = categories.filter((c) => c.kind === "expense");
   const [draft, setDraft] = useState<Draft | null>(null);
+  useEffect(() => {
+    if (openSignal)
+      setDraft({ categoryId: cats[0]?.id ?? null, name: "", amount: 0, active: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSignal]);
   const create = useCreateFinanceRecurring();
   const update = useUpdateFinanceRecurring();
   const remove = useDeleteFinanceRecurring();
@@ -102,14 +112,16 @@ export function FinanceRecurringList({
           : "То, что повторяется каждый месяц: аренда помещения, связь, интернет, логистика"
       }
       right={
-        <Btn
-          tone="primary"
-          onClick={() =>
-            setDraft({ categoryId: cats[0]?.id ?? null, name: "", amount: 0, active: true })
-          }
-        >
-          <Plus size={16} /> Добавить
-        </Btn>
+        hideAdd ? null : (
+          <Btn
+            tone="primary"
+            onClick={() =>
+              setDraft({ categoryId: cats[0]?.id ?? null, name: "", amount: 0, active: true })
+            }
+          >
+            <Plus size={16} /> Добавить
+          </Btn>
+        )
       }
     >
       {draft && (

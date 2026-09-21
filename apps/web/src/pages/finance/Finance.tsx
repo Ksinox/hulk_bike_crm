@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { usePageFab } from "@/mobile/fab";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -85,6 +87,24 @@ const SPAN: Record<RangeMode, number> = {
 
 export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
   const [tab, setTab] = useState<FinanceTab>("overview");
+  /**
+   * Планшет: разделы переключаются рядом внизу, а главное действие вкладки
+   * («+ Приход», «+ Расход», «+ Издержка», «+ Человек») живёт в нижней
+   * панели справа — как во всех остальных разделах (правка 21.09).
+   */
+  const tabletLayout = useTabletLayout();
+  const [addSignal, setAddSignal] = useState(0);
+  const addLabel =
+    tab === "income"
+      ? "Приход"
+      : tab === "expense"
+        ? "Расход"
+        : tab === "recurring"
+          ? "Издержка"
+          : tab === "payroll"
+            ? "Человек"
+            : "";
+  usePageFab(addLabel || "…", () => setAddSignal((n) => n + 1), !tabletLayout || !addLabel);
   /** Сдвиг от текущего периода: 0 — этот, 1 — прошлый и так далее. */
   const [back, setBack] = useState(0);
   const [mode, setMode] = useState<RangeMode>("period");
@@ -156,6 +176,32 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
   const prevExpense = sum(prevEntries, "expense");
   const prevProfit = prevIncome - prevExpense;
 
+  /** Ряд разделов блока: сверху на компьютере, снизу на планшете. */
+  const tabsStrip = (
+    <div>
+          <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-surface p-1.5 shadow-card-sm sm:flex">
+            {TABS.map((t) => {
+              const Icon = t.icon;
+              const on = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTab(t.id)}
+                  className={cn(
+                    "inline-flex h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 text-[13px] font-semibold transition-colors sm:flex-1 sm:px-3",
+                    on ? "bg-ink text-white" : "text-muted hover:bg-surface-soft hover:text-ink",
+                  )}
+                >
+                  <Icon size={15} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+  );
+
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       {/* В мобильной оболочке шапка и заголовок раздела уже есть. */}
@@ -215,29 +261,10 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
       </div>
 
       {/* Вкладки: на телефоне сеткой в две строки — видно все сразу, ничего
-          не прячется за край. На компьютере — одной строкой. */}
-      <div>
-        <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-surface p-1.5 shadow-card-sm sm:flex">
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            const on = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTab(t.id)}
-                className={cn(
-                  "inline-flex h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 text-[13px] font-semibold transition-colors sm:flex-1 sm:px-3",
-                  on ? "bg-ink text-white" : "text-muted hover:bg-surface-soft hover:text-ink",
-                )}
-              >
-                <Icon size={15} />
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+          не прячется за край. На компьютере — одной строкой. На планшете
+          этот же ряд переезжает ВНИЗ экрана (правка заказчика 21.09):
+          планшет держат в руках, и переключаются разделы большим пальцем. */}
+      {!tabletLayout && tabsStrip}
 
       {tab === "overview" && (
         <FinanceOverview
@@ -258,6 +285,8 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
           categories={categories}
           bounds={{ from: range.from, to: range.to }}
           payrollTotal={payrollTotal}
+          openSignal={addSignal}
+          hideAdd={tabletLayout}
         />
       )}
       {tab === "recurring" && (
@@ -265,10 +294,27 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
           categories={categories}
           periodKey={entriesData?.periodKey ?? range.from}
           entries={entries}
+          openSignal={addSignal}
+          hideAdd={tabletLayout}
         />
       )}
-      {tab === "payroll" && <FinancePayroll rows={payroll} rangeLabel={range.label} />}
+      {tab === "payroll" && (
+        <FinancePayroll
+          rows={payroll}
+          rangeLabel={range.label}
+          openSignal={addSignal}
+          hideAdd={tabletLayout}
+        />
+      )}
       {tab === "categories" && <FinanceCategories categories={categories} entries={entries} />}
+
+      {/* Планшет: переключатель разделов прилипает к низу экрана — прямо над
+          нижней панелью, под большим пальцем. */}
+      {tabletLayout && (
+        <div className="sticky bottom-[-1.5rem] z-20 -mx-4 -mb-6 mt-1 bg-bg px-4 pb-6 pt-2">
+          {tabsStrip}
+        </div>
+      )}
     </main>
   );
 }

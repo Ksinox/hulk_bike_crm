@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, Repeat, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import { toast } from "@/lib/toast";
 import { rankSuggestions } from "@/components/SuggestInput";
 import {
@@ -49,6 +50,8 @@ export function FinanceFlows({
   categories,
   bounds,
   payrollTotal,
+  openSignal,
+  hideAdd,
 }: {
   kind: FinanceKind;
   /** Движения выбранного периода. */
@@ -58,6 +61,10 @@ export function FinanceFlows({
   categories: FinanceCategory[];
   bounds: { from: string; to: string };
   payrollTotal: number;
+  /** Планшет: счётчик нажатий кнопки в нижней панели — открывает окно ввода. */
+  openSignal?: number;
+  /** Планшет: своя кнопка не нужна — действие живёт в нижней панели. */
+  hideAdd?: boolean;
 }) {
   const rows = useMemo(
     () =>
@@ -75,6 +82,11 @@ export function FinanceFlows({
 
   /** Окно ввода: null — закрыто, "new" — пачка, объект — правка строки. */
   const [dialog, setDialog] = useState<"new" | (EntryDraft & { id: number }) | null>(null);
+  // Нажали «+ Приход/Расход» в нижней панели планшета — открываем то же окно.
+  useEffect(() => {
+    if (openSignal) setDialog("new");
+  }, [openSignal]);
+  const tabletLayout = useTabletLayout();
   const createMany = useCreateFinanceEntries();
   const deleteMany = useDeleteFinanceEntries();
   const update = useUpdateFinanceEntry();
@@ -132,9 +144,11 @@ export function FinanceFlows({
           : `Всего ${fmtMoney(total)}`
       }
       right={
-        <Btn tone="primary" onClick={() => setDialog("new")}>
-          <Plus size={16} /> Добавить
-        </Btn>
+        hideAdd ? null : (
+          <Btn tone="primary" onClick={() => setDialog("new")}>
+            <Plus size={16} /> Добавить
+          </Btn>
+        )
       }
     >
       {dialog && (
@@ -170,17 +184,33 @@ export function FinanceFlows({
             return (
               <div
                 key={e.id}
-                className="grid grid-cols-[52px_1fr_auto] items-center gap-2 rounded-xl border border-border bg-white px-3 py-2.5 sm:grid-cols-[64px_minmax(0,1fr)_210px_140px_auto]"
+                className={cn(
+                  "grid grid-cols-[52px_1fr_auto] items-center gap-2 rounded-xl border border-border bg-white px-3 py-2.5 sm:grid-cols-[64px_minmax(0,1fr)_210px_140px_auto]",
+                  // Планшет стоя: пять колонок не помещаются — наименование
+                  // сжималось до «Масл…». Возвращаем телефонную раскладку:
+                  // статья под наименованием, кнопки отдельной строкой.
+                  tabletLayout && "portrait:grid-cols-[52px_1fr_auto]",
+                )}
               >
                 <div className="text-[12px] font-semibold text-muted-2">{dayLabel(e.at)}</div>
                 <div className="min-w-0">
                   <div className="truncate text-[14px] font-semibold text-ink">{e.name}</div>
-                  <div className="flex items-center gap-1.5 text-[11.5px] text-muted sm:hidden">
+                  <div
+                    className={cn(
+                      "flex items-center gap-1.5 text-[11.5px] text-muted sm:hidden",
+                      tabletLayout && "portrait:!flex",
+                    )}
+                  >
                     {cat?.name ?? "без статьи"}
                     {e.source === "recurring" && <Repeat size={11} className="text-blue-600" />}
                   </div>
                 </div>
-                <div className="hidden min-w-0 items-center gap-1.5 text-[12.5px] text-muted sm:flex">
+                <div
+                  className={cn(
+                    "hidden min-w-0 items-center gap-1.5 text-[12.5px] text-muted sm:flex",
+                    tabletLayout && "portrait:!hidden",
+                  )}
+                >
                   <span className="truncate">{cat?.name ?? "без статьи"}</span>
                   {e.source === "recurring" && (
                     <span
@@ -199,7 +229,12 @@ export function FinanceFlows({
                 >
                   {fmtMoney(e.amount)}
                 </div>
-                <div className="col-span-3 flex gap-2 sm:col-span-1 sm:gap-1">
+                <div
+                  className={cn(
+                    "col-span-3 flex gap-2 sm:col-span-1 sm:gap-1",
+                    tabletLayout && "portrait:col-span-3 portrait:gap-2",
+                  )}
+                >
                   <Btn
                     className="h-11 flex-1 px-3 sm:h-9 sm:flex-none"
                     onClick={() =>
