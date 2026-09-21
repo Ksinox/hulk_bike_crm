@@ -178,6 +178,20 @@ export function useUpdateFinanceEntry() {
   );
 }
 
+/** Пачка строк из окна ввода — одним запросом и одной записью в журнале. */
+export function useCreateFinanceEntries() {
+  return useFinanceMutation((items: EntryInput[]) =>
+    api.post<{ items: FinanceEntry[] }>("/api/finance/entries/bulk", { items }),
+  );
+}
+
+/** Откат пачки целиком — кнопка «Отменить» в тосте. */
+export function useDeleteFinanceEntries() {
+  return useFinanceMutation((ids: number[]) =>
+    api.post<{ ok: true }>("/api/finance/entries/bulk-delete", { ids }),
+  );
+}
+
 export function useDeleteFinanceEntry() {
   return useFinanceMutation((id: number) => api.delete<{ ok: true }>(`/api/finance/entries/${id}`));
 }

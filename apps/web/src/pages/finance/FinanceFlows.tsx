@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Pencil, Plus, Repeat, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { rankSuggestions } from "@/components/SuggestInput";
 import {
   useCreateFinanceCategory,
-  useCreateFinanceEntry,
+  useCreateFinanceEntries,
+  useDeleteFinanceEntries,
   useDeleteFinanceEntry,
   useRestoreFinanceEntry,
   useUpdateFinanceEntry,
@@ -15,7 +16,7 @@ import {
 } from "@/lib/api/finance";
 import { fmtMoney } from "./Finance";
 import { Btn, EmptyHint, SectionCard } from "./ui";
-import { QuickEntry, type QuickDraft } from "./QuickEntry";
+import { EntryDialog, type EntryDraft } from "./EntryDialog";
 
 /**
  * Приход и расход за период.
@@ -32,12 +33,6 @@ import { QuickEntry, type QuickDraft } from "./QuickEntry";
  * Править можно всё: строка открывается теми же полями, удаление мягкое —
  * в тосте десять секунд живёт «Отменить».
  */
-
-const todayISO = (from: string, to: string): string => {
-  const now = new Date();
-  const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  return iso >= from && iso <= to ? iso : from;
-};
 
 const dayLabel = (iso: string): string => {
   const [y, m, d] = iso.split("-").map(Number);
@@ -64,7 +59,6 @@ export function FinanceFlows({
   bounds: { from: string; to: string };
   payrollTotal: number;
 }) {
-  const cats = categories.filter((c) => c.kind === kind);
   const rows = useMemo(
     () =>
       entries
@@ -79,69 +73,42 @@ export function FinanceFlows({
     [allEntries, kind],
   );
 
-  const [draft, setDraft] = useState<QuickDraft | null>(null);
-  /** Сколько строк внесли подряд за этот заход — «книга учёта» в действии. */
-  const [savedCount, setSavedCount] = useState(0);
-  const formRef = useRef<HTMLDivElement>(null);
-  // Открыли форму — сразу подводим её к глазам: на телефоне она иначе
-  // остаётся ниже плиток и кажется, что кнопка ничего не сделала.
-  useEffect(() => {
-    if (draft) formRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [draft?.id, draft === null]);
-  const create = useCreateFinanceEntry();
+  /** Окно ввода: null — закрыто, "new" — пачка, объект — правка строки. */
+  const [dialog, setDialog] = useState<"new" | (EntryDraft & { id: number }) | null>(null);
+  const createMany = useCreateFinanceEntries();
+  const deleteMany = useDeleteFinanceEntries();
   const update = useUpdateFinanceEntry();
   const del = useDeleteFinanceEntry();
   const restore = useRestoreFinanceEntry();
   const addCategory = useCreateFinanceCategory();
 
-  const startNew = () => {
-    setSavedCount(0);
-    setDraft({
-      categoryId: cats[0]?.id ?? null,
-      name: "",
-      amount: 0,
-      at: todayISO(bounds.from, bounds.to),
+  /**
+   * Записать пачку: строки уходят одним запросом, в журнале одна запись, а в
+   * тосте десять секунд живёт «Отменить» — откатывает всю пачку целиком.
+   */
+  const submitBatch = async (list: EntryDraft[]) => {
+    const res = await createMany.mutateAsync(list.map((r) => ({ ...r, kind })));
+    const ids = (res.items ?? []).map((r) => r.id);
+    const sum = list.reduce((s, r) => s + r.amount, 0);
+    toast.action({
+      title: `Записано ${list.length} ${list.length === 1 ? "строка" : "строк"}`,
+      message: `${kind === "income" ? "Приход" : "Расход"} на ${fmtMoney(sum)}`,
+      onAction: async () => {
+        if (ids.length) await deleteMany.mutateAsync(ids);
+        toast.success("Отменили", "Строки убраны из раздела");
+      },
     });
   };
 
-  /**
-   * Сохранение из пошагового ввода. Вернули true — мастер остаётся открытым и
-   * ждёт следующую строку: так подряд вносят десять расходов, не отрываясь.
-   */
-  const submitQuick = async (d: QuickDraft): Promise<boolean> => {
-    const draft = d;
-    const name = draft.name.trim();
-    if (!name) {
-      toast.error("Напишите, за что", "Например «Масло 10W-40»");
-      return false;
-    }
-    if (draft.id) {
-      await update.mutateAsync({
-        id: draft.id,
-        categoryId: draft.categoryId,
-        name,
-        amount: draft.amount,
-        at: draft.at,
-      });
-      toast.success("Сохранено", `${name} · ${fmtMoney(draft.amount)}`);
-      setDraft(null);
-      return false;
-    }
-    await create.mutateAsync({
-      kind,
-      categoryId: draft.categoryId,
-      name,
-      amount: draft.amount,
-      at: draft.at,
+  const saveEdit = async (d: EntryDraft & { id: number }) => {
+    await update.mutateAsync({
+      id: d.id,
+      categoryId: d.categoryId,
+      name: d.name,
+      amount: d.amount,
+      at: d.at,
     });
-    toast.success(
-      kind === "income" ? "Приход записан" : "Расход записан",
-      `${name} · ${fmtMoney(draft.amount)}`,
-    );
-    setSavedCount((n) => n + 1);
-    // Готовы к следующей строке: та же дата и статья под рукой.
-    setDraft({ categoryId: draft.categoryId, name: "", amount: 0, at: draft.at });
-    return true;
+    toast.success("Сохранено", `${d.name} · ${fmtMoney(d.amount)}`);
   };
 
   const remove = async (e: FinanceEntry) => {
@@ -165,34 +132,30 @@ export function FinanceFlows({
           : `Всего ${fmtMoney(total)}`
       }
       right={
-        !draft && (
-          <Btn tone="primary" onClick={startNew}>
-            <Plus size={16} /> Добавить
-          </Btn>
-        )
+        <Btn tone="primary" onClick={() => setDialog("new")}>
+          <Plus size={16} /> Добавить
+        </Btn>
       }
     >
-      {draft && (
-        <div ref={formRef}>
-          <QuickEntry
-            kind={kind}
-            categories={categories}
-            suggestions={names}
-            draft={draft}
-            savedCount={savedCount}
-            onChange={setDraft}
-            onSubmit={submitQuick}
-            onClose={() => setDraft(null)}
-            onAddCategory={async (name) => {
-              const r = await addCategory.mutateAsync({ kind, name });
-              toast.success("Статья добавлена", name);
-              return r.item?.id ?? null;
-            }}
-          />
-        </div>
+      {dialog && (
+        <EntryDialog
+          kind={kind}
+          categories={categories}
+          suggestions={names}
+          bounds={bounds}
+          edit={dialog === "new" ? null : dialog}
+          onSaveEdit={saveEdit}
+          onSubmitBatch={submitBatch}
+          onAddCategory={async (name) => {
+            const r = await addCategory.mutateAsync({ kind, name });
+            toast.success("Статья добавлена", name);
+            return r.item?.id ?? null;
+          }}
+          onClose={() => setDialog(null)}
+        />
       )}
 
-      {rows.length === 0 && !draft ? (
+      {rows.length === 0 ? (
         <EmptyHint
           text={
             kind === "income"
@@ -240,7 +203,7 @@ export function FinanceFlows({
                   <Btn
                     className="h-11 flex-1 px-3 sm:h-9 sm:flex-none"
                     onClick={() =>
-                      setDraft({
+                      setDialog({
                         id: e.id,
                         categoryId: e.categoryId,
                         name: e.name,

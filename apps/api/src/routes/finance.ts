@@ -365,6 +365,61 @@ export async function financeRoutes(app: FastifyInstance) {
     return reply.code(201).send({ item: row });
   });
 
+  /**
+   * Пачка строк из окна ввода (правка 20.09): оператор набирает несколько
+   * движений подряд и отправляет их одной кнопкой. Пишем разом — и в журнал
+   * одной записью, иначе хронология забивается десятком одинаковых строк.
+   */
+  app.post("/entries/bulk", async (req, reply) => {
+    const parsed = z
+      .object({ items: z.array(EntryBody).min(1).max(100) })
+      .strict()
+      .safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "bad_request" });
+    const a = await anchors();
+    const rows = await db
+      .insert(financeEntries)
+      .values(
+        parsed.data.items.map((it) => ({
+          ...it,
+          periodKey: keyOf(parseISO(it.at), a),
+          createdBy: req.user?.userId ?? null,
+        })),
+      )
+      .returning();
+    const total = rows.reduce((s, r) => s + r.amount, 0);
+    const kinds = new Set(rows.map((r) => r.kind));
+    const word = kinds.size === 1 ? kindWord([...kinds][0]!) : "движения";
+    await logActivity(req, {
+      entity: "finance",
+      entityId: rows[0]!.id,
+      action: "created",
+      summary: `Финансы: внесено ${word} — ${rows.length} ${rows.length === 1 ? "строка" : "строк"} на ${money(total)}`,
+      meta: { items: rows.map((r) => ({ name: r.name, amount: r.amount, at: r.at })) },
+    });
+    return reply.code(201).send({ items: rows });
+  });
+
+  /** Откат пачки: кнопка «Отменить» в тосте убирает все внесённые строки. */
+  app.post("/entries/bulk-delete", async (req, reply) => {
+    const parsed = z
+      .object({ ids: z.array(z.number().int().positive()).min(1).max(100) })
+      .strict()
+      .safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "bad_request" });
+    await db
+      .update(financeEntries)
+      .set({ deletedAt: new Date() })
+      .where(inArray(financeEntries.id, parsed.data.ids));
+    await logActivity(req, {
+      entity: "finance",
+      entityId: parsed.data.ids[0]!,
+      action: "deleted",
+      summary: `Финансы: отменено внесение — убрано ${parsed.data.ids.length} строк`,
+    });
+    return { ok: true };
+  });
+
   app.patch<{ Params: { id: string } }>("/entries/:id", async (req, reply) => {
     const id = Number(req.params.id);
     const parsed = EntryBody.partial().safeParse(req.body);
