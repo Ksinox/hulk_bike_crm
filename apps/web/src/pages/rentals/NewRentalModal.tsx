@@ -955,7 +955,14 @@ export function NewRentalModal({
 
           {/* 3 Срок и тариф */}
           <Section num={3} title="Срок и тариф" mobile={stepMode} current={step} className={sectionCls}>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div
+              className={cn(
+                "grid grid-cols-2 gap-3 sm:grid-cols-3",
+                // Планшет стоя: в колонке шириной ~370px три поля в ряд не
+                // помещаются — дата обрезалась до «21.09.202».
+                tabletLayout && "portrait:grid-cols-2 portrait:[&>label:first-child]:col-span-2",
+              )}
+            >
               <label className="text-[12px] font-semibold text-ink">
                 Дата выдачи
                 <div className="mt-1">
@@ -1490,7 +1497,13 @@ export function NewRentalModal({
               tabletLayout && "px-7 py-4",
             )}
           >
-            <span className="min-w-0 flex-1 truncate text-[11px] text-muted-2">
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-[11px] text-muted-2",
+                // Планшет стоя: подсказка упиралась в кнопки — прячем.
+                tabletLayout && "portrait:hidden",
+              )}
+            >
               После создания нужно подтвердить выдачу (договор, аренда, залог).
             </span>
             <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
