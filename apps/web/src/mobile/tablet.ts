@@ -101,3 +101,17 @@ export const TABLET_FOOTER_BTN = "h-14 min-w-[200px] text-[16px]";
  */
 export const TABLET_CARD_COLUMNS =
   "landscape:block landscape:columns-2 landscape:gap-x-4 landscape:space-y-0 landscape:[&>*]:mb-3 landscape:[&>*]:break-inside-avoid";
+
+/**
+ * Кладка без пустот (правило заказчика 21.09): «почему под блоком пустота?
+ * Блоки должны сами подстраиваться и заполнять её — так по всем правилам
+ * UX/UI». Обычная сетка `grid-cols-2` кладёт блоки рядами: если слева блок
+ * короткий, под ним до конца ряда остаётся дыра. CSS-колонки укладывают
+ * блоки потоком и выравнивают колонки по высоте — следующий блок сам
+ * встаёт в освободившееся место.
+ *
+ * Вешается на контейнер РАЗНОВЫСОКИХ блоков (сводка главной, настройки).
+ * Для одинаковых по высоте карточек списка сетка остаётся сеткой.
+ */
+export const TABLET_MASONRY_2 =
+  "tab:block tab:columns-2 tab:gap-x-4 tab:[&>*]:mb-3 tab:[&>*]:break-inside-avoid";

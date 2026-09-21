@@ -35,6 +35,7 @@ import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useTabletLayout } from "@/lib/useIsMobile";
+import { TABLET_MASONRY_2 } from "../tablet";
 import {
   formatRub,
   greetingByHour,
@@ -113,14 +114,18 @@ export function MobileDashboard({
         className={cn(
           "flex flex-col gap-4",
           tabletLayout &&
-            "landscape:grid landscape:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)] landscape:items-stretch landscape:gap-3",
+            "grid items-stretch gap-3 landscape:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)] portrait:grid-cols-3",
         )}
       >
       {/* Выручка — тап открывает банковскую сводку (графики/показатели). */}
       <button
         type="button"
         onClick={() => setRevenueOpen(true)}
-        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-4 text-left text-white shadow-card active:scale-[0.99]"
+        className={cn(
+          "relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-4 text-left text-white shadow-card active:scale-[0.99]",
+          // Планшет стоя: выручка во всю ширину ряда, под ней три плашки.
+          tabletLayout && "portrait:col-span-3",
+        )}
       >
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-white/70">
@@ -148,7 +153,7 @@ export function MobileDashboard({
       <div
         className={cn(
           "grid grid-cols-2 items-stretch gap-3",
-          tabletLayout && "landscape:contents",
+          tabletLayout && "contents",
         )}
       >
         <ParkLoadGauge
@@ -206,9 +211,10 @@ export function MobileDashboard({
       )}
       </div>
 
-      {/* Планшет: блоки сводки — в две колонки. На телефоне это лента сверху
-          вниз, а на широком экране половина ширины пустовала. */}
-      <div className="flex flex-col gap-3 tab:grid tab:grid-cols-2 tab:items-start tab:gap-4">
+      {/* Планшет: блоки сводки — в две колонки КЛАДКОЙ, без пустот: если
+          «Напоминания» короче «Просрочек», следующий блок («Парк») сам
+          встаёт под них, а не ждёт конца ряда (правило заказчика 21.09). */}
+      <div className={cn("flex flex-col gap-3", TABLET_MASONRY_2)}>
       {/* Напоминания: кому звонить про платёж по выкупу и когда выплата
           инвестору. Паритет с десктопом (01.09). */}
       {reminders.length > 0 && (

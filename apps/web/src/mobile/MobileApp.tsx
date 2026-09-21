@@ -127,10 +127,7 @@ export function MobileApp({
     //  • FAB — absolute внутри relative-корня (не fixed) по той же причине.
     <FabProvider set={setFab}>
       <div className="relative flex h-[100dvh] flex-col overflow-hidden bg-bg">
-        <MobileTopBar
-          title={routeTitle(route)}
-          action={tabletLayout && !overlayOpen && !moreOpen ? fab : null}
-        />
+        <MobileTopBar title={routeTitle(route)} />
 
         <main
           ref={mainRef}
@@ -150,6 +147,7 @@ export function MobileApp({
           onSelect={go}
           onMore={() => setMoreOpen(true)}
           moreActive={moreOpen || isMoreRoute(route)}
+          action={tabletLayout && !overlayOpen && !moreOpen ? fab : null}
         />
 
         {fab && !tabletLayout && !overlayOpen && !moreOpen && (
@@ -274,18 +272,7 @@ function MobilePage({
 
 /* ───────────────────────── верхняя панель ───────────────────────── */
 
-function MobileTopBar({
-  title,
-  action,
-}: {
-  title: string;
-  /**
-   * Планшет: действие экрана («+ Аренда», «+ Сделка») живёт в шапке, а не
-   * парящей кнопкой — на планшете она накрывала последние строки списка
-   * (правка заказчика 21.09).
-   */
-  action?: PageFab | null;
-}) {
+function MobileTopBar({ title }: { title: string }) {
   // Пункт 7: сводка дня (Z-отчёт) — доступна в любой момент с телефона.
   const [dayReportOpen, setDayReportOpen] = useState(false);
   return (
@@ -296,16 +283,6 @@ function MobileTopBar({
         {title}
       </h1>
       <div className="ml-auto flex items-center gap-1.5">
-        {action && (
-          <button
-            type="button"
-            onClick={action.onClick}
-            className="mr-1 flex h-11 items-center gap-2 rounded-full bg-blue-600 px-5 text-[15px] font-bold text-white transition-transform active:scale-95"
-          >
-            <Plus size={19} strokeWidth={2.5} />
-            {action.label}
-          </button>
-        )}
         <button
           type="button"
           aria-label="Сводка дня"
@@ -333,17 +310,35 @@ function MobileTabBar({
   onSelect,
   onMore,
   moreActive,
+  action,
 }: {
   route: RouteId;
   onSelect: (id: RouteId) => void;
   onMore: () => void;
   moreActive: boolean;
+  /**
+   * Планшет: действие экрана («+ Сделка», «+ Аренда») живёт в нижней панели
+   * справа — своим местом, не парящей кнопкой поверх списка. Планшет держат
+   * в руках, и большой палец достаёт до низа, а не до шапки (правка
+   * заказчика 21.09).
+   */
+  action?: PageFab | null;
 }) {
   const isNewSection = useNewSections();
   const moreHasNew = buildMoreItems(true).some((i) => isNewSection(i.id));
   return (
     <nav className="shrink-0 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)]">
-      <div className="mx-auto flex h-[60px] max-w-md items-stretch justify-around px-1">
+      <div
+        className={cn(
+          "mx-auto flex h-[60px] max-w-md items-stretch justify-around px-1",
+          action && "max-w-[1180px] justify-between gap-6 px-6",
+        )}
+      >
+        <div
+          className={cn(
+            action ? "flex flex-1 items-stretch justify-around gap-2" : "contents",
+          )}
+        >
         {tabItems.map((item) => (
           <TabButton
             key={item.id}
@@ -367,6 +362,18 @@ function MobileTabBar({
           <MoreIcon size={22} strokeWidth={moreActive ? 2.4 : 2} />
           <span className="text-[10px] font-semibold">Ещё</span>
         </button>
+        </div>
+        {action && (
+          <button
+            type="button"
+            data-tour="fab"
+            onClick={action.onClick}
+            className="my-2 flex shrink-0 items-center gap-2 rounded-2xl bg-blue-600 px-7 text-[15px] font-bold text-white transition-transform active:scale-95"
+          >
+            <Plus size={20} strokeWidth={2.5} />
+            {action.label}
+          </button>
+        )}
       </div>
     </nav>
   );

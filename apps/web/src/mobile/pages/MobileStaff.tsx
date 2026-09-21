@@ -8,6 +8,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { ReleaseViewsPanel } from "@/release/ReleaseViewsPanel";
+import { TABLET_MASONRY_2 } from "../tablet";
 import { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { useApiUsers, type ApiStaffUser } from "@/lib/api/users";
@@ -96,8 +97,9 @@ export function MobileStaff() {
       </div>
       {/* 15.09: кто посмотрел обновление. */}
       <ReleaseViewsPanel compact />
-      {/* Планшет: карточки людей в две колонки. */}
-      <div className="grid grid-cols-1 gap-2 tab:grid-cols-2 tab:gap-3">
+      {/* Планшет: карточки людей в две колонки кладкой — у кого-то список
+          ограничений длиннее, и соседняя карточка не должна ждать его. */}
+      <div className={cn("flex flex-col gap-2", TABLET_MASONRY_2)}>
         {sorted.map((u) => (
           <StaffRow key={u.id} user={u} onOpen={() => setEditUser(u)} />
         ))}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { TABLET_MASONRY_2 } from "../tablet";
 import { LogOut, Save, Pencil, HardDrive, SlidersHorizontal } from "lucide-react";
 import { SectionTabs } from "@/components/SectionTabs";
 import { useSettingsTab, type SettingsTab } from "@/app/sectionTabs";
@@ -171,9 +172,10 @@ export function MobileSettings() {
       </div>
 
       {isAdmin && (
-        /* Планшет: настройки в две колонки — иначе каждая карточка тянется
-           во всю ширину экрана, а половина места пустует. */
-        <div className="grid grid-cols-1 gap-4 tab:grid-cols-2">
+        /* Планшет: настройки в две колонки КЛАДКОЙ — карточки разной высоты,
+           и следующая встаёт в освободившееся место, а не ждёт конца ряда
+           (правило заказчика 21.09: пустот между блоками быть не должно). */
+        <div className={cn("flex flex-col gap-4", TABLET_MASONRY_2)}>
           <SettingCard
             title="Расчётный период"
             hint="День месяца, с которого начинается финансовый период. При смене прошлые месяцы в KPI не пересчитываются."
@@ -222,11 +224,13 @@ export function MobileSettings() {
               <SaveBtn onClick={saveWorkHours} pending={setMut.isPending} />
             </div>
           </SettingCard>
+
+          {/* Пункт 1: ключ директора — установка/смена с телефона (паритет).
+              Живёт внутри кладки, чтобы не оставлять пустоту под соседним
+              блоком. */}
+          <DirectorKeySection />
         </div>
       )}
-
-      {/* Пункт 1: ключ директора — установка/смена с телефона (паритет). */}
-      {isAdmin && <DirectorKeySection />}
 
       <button
         type="button"
@@ -235,10 +239,6 @@ export function MobileSettings() {
       >
         <LogOut size={18} /> Выйти из аккаунта
       </button>
-
-      <p className="text-center text-[12px] text-muted-2">
-        Управление сотрудниками, тарифами и шаблонами — на компьютере
-      </p>
 
       {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
     </div>
