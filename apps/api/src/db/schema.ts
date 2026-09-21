@@ -386,6 +386,11 @@ export const scooters = pgTable(
      * Уникален среди живых скутеров (частичный индекс в миграции 0071).
      */
     rentalSlot: integer("rental_slot"),
+    /**
+     * Правки 7.0 (п.5): ряд номера — 'petrol' или 'electric'. У электро своя
+     * нумерация с 1; номер уникален внутри ряда (миграция 0095).
+     */
+    slotPool: text("slot_pool").notNull().default("petrol"),
     /** Пункт 16: последний арендный номер — ярлык «был в аренде». */
     exRentalSlot: integer("ex_rental_slot"),
     /** Пункт 15: уникальный ID техники — 4 последние цифры номера рамы. */
@@ -2525,6 +2530,21 @@ export const buyoutPayments = pgTable(
  * внутри своего блока.
  * ============================================================ */
 
+/**
+ * Механики сторонних ремонтов (правки 7.0, п.2). Не учётки CRM — как
+ * менеджеры продаж: имя и процент с конечной прибыли ремонта.
+ */
+export const serviceMechanics = pgTable("service_mechanics", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  name: text("name").notNull(),
+  /** Процент с прибыли ремонта (к оплате − закуп запчастей). */
+  percent: integer("percent").notNull().default(0),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const serviceOrders = pgTable(
   "service_orders",
   {
@@ -2565,6 +2585,12 @@ export const serviceOrders = pgTable(
       () => users.id,
       { onDelete: "set null" },
     ),
+    /** Механик (правки 7.0) и его процент — копия на момент назначения. */
+    mechanicId: bigint("mechanic_id", { mode: "number" }).references(
+      () => serviceMechanics.id,
+      { onDelete: "set null" },
+    ),
+    mechanicPercent: integer("mechanic_percent"),
     /** Скидка при расчёте (2.0.2): к оплате = работы + запчасти − скидка. */
     discount: integer("discount").notNull().default(0),
     /** Статус до отмены — «Вернуть в работу» возвращает его (2.0.2). */
@@ -2670,3 +2696,121 @@ export const serviceOrderItemsRelations = relations(serviceOrderItems, ({ one })
     references: [serviceOrders.id],
   }),
 }));
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Блок «Финансы» (20.09) — форма ДДС.
+ *
+ * Изолирован от аренд, ремонтов и продаж: суммы вносятся руками, чтобы
+ * цифры блока не спорили с операционным учётом. Период — общий расчётный
+ * период CRM; ключ периода (`periodKey`) — дата его первого дня.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+export const financeCategories = pgTable("finance_categories", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  /** income — приход, expense — расход. */
+  kind: text("kind").notNull(),
+  name: text("name").notNull(),
+  /** Постоянная статья: аренда помещения, связь, коммунальные. */
+  fixed: boolean("fixed").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Постоянная издержка: шаблон, который повторяется в каждом периоде. */
+export const financeRecurring = pgTable("finance_recurring", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  kind: text("kind").notNull().default("expense"),
+  categoryId: bigint("category_id", { mode: "number" }),
+  name: text("name").notNull(),
+  amount: integer("amount").notNull().default(0),
+  /** Ключ периода, с которого шаблон действует. */
+  startPeriod: text("start_period").notNull(),
+  active: boolean("active").notNull().default(true),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+});
+
+export const financeEntries = pgTable(
+  "finance_entries",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    kind: text("kind").notNull(),
+    categoryId: bigint("category_id", { mode: "number" }),
+    name: text("name").notNull(),
+    amount: integer("amount").notNull().default(0),
+    at: date("at").notNull(),
+    periodKey: text("period_key").notNull(),
+    /** manual — внесли руками, recurring — создано из постоянной издержки. */
+    source: text("source").notNull().default("manual"),
+    recurringId: bigint("recurring_id", { mode: "number" }),
+    note: text("note"),
+    createdBy: bigint("created_by", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => ({
+    periodIdx: index("finance_entries_period_idx").on(t.periodKey),
+  }),
+);
+
+/** Человек в ФОТ. Это не учётка CRM: у механика и подсобника логина нет. */
+export const financePeople = pgTable("finance_people", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  name: text("name").notNull(),
+  role: text("role"),
+  salaryDefault: integer("salary_default").notNull().default(0),
+  /** Процент с продаж, который получает человек сверх оклада. */
+  salesPct: integer("sales_pct").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+});
+
+/** ФОТ за период: оклад + процент с продаж. */
+export const financePayroll = pgTable(
+  "finance_payroll",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    periodKey: text("period_key").notNull(),
+    personId: bigint("person_id", { mode: "number" }),
+    /** Имя на момент периода — переименование не переписывает прошлое. */
+    personName: text("person_name").notNull(),
+    salary: integer("salary").notNull().default(0),
+    /** Продажи периода, с которых считается процент. */
+    salesBase: integer("sales_base").notNull().default(0),
+    /** Процент, действовавший в этом периоде. */
+    salesPct: integer("sales_pct").notNull().default(0),
+    /** Сама премия: база × процент, но может быть вписана руками. */
+    salesBonus: integer("sales_bonus").notNull().default(0),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    periodPersonUq: uniqueIndex("finance_payroll_period_person_uq").on(
+      t.periodKey,
+      t.personId,
+    ),
+  }),
+);

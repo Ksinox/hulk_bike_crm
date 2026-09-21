@@ -4,6 +4,7 @@ import { Calculator, Plus, ReceiptText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RouteId } from "@/app/route";
 import { useMe, useLogout } from "@/lib/api/auth";
+import { usePerms } from "@/lib/permissions";
 import { openCalculator } from "@/lib/calc/calcStore";
 import { FabProvider, usePageFab, type PageFab } from "./fab";
 import { openDeal } from "@/pages/clients/CreateDealMenu";
@@ -21,15 +22,16 @@ import { MobileRentals } from "./pages/MobileRentals";
 import { MobileClients } from "./pages/MobileClients";
 import { MobileScooters } from "./pages/MobileScooters";
 import { MobileApplications } from "./pages/MobileApplications";
-import { MobileDebtors } from "./pages/MobileDebtors";
+import { Debtors } from "@/pages/debtors/Debtors";
 import { MobileService } from "./pages/MobileService";
 import { MobileStaff } from "./pages/MobileStaff";
 import { MobileProgress } from "./pages/MobileProgress";
 import { MobileSettings } from "./pages/MobileSettings";
-import { MobileDocuments } from "./pages/MobileDocuments";
+import { Documents } from "@/pages/documents/Documents";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { Partners } from "@/pages/partners/Partners";
 import { Sales } from "@/pages/sales/Sales";
+import { Finance } from "@/pages/finance/Finance";
 import { Analytics } from "@/pages/analytics/Analytics";
 import { Buyout } from "@/pages/buyout/Buyout";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
@@ -54,7 +56,8 @@ export function MobileApp({
 }) {
   const { data: me } = useMe();
   const canManageStaff = me?.role === "creator" || me?.role === "director";
-  const moreItems = buildMoreItems(canManageStaff);
+  const perms = usePerms();
+  const moreItems = buildMoreItems(canManageStaff, perms["data.finance"]);
   const [moreOpen, setMoreOpen] = useState(false);
   const [fab, setFab] = useState<PageFab | null>(null);
   // 16.09 (заказчик): кнопка «Сделка» оставалась поверх открытого окна.
@@ -191,7 +194,13 @@ function MobilePage({
     case "applications":
       return <MobileApplications />;
     case "debtors":
-      return <MobileDebtors />;
+      // Паритет (20.09): раздел целиком, как на компьютере — очередь,
+      // дело должника с заметками и звонками, платежи, новый должник.
+      return (
+        <div className="px-1 pb-4">
+          <Debtors embedded />
+        </div>
+      );
     case "service":
       return <MobileService />;
     case "analytics":
@@ -237,8 +246,21 @@ function MobilePage({
     case "settings":
     case "storage":
       return <MobileSettings />;
+    case "finance":
+      // Блок «Финансы» (20.09) свёрстан адаптивно: на телефоне те же данные
+      // карточками, вкладки прокручиваются вбок.
+      return (
+        <div className="px-1 pb-4">
+          <Finance embedded />
+        </div>
+      );
     case "docs":
-      return <MobileDocuments />;
+      // Паритет (20.09): шаблоны и прейскурант правятся и с телефона.
+      return (
+        <div className="px-1 pb-4">
+          <Documents embedded />
+        </div>
+      );
     default:
       return <MobilePlaceholder route={route} />;
   }

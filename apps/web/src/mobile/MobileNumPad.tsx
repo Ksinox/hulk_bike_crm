@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Delete } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isTouchTablet } from "@/lib/useIsMobile";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -14,6 +15,12 @@ function fmt(n: number) {
  * цифры, тач-таргеты ≥56px, лист выезжает снизу (sheet-up). «Готово» отдаёт
  * число наружу (с клампом в [0; max]). Управляется родителем через open-стейт:
  * `{numpad && <MobileNumPad {...numpad} onCancel onConfirm />}`.
+ *
+ * Правки 7.0 (п.8б): на ПЛАНШЕТЕ своя клавиатура в 520px выглядела
+ * телефонной и мелкой, а родная клавиатура iPad не открывалась. Там лист
+ * становится окном с крупным полем ввода — открывается родная клавиатура
+ * планшета. Окно стоит вверху экрана: клавиатура поднимается снизу и
+ * закрыла бы его.
  */
 export function MobileNumPad({
   label,
@@ -53,6 +60,8 @@ export function MobileNumPad({
   };
   const back = () => setDraft((c) => c.slice(0, -1));
   const clear = () => setDraft("");
+  // Решается один раз при открытии: поворот экрана тип устройства не меняет.
+  const [native] = useState(isTouchTablet);
 
   const commit = () => {
     let n = Number(draft || "0");
@@ -71,6 +80,85 @@ export function MobileNumPad({
       {k}
     </button>
   );
+
+  if (native) {
+    return (
+      <div
+        className="fixed inset-0 z-[150] flex flex-col items-center bg-ink/45 px-4 pt-[max(5vh,20px)] backdrop-blur-sm animate-fade-in"
+        onClick={onCancel}
+        data-numpad="native"
+      >
+        <div
+          className="flex w-full max-w-[560px] flex-col rounded-3xl bg-surface p-5 shadow-card-lg"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="text-center text-[15px] font-medium text-muted-2">
+            {label}
+            {sublabel ? <span className="text-muted"> · {sublabel}</span> : null}
+          </div>
+          <label
+            className={cn(
+              "mt-3 flex items-center rounded-2xl border-2 bg-surface-soft px-5 focus-within:bg-surface",
+              over ? "border-red-400" : "border-transparent focus-within:border-blue-600",
+            )}
+          >
+            <input
+              // Фокус — в том же касании, что открыло окно: иначе iPad не
+              // покажет клавиатуру. Не открылась — нажмите в поле.
+              autoFocus
+              inputMode="numeric"
+              pattern="[0-9]*"
+              enterKeyHint="done"
+              autoComplete="off"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value.replace(/\D/g, "").replace(/^0+(?=\d)/, "").slice(0, 9))}
+              onFocus={(e) => e.currentTarget.select()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commit();
+                if (e.key === "Escape") onCancel();
+              }}
+              placeholder="0"
+              aria-label={label}
+              className={cn(
+                "h-20 min-w-0 flex-1 bg-transparent text-center text-[44px] font-semibold tabular-nums outline-none placeholder:text-muted-2/60",
+                over ? "text-red-600" : "text-ink",
+              )}
+            />
+            <span className="ml-2 text-[24px] font-semibold text-muted-2">{suffix}</span>
+          </label>
+          <div className="mt-2 min-h-[18px] text-center text-[13px]">
+            {over ? (
+              <span className="font-semibold text-red-600">
+                Максимум {fmt(max!)} {suffix}
+              </span>
+            ) : draft.length > 3 ? (
+              <span className="font-semibold tabular-nums text-ink-2">
+                {fmt(num)} {suffix}
+              </span>
+            ) : hint ? (
+              <span className="text-muted-2">{hint}</span>
+            ) : null}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="h-14 flex-1 rounded-2xl bg-surface-soft text-[16px] font-semibold text-ink-2 transition-transform active:scale-[0.98]"
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              onClick={commit}
+              className="h-14 flex-[1.4] rounded-2xl bg-blue-600 text-[16px] font-bold text-white transition-transform active:scale-[0.98]"
+            >
+              {confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

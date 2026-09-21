@@ -3,8 +3,6 @@ import { Bike, ChevronDown, LayoutGrid, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
-import { MODEL_LABEL } from "@/lib/mock/rentals";
-import type { ScooterModel } from "@/lib/api/types";
 
 /**
  * #дашборд: фильтр парка — кнопка «Фильтры» в шапке, по наведению выпадает
@@ -25,12 +23,11 @@ export type ParkStatusId =
   | "disassembly"
   | "sold";
 
-const MODELS: { id: ScooterModel; label: string }[] = [
-  { id: "jog", label: "Jog" },
-  { id: "gear", label: "Gear" },
-  { id: "honda", label: "Honda" },
-  { id: "tank", label: "Tank" },
-];
+/** «Yamaha Gear 4T» → «Gear 4T»: в плитке фильтра место на одно-два слова. */
+function shortModel(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return parts.length > 1 && /^(yamaha|honda|suzuki|kawasaki)$/i.test(parts[0]!) ? parts.slice(1).join(" ") : name;
+}
 
 const STATUSES: { id: ParkStatusId; label: string; color: string }[] = [
   { id: "rented", label: "в аренде", color: "#378ADD" },
@@ -48,6 +45,7 @@ const STATUSES: { id: ParkStatusId; label: string; color: string }[] = [
 export function ParkRadialFilters({
   total,
   modelCounts,
+  modelList,
   statusCounts,
   selectedModels,
   selectedStatuses,
@@ -58,10 +56,12 @@ export function ParkRadialFilters({
 }: {
   total: number;
   modelCounts: Record<string, number>;
+  /** Модели парка из каталога (19.09): ключ «m:<id>», подпись, аватарка. */
+  modelList: { key: string; label: string; modelId: number | null }[];
   statusCounts: Record<string, number>;
-  selectedModels: Set<ScooterModel>;
+  selectedModels: Set<string>;
   selectedStatuses: Set<ParkStatusId>;
-  onToggleModel: (id: ScooterModel) => void;
+  onToggleModel: (key: string) => void;
   onClearModels: () => void;
   onToggleStatus: (id: ParkStatusId) => void;
   onClearStatuses: () => void;
@@ -69,11 +69,8 @@ export function ParkRadialFilters({
   const [open, setOpen] = useState(false);
   const { data: models = [] } = useApiScooterModels();
 
-  const avatarFor = (id: ScooterModel): string | null => {
-    const label = MODEL_LABEL[id] ?? id;
-    const m = models.find(
-      (x) => x.name.trim().toLowerCase() === label.toLowerCase(),
-    );
+  const avatarFor = (modelId: number | null): string | null => {
+    const m = modelId != null ? models.find((x) => x.id === modelId) : null;
     return m ? fileUrl(m.avatarThumbKey ?? m.avatarKey, { variant: "thumb" }) : null;
   };
 
@@ -125,17 +122,17 @@ export function ParkRadialFilters({
                 >
                   <LayoutGrid size={19} className="text-muted-2" />
                 </ModelItem>
-                {MODELS.map((m) => (
+                {modelList.map((m) => (
                   <ModelItem
-                    key={m.id}
-                    label={m.label}
-                    count={modelCounts[m.id] ?? 0}
-                    selected={selectedModels.has(m.id)}
-                    onClick={() => onToggleModel(m.id)}
+                    key={m.key}
+                    label={shortModel(m.label)}
+                    count={modelCounts[m.key] ?? 0}
+                    selected={selectedModels.has(m.key)}
+                    onClick={() => onToggleModel(m.key)}
                   >
-                    {avatarFor(m.id) ? (
+                    {avatarFor(m.modelId) ? (
                       <img
-                        src={avatarFor(m.id)!}
+                        src={avatarFor(m.modelId)!}
                         alt=""
                         className="h-full w-full rounded-full object-cover"
                       />

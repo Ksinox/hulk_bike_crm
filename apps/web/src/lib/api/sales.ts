@@ -179,6 +179,27 @@ export function useSignSaleDeal() {
   });
 }
 
+/** Правки 7.0 (п.7): директор исправляет проданную сделку. */
+export function useEditSignedDeal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: number;
+      price?: number;
+      purchasePrice?: number | null;
+      managerId?: number | null;
+      managerCommissionPct?: number;
+    }) => api.patch<SaleDeal>(`/api/sales/deals/${id}/signed`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: salesKeys.all });
+      qc.invalidateQueries({ queryKey: ["analytics"] });
+    },
+  });
+}
+
 export function useCancelSaleDeal() {
   const qc = useQueryClient();
   return useMutation({

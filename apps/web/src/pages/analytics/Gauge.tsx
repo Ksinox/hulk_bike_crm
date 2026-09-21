@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { STATUS_UI, type PlanState } from "./status";
+import { GOOD_FROM_PCT, STATUS_UI, type PlanState } from "./status";
 
 /**
  * Радиальный гейдж «до нормы» (07.09) — повтор элемента, который прислал
@@ -54,7 +54,7 @@ export function HalfRing({
   const lx2 = lx1 - Math.cos(angle) * 30;
   const ly2 = ly1 - Math.sin(angle) * 30;
 
-  const good = state.status !== "weak";
+  const good = state.pct >= GOOD_FROM_PCT;
   const fontSize = Math.max(16, SIZE * 0.1) * 1.45;
   const labelFontSize = Math.max(12, SIZE * 0.04) * 1.35;
   const arc = (r: number) =>

@@ -6,6 +6,7 @@ import {
   clients,
   priceGroups,
   priceItems,
+  serviceMechanics,
   serviceOrderItems,
   serviceOrderPayments,
   serviceOrders,
@@ -27,6 +28,8 @@ import { requireRole } from "../auth/plugin.js";
  *   к оплате          = работы + запчасти − скидка
  *   себестоимость     = Σ(закуп × количество) по запчастям
  *   прибыль           = к оплате − себестоимость
+ *   доля механика     = прибыль × процент механика (правки 7.0; убытка не делит)
+ *   наша прибыль      = прибыль − доля механика
  *   внесено           = Σ платежей (аванс, расчёт, возврат со знаком минус)
  *   остаток           = к оплате − внесено
  * Выручка блока (2.0.2, заказчик) — это ПЛАТЕЖИ по дате оплаты: пока ремонт
@@ -65,7 +68,14 @@ const OrderBody = z.object({
   complaint: z.string().max(2000).nullable().optional(),
   note: z.string().max(2000).nullable().optional(),
   masterUserId: z.number().int().positive().nullable().optional(),
+  /** Механик (правки 7.0): процент копируется в наряд при назначении. */
+  mechanicId: z.number().int().positive().nullable().optional(),
   acceptedAt: z.string().datetime().optional(),
+});
+
+const MechanicBody = z.object({
+  name: z.string().trim().min(1).max(120),
+  percent: z.number().int().min(0).max(100),
 });
 
 /** Новый ремонт можно сохранить сразу с работами, запчастями и авансом. */
@@ -87,7 +97,12 @@ export type OrderTotals = {
   /** К оплате = работы + запчасти − скидка. */
   due: number;
   cost: number;
+  /** Общая прибыль: к оплате − закуп запчастей. */
   profit: number;
+  /** Доля механика с прибыли (правки 7.0). */
+  mechanicShare: number;
+  /** Наша прибыль — за вычетом доли механика. */
+  ourProfit: number;
   /** Внесено всего (возвраты вычтены). */
   paid: number;
   /** Остаток к оплате (не меньше нуля). */
@@ -100,6 +115,7 @@ export function totalsOf(
   items: { kind: string; qty: number; price: number; cost: number }[],
   discount = 0,
   payments: { amount: number }[] = [],
+  mechanicPercent: number | null = null,
 ): OrderTotals {
   let works = 0;
   let parts = 0;
@@ -115,6 +131,9 @@ export function totalsOf(
   const revenue = works + parts;
   const due = Math.max(0, revenue - discount);
   const paid = payments.reduce((s, p) => s + p.amount, 0);
+  const profit = due - cost;
+  // Механик получает процент с прибыли; убыток ремонта с ним не делится.
+  const mechanicShare = Math.round((Math.max(0, profit) * (mechanicPercent ?? 0)) / 100);
   return {
     works,
     parts,
@@ -122,7 +141,9 @@ export function totalsOf(
     discount,
     due,
     cost,
-    profit: due - cost,
+    profit,
+    mechanicShare,
+    ourProfit: profit - mechanicShare,
     paid,
     left: Math.max(0, due - paid),
     overpaid: Math.max(0, paid - due),
@@ -169,7 +190,8 @@ async function loadOrders(where?: ReturnType<typeof and>) {
     .orderBy(desc(serviceOrders.acceptedAt), desc(serviceOrders.id));
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
-  const [items, pays] = await Promise.all([
+  const mechIds = [...new Set(rows.map((r) => r.mechanicId).filter((x): x is number => x != null))];
+  const [items, pays, mechs] = await Promise.all([
     db
       .select()
       .from(serviceOrderItems)
@@ -180,19 +202,34 @@ async function loadOrders(where?: ReturnType<typeof and>) {
       .from(serviceOrderPayments)
       .where(inArray(serviceOrderPayments.orderId, ids))
       .orderBy(asc(serviceOrderPayments.paidAt), asc(serviceOrderPayments.id)),
+    mechIds.length
+      ? db
+          .select({ id: serviceMechanics.id, name: serviceMechanics.name })
+          .from(serviceMechanics)
+          .where(inArray(serviceMechanics.id, mechIds))
+      : Promise.resolve([] as { id: number; name: string }[]),
   ]);
-  return rows.map((o) => shape(o, items, pays));
+  const mechName = new Map(mechs.map((m) => [m.id, m.name]));
+  return rows.map((o) => shape(o, items, pays, mechName));
 }
 
-function shape(o: OrderRow, items: Item[], pays: Payment[]) {
+function shape(o: OrderRow, items: Item[], pays: Payment[], mechName: Map<number, string>) {
   const own = items.filter((i) => i.orderId === o.id);
   const ownPays = pays.filter((p) => p.orderId === o.id);
   return {
     ...o,
+    mechanicName: o.mechanicId != null ? (mechName.get(o.mechanicId) ?? null) : null,
     items: own,
     payments: ownPays,
-    totals: totalsOf(own, o.discount, ownPays),
+    totals: totalsOf(own, o.discount, ownPays, o.mechanicPercent),
   };
+}
+
+/** Механик для наряда: имя и текущий процент (копируется в наряд). */
+async function mechanicFor(id: number | null | undefined) {
+  if (id == null) return null;
+  const [m] = await db.select().from(serviceMechanics).where(eq(serviceMechanics.id, id));
+  return m ?? null;
 }
 
 async function loadOne(id: number) {
@@ -239,6 +276,21 @@ function notFound(reply: FastifyReply) {
 
 function conflict(reply: FastifyReply, error: string, message: string) {
   return reply.code(409).send({ error, message });
+}
+
+function badMechanic(reply: FastifyReply) {
+  return reply
+    .code(400)
+    .send({ error: "validation", message: "Имя механика обязательно, процент — от 0 до 100." });
+}
+
+/** Правки 7.0 (п.11): готовый к выдаче ремонт зафиксирован. */
+function readyLocked(reply: FastifyReply) {
+  return conflict(
+    reply,
+    "ready_locked",
+    "Ремонт готов к выдаче — работы, запчасти и данные зафиксированы. Изменить можно после возврата в работу (это делает директор).",
+  );
 }
 
 const ACTIVE = new Set(["in_work", "done"]);
@@ -323,6 +375,79 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     return { orders };
   });
 
+  /* ---------- Механики (правки 7.0, п.2) ---------- */
+
+  /** Все механики: действующие и в архиве (архивные — только для истории). */
+  app.get("/mechanics", async () => {
+    const rows = await db
+      .select()
+      .from(serviceMechanics)
+      .orderBy(asc(serviceMechanics.name));
+    return { mechanics: rows };
+  });
+
+  app.post("/mechanics", { preHandler: directorOnly }, async (req, reply) => {
+    const parsed = MechanicBody.safeParse(req.body);
+    if (!parsed.success) return badMechanic(reply);
+    const body = parsed.data;
+    const [row] = await db
+      .insert(serviceMechanics)
+      .values({ name: body.name, percent: body.percent })
+      .returning();
+    await logActivity(req, {
+      action: "service_mechanic_created",
+      summary: `Механик добавлен: ${body.name} · ${body.percent}% с прибыли ремонта`,
+      entity: "service_mechanic",
+      entityId: row!.id,
+      meta: { mechanicPercent: body.percent },
+    });
+    return reply.code(201).send({ mechanic: row });
+  });
+
+  app.patch("/mechanics/:mid", { preHandler: directorOnly }, async (req, reply) => {
+    const mid = Number((req.params as { mid: string }).mid);
+    const parsed = MechanicBody.partial().extend({ archived: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success) return badMechanic(reply);
+    const body = parsed.data;
+    const [before] = await db.select().from(serviceMechanics).where(eq(serviceMechanics.id, mid));
+    if (!before) return reply.code(404).send({ error: "not_found", message: "Механик не найден." });
+    const set: Partial<typeof serviceMechanics.$inferInsert> = {};
+    const diff: DiffPayload = {};
+    if (body.name !== undefined && body.name !== before.name) {
+      set.name = body.name;
+      diff.name = { label: "Имя", from: before.name, to: body.name, kind: "text" };
+    }
+    if (body.percent !== undefined && body.percent !== before.percent) {
+      set.percent = body.percent;
+      diff.mechanicPercent = { label: "Процент с прибыли", from: before.percent, to: body.percent, kind: "number", suffix: "%" };
+    }
+    if (body.archived !== undefined && body.archived !== (before.archivedAt != null)) {
+      set.archivedAt = body.archived ? new Date() : null;
+      diff.archived = {
+        label: "Статус",
+        from: before.archivedAt ? "в архиве" : "работает",
+        to: body.archived ? "в архиве" : "работает",
+        kind: "text",
+      };
+    }
+    if (Object.keys(set).length === 0) return { mechanic: before };
+    const [row] = await db
+      .update(serviceMechanics)
+      .set(set)
+      .where(eq(serviceMechanics.id, mid))
+      .returning();
+    await logActivity(req, {
+      action: "service_mechanic_updated",
+      summary: `Механик ${before.name}: ${Object.values(diff)
+        .map((d) => d.label.toLowerCase())
+        .join(", ")}`,
+      entity: "service_mechanic",
+      entityId: mid,
+      diff,
+    });
+    return { mechanic: row };
+  });
+
   app.get("/:id", async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
     const order = await loadOne(id);
@@ -405,6 +530,9 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     });
     const t = totalsOf(prepared);
     const adv = body.advance && body.advance.amount > 0 ? body.advance : null;
+    const mech = await mechanicFor(body.mechanicId);
+    if (body.mechanicId != null && (!mech || mech.archivedAt))
+      return reply.code(400).send({ error: "bad_mechanic", message: "Механик не найден или в архиве." });
     if (adv && adv.amount >= t.due) {
       return reply.code(400).send({
         error: "advance_too_big",
@@ -441,6 +569,8 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
           complaint: body.complaint?.trim() || null,
           note: body.note?.trim() || null,
           masterUserId: body.masterUserId ?? null,
+          mechanicId: mech?.id ?? null,
+          mechanicPercent: mech ? mech.percent : null,
           acceptedAt: body.acceptedAt ? new Date(body.acceptedAt) : new Date(),
           createdByUserId: req.user?.userId ?? null,
         })
@@ -472,6 +602,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
 
     const parts = [
       `${body.vehicle}, ${body.customerName}`,
+      mech ? `механик ${mech.name}` : null,
       prepared.length ? `позиций ${prepared.length} на ${money(t.due)}` : null,
       adv && created.advPart
         ? `аванс ${money(adv.amount)} (${methodRu(adv.method, created.advPart.cash, created.advPart.transfer)})`
@@ -501,6 +632,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     if (!before) return notFound(reply);
     if (before.status === "cancelled")
       return conflict(reply, "cancelled", "Ремонт отменён — сначала верните его в работу.");
+    if (before.status === "done") return readyLocked(reply);
 
     const next = {
       customerName: body.customerName,
@@ -533,6 +665,17 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       if (same) continue;
       set[k] = v;
       if (LABELS[k]) diff[k] = { label: LABELS[k], from: prev ?? "—", to: v ?? "—", kind: "text" };
+    }
+    // Механик: имя в журнал, процент — копией в наряд (его видят только
+    // те, кому открыта прибыль ремонтов, — поэтому не в тексте записи).
+    if (body.mechanicId !== undefined && (body.mechanicId ?? null) !== (before.mechanicId ?? null)) {
+      const mech = await mechanicFor(body.mechanicId);
+      if (body.mechanicId != null && (!mech || mech.archivedAt))
+        return reply.code(400).send({ error: "bad_mechanic", message: "Механик не найден или в архиве." });
+      const prev = await mechanicFor(before.mechanicId);
+      set.mechanicId = mech?.id ?? null;
+      set.mechanicPercent = mech ? mech.percent : null;
+      diff.mechanic = { label: "Механик", from: prev?.name ?? "—", to: mech?.name ?? "—", kind: "text" };
     }
     if (Object.keys(set).length === 0) return { order: await loadOne(id) };
     await db
@@ -567,6 +710,37 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       entity: "service_order",
       entityId: id,
       diff: { status: { label: "Статус", from: "в работе", to: "готов к выдаче", kind: "text" } },
+    });
+    return { order: await loadOne(id) };
+  });
+
+  /**
+   * Правки 7.0 (п.10): «Готов к выдаче» → снова «В работе». Только директор:
+   * готовый ремонт зафиксирован (п.11), и открыть его для правок — решение
+   * директора. Оплаченный так не откатывают — сначала отменяют оплату.
+   */
+  app.post("/:id/uncomplete", { preHandler: directorOnly }, async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const [row] = await db.select().from(serviceOrders).where(eq(serviceOrders.id, id));
+    if (!row) return notFound(reply);
+    if (row.status !== "done")
+      return conflict(
+        reply,
+        "bad_status",
+        row.status === "paid"
+          ? "Ремонт уже оплачен — сначала отмените оплату."
+          : `Вернуть в работу можно только готовый к выдаче ремонт (сейчас — ${STATUS_RU[row.status] ?? row.status}).`,
+      );
+    await db
+      .update(serviceOrders)
+      .set({ status: "in_work", completedAt: null, updatedAt: new Date() })
+      .where(eq(serviceOrders.id, id));
+    await logActivity(req, {
+      action: "service_order_uncompleted",
+      summary: `Сторонний ремонт ${num(row.number)} возвращён в работу — снова можно менять работы и запчасти`,
+      entity: "service_order",
+      entityId: id,
+      diff: { status: { label: "Статус", from: "готов к выдаче", to: "в работе", kind: "text" } },
     });
     return { order: await loadOne(id) };
   });
@@ -979,6 +1153,10 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     }
     if (order.status === "cancelled") {
       conflict(reply, "cancelled", "Ремонт отменён — сначала верните его в работу.");
+      return null;
+    }
+    if (order.status === "done") {
+      readyLocked(reply);
       return null;
     }
     return order;

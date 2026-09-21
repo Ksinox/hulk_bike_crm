@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useSlotPoolOf } from "@/lib/useSlotPool";
 
 /**
  * Отображение техники: НАЗВАНИЕ МОДЕЛИ + круглый бейдж с арендным номером.
@@ -21,19 +22,27 @@ export function scooterModelName(name: string | null | undefined): string {
   return (name ?? "").replace(/\s*#\s*\d+\s*$/, "").trim() || (name ?? "");
 }
 
+/**
+ * Правки 7.0 (п.5): у электро своя нумерация — кружок зелёный, у бензина
+ * чёрный. «№5» электро и «№5» бензин — разные номера.
+ */
 export function ScooterNumberBadge({
   number,
   size = "md",
+  electric = false,
 }: {
   number: number | null | undefined;
   size?: "sm" | "md" | "lg";
+  electric?: boolean;
 }) {
   if (number == null) return null;
   return (
     <span
-      title={`Номер в арендном парке: ${number}`}
+      title={`${electric ? "Номер электро" : "Номер в арендном парке"}: ${number}`}
+      data-slot-pool={electric ? "electric" : "petrol"}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full bg-ink font-bold tabular-nums text-white",
+        "inline-flex shrink-0 items-center justify-center rounded-full font-bold tabular-nums text-white",
+        electric ? "bg-green-600" : "bg-ink",
         size === "lg"
           ? "h-7 min-w-7 px-1.5 text-[13px]"
           : size === "sm"
@@ -52,18 +61,26 @@ export function ScooterName({
   number,
   size = "md",
   className,
+  electric,
 }: {
   name: string | null | undefined;
   /** Действующий арендный номер. */
   number?: number | null;
   size?: "sm" | "md" | "lg";
   className?: string;
+  /** Ряд номера; не задан — ищем технику по имени. */
+  electric?: boolean;
 }) {
+  const poolOf = useSlotPoolOf();
   const model = scooterModelName(name);
   return (
-    <span className={cn("inline-flex items-center gap-1.5", className)}>
-      <span>{model}</span>
-      <ScooterNumberBadge number={number ?? null} size={size} />
+    <span className={cn("inline-flex min-w-0 max-w-full items-center gap-1.5", className)}>
+      <span className="truncate">{model}</span>
+      <ScooterNumberBadge
+        number={number ?? null}
+        size={size}
+        electric={electric ?? poolOf(name) === "electric"}
+      />
     </span>
   );
 }

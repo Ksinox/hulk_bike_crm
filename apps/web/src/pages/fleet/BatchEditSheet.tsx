@@ -29,6 +29,8 @@ import {
   useSetSlotsTotal,
   type BatchEditInput,
   type BatchTarget,
+  slotsOf,
+  type SlotPool,
 } from "@/lib/api/scooters";
 import type { ApiScooter } from "@/lib/api/types";
 import { ScooterName, scooterModelName } from "@/components/ScooterName";
@@ -186,6 +188,37 @@ export function BatchEditSheet({
   const [dateTouched, setDateTouched] = useState(false);
   const [cost, setCost] = useState(costC.value != null ? String(costC.value) : "");
   const [costTouched, setCostTouched] = useState(false);
+  /**
+   * Правки 7.0 (п.15): в партии несколько моделей — закуп у каждой свой.
+   * Ключ — modelId («none» — единицы без модели в каталоге).
+   */
+  const modelGroups = useMemo(() => {
+    const map = new Map<string, { key: string; modelId: number | null; name: string; units: ApiScooter[] }>();
+    for (const u of units) {
+      const key = u.modelId != null ? String(u.modelId) : "none";
+      const g = map.get(key) ?? {
+        key,
+        modelId: u.modelId ?? null,
+        name: models.find((m) => m.id === u.modelId)?.name ?? scooterModelName(u.name),
+        units: [],
+      };
+      g.units.push(u);
+      map.set(key, g);
+    }
+    return [...map.values()].sort((a, b) => b.units.length - a.units.length);
+  }, [units, models]);
+  const perModel = modelGroups.length > 1;
+  const [modelCost, setModelCost] = useState<Record<string, string>>({});
+  const modelCostOf = (g: (typeof modelGroups)[number]) => {
+    if (modelCost[g.key] !== undefined) return modelCost[g.key]!;
+    const c = common(g.units, (u) => u.purchasePrice ?? null);
+    return c.same && c.value != null ? String(c.value) : "";
+  };
+  const modelCostChanged = (g: (typeof modelGroups)[number]) => {
+    if (modelCost[g.key] === undefined) return false;
+    const c = common(g.units, (u) => u.purchasePrice ?? null);
+    return !c.same || String(c.value ?? "") !== modelCost[g.key];
+  };
 
   /* ── раскладка по статусам ── */
   const [active, setActive] = useState<BatchTarget | null>(null);
@@ -272,13 +305,30 @@ export function BatchEditSheet({
     clearErrors();
   };
 
-  /* ── номера аренды ── */
-  const slotsTotal = slotsQ.data?.total ?? 0;
-  const freeSlots = slotsQ.data?.free ?? [];
+  /* ── номера аренды: правки 7.0 (п.5) — у электро свой ряд ── */
   const entering = moving.filter((u) => holdsSlot(to(u)!) && !holdsSlot(u.baseStatus));
   const leaving = moving.filter((u) => !holdsSlot(to(u)!) && u.rentalSlot != null);
-  const slotShort = Math.max(0, entering.length - freeSlots.length);
-  const gotSlots = freeSlots.slice(0, entering.length);
+  const electricModelIds = new Set(models.filter((m) => m.isElectric).map((m) => m.id));
+  const poolOfUnit = (u: ApiScooter): SlotPool =>
+    u.modelId != null && electricModelIds.has(u.modelId) ? "electric" : "petrol";
+  const slotPools = (["petrol", "electric"] as const)
+    .map((pool) => {
+      const st = slotsOf(slotsQ.data, pool);
+      const ent = entering.filter((u) => poolOfUnit(u) === pool);
+      return {
+        pool,
+        total: st.total,
+        free: st.free,
+        entering: ent,
+        short: Math.max(0, ent.length - st.free.length),
+        got: st.free.slice(0, ent.length),
+      };
+    })
+    .filter((p) => p.entering.length > 0);
+  const slotShort = slotPools.reduce((s, p) => s + p.short, 0);
+  const shortPool = slotPools.find((p) => p.short > 0) ?? null;
+  const twoPools = slotPools.length > 1;
+  const poolWord = (p: SlotPool) => (p === "electric" ? "электро" : "бензина");
 
   /* ── модель под категорию ── */
   const purposeMissing = useMemo(() => {
@@ -309,7 +359,9 @@ export function BatchEditSheet({
       ? batches.find((x) => x.key === suggestKey(nameTrim)) ?? null
       : null;
   const dateChanged = dateTouched && (!dateC.same || (dateC.value ?? "") !== date);
-  const costChanged = showCost && costTouched && (!costC.same || String(costC.value ?? "") !== cost);
+  const costChanged = perModel
+    ? showCost && modelGroups.some(modelCostChanged)
+    : showCost && costTouched && (!costC.same || String(costC.value ?? "") !== cost);
   const saleChanged = showcase.length > 0 && saleTouched && (!saleC.same || String(saleC.value ?? "") !== sale);
   const moveParts = TARGETS.filter((t) => countOf(t.id) > 0).map((t) => `${TARGET_DONE[t.id]} ${countOf(t.id)}`);
 
@@ -337,7 +389,11 @@ export function BatchEditSheet({
     const body: BatchEditInput = { ids: units.map((u) => u.id), batch: b.label };
     if (nameChanged) body.rename = nameTrim;
     if (dateChanged) body.purchaseDate = date || null;
-    if (costChanged) body.purchasePrice = cost === "" ? null : Number(cost);
+    if (costChanged && perModel) {
+      body.purchaseByModel = modelGroups
+        .filter(modelCostChanged)
+        .map((g) => ({ modelId: g.modelId, price: modelCost[g.key] ? Number(modelCost[g.key]) : null }));
+    } else if (costChanged) body.purchasePrice = cost === "" ? null : Number(cost);
     if (saleChanged) body.salePrice = sale === "" ? null : Number(sale);
     if (moving.length) {
       body.moves = TARGETS.filter((t) => countOf(t.id) > 0).map((t) => ({
@@ -534,9 +590,42 @@ export function BatchEditSheet({
             объединятся в одну партию.
           </Note>
         )}
-        {showCost && (
+        {showCost && perModel && (
+          <div className="flex flex-col gap-2" data-batch-cost-models>
+            <span className={labelCls}>Закуп за единицу — у каждой модели свой, ₽</span>
+            {modelGroups.map((g) => {
+              const c = common(g.units, (u) => u.purchasePrice ?? null);
+              const v = modelCostOf(g);
+              return (
+                <div key={g.key} className="flex items-center gap-3 rounded-xl bg-surface-soft px-3 py-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-bold text-ink">{g.name}</span>
+                    <span className="block text-[11.5px] text-muted-2">
+                      {g.units.length} {units3(g.units.length)}
+                      {!c.same ? " · сейчас разный" : ""}
+                      {v ? ` · всего ${fmtMoney(Number(v) * g.units.length)}` : ""}
+                    </span>
+                  </span>
+                  <input
+                    inputMode="numeric"
+                    value={v}
+                    placeholder={c.same ? "не указан" : "разный"}
+                    onChange={(e) => setModelCost((m) => ({ ...m, [g.key]: digitsOnly(e.target.value, 9) }))}
+                    aria-label={`Закуп за единицу: ${g.name}`}
+                    className={cn(inputCls, "w-[42%] max-w-[180px] shrink-0 text-right tabular-nums")}
+                    data-batch-cost-model={g.name}
+                  />
+                </div>
+              );
+            })}
+            <span className="block text-[11.5px] text-muted-2">В проданных сделках закуп свой, он не меняется.</span>
+          </div>
+        )}
+        {showCost && !perModel && (
           <label className={cn("min-w-0", !touch && "sm:max-w-[260px]")}>
-            <span className={labelCls}>Закуп за единицу, ₽</span>
+            <span className={labelCls}>
+              Закуп за единицу{modelGroups[0] ? ` · ${modelGroups[0].name}` : ""}, ₽
+            </span>
             <input
               inputMode="numeric"
               value={cost}
@@ -672,10 +761,12 @@ export function BatchEditSheet({
         </ul>
 
         {entering.length > 0 &&
-          (slotShort ? (
+          (slotShort && shortPool ? (
             <Note tone="red" icon={<AlertTriangle size={14} />}>
-              В аренду переводим {entering.length}, а свободных арендных номеров {freeSlots.length}. Добавьте номера
-              или верните часть единиц.
+              В аренду переводим {shortPool.entering.length}
+              {twoPools || shortPool.pool === "electric" ? ` ${shortPool.pool === "electric" ? "электро" : "бензиновых"}` : ""}, а
+              свободных номеров{twoPools || shortPool.pool === "electric" ? ` ${poolWord(shortPool.pool)}` : ""}{" "}
+              {shortPool.free.length}. Добавьте номера или верните часть единиц.
               <span className="mt-1.5 flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -688,11 +779,11 @@ export function BatchEditSheet({
                 >
                   <Plus size={14} /> Добавить номера
                 </button>
-                {freeSlots.length > 0 && (
+                {shortPool.free.length > 0 && (
                   <button
                     type="button"
                     onClick={() => {
-                      const drop = new Set(entering.slice(freeSlots.length).map((u) => u.id));
+                      const drop = new Set(shortPool.entering.slice(shortPool.free.length).map((u) => u.id));
                       const next = new Map(assign);
                       for (const id of drop) next.delete(id);
                       setAssign(next);
@@ -702,14 +793,20 @@ export function BatchEditSheet({
                       touch ? "h-10 text-[13px]" : "h-8 text-[12px]",
                     )}
                   >
-                    Оставить {freeSlots.length}
+                    Оставить {shortPool.free.length}
                   </button>
                 )}
               </span>
             </Note>
           ) : (
             <Note tone="blue" icon={<Key size={14} />}>
-              Получат арендные номера: <b>{gotSlots.join(", ")}</b> — первые свободные.
+              {slotPools.map((p, i) => (
+                <span key={p.pool} className={cn(i > 0 && "mt-0.5 block")}>
+                  {twoPools || p.pool === "electric" ? (p.pool === "electric" ? "Электро получат номера: " : "Бензин получит номера: ") : "Получат арендные номера: "}
+                  <b>{p.got.join(", ")}</b>
+                  {i === slotPools.length - 1 ? " — первые свободные." : ""}
+                </span>
+              ))}
             </Note>
           ))}
         {leaving.length > 0 && (
@@ -781,9 +878,10 @@ export function BatchEditSheet({
   const slotsDialog = slotsOpen && (
     <AddSlotsDialog
       touch={touch}
-      total={slotsTotal}
-      free={freeSlots.length}
-      need={slotShort}
+      total={shortPool?.total ?? 0}
+      free={shortPool?.free.length ?? 0}
+      need={shortPool?.short ?? slotShort}
+      pool={shortPool?.pool ?? "petrol"}
       onClose={() => setSlotsOpen(false)}
     />
   );
@@ -914,12 +1012,15 @@ function AddSlotsDialog({
   total,
   free,
   need,
+  pool = "petrol",
   onClose,
 }: {
   touch: boolean;
   total: number;
   free: number;
   need: number;
+  /** Правки 7.0 (п.5): в какой ряд добавляем номера. */
+  pool?: SlotPool;
   onClose: () => void;
 }) {
   const setTotal = useSetSlotsTotal();
@@ -928,7 +1029,7 @@ function AddSlotsDialog({
   const till = total + n;
   const add = async () => {
     try {
-      await setTotal.mutateAsync(till);
+      await setTotal.mutateAsync({ total: till, pool });
       toast.success(
         `Добавлено ${n} ${plural(n, ["номер", "номера", "номеров"])}`,
         `${n === 1 ? `Номер ${from}` : `Номера ${from}–${till}`} · всего ${till}`,
@@ -959,7 +1060,9 @@ function AddSlotsDialog({
             <Key size={18} />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="font-display text-[17px] font-extrabold text-ink">Добавить арендные номера</div>
+            <div className="font-display text-[17px] font-extrabold text-ink">
+              {pool === "electric" ? "Добавить номера электро" : "Добавить арендные номера"}
+            </div>
             <div className="mt-0.5 text-[12.5px] leading-snug text-muted">
               Сейчас номеров {total}, свободно {free}. Для этой партии не хватает {need}.
             </div>

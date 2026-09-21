@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Bike,
+  Gift,
   GripVertical,
   Receipt,
   Target,
@@ -72,7 +73,7 @@ export function AnalyticsTile({
   editing?: boolean;
   onResize?: (w: number, h: number) => void;
   onRemove?: () => void;
-  onPlan?: (plan: number | null) => void;
+  onPlan?: (plan: number | null, bonus?: number | null) => void;
   onDragStart?: (e: React.PointerEvent) => void;
   ghost?: boolean;
   index?: number;
@@ -80,6 +81,9 @@ export function AnalyticsTile({
   const [planOpen, setPlanOpen] = useState(false);
   const [planDraft, setPlanDraft] = useState(
     tile.plan != null ? String(tile.plan) : "",
+  );
+  const [bonusDraft, setBonusDraft] = useState(
+    tile.bonus != null && tile.bonus > 0 ? String(tile.bonus) : "",
   );
   const w = Math.min(tile.w, cols);
   const h = compact ? 1 : tile.h;
@@ -96,6 +100,8 @@ export function AnalyticsTile({
       : null;
   const tone = value?.tone ?? "neutral";
   const ui = state ? STATUS_UI[state.status] : null;
+  // Правки 7.0 (п.12): премия за выполнение плана — видна в самой плитке.
+  const bonus = planValue != null && tile.bonus != null && tile.bonus > 0 ? tile.bonus : null;
   const group = METRIC_GROUP_UI[def.group];
   const GroupIcon = GROUP_ICON[group.icon];
 
@@ -271,8 +277,10 @@ export function AnalyticsTile({
             style={{ fontSize: numberSize(planValue != null ? `${display} /${planTail(display, def.format(planValue))}` : display, !!state, compact), lineHeight: 1 }}
             className={cn(
               "truncate font-display font-extrabold leading-[0.95] tracking-[-0.035em] tabular-nums",
-              numberTone,
+              // Правки 7.0: «факт / план» и есть чипс — горит цветом статуса.
+              state && !hidden ? (dark ? ui!.inkWall : ui!.ink) : numberTone,
             )}
+            data-plan-fact={state ? state.status : undefined}
           >
             {def.sensitive ? <Sensitive dark={dark}>{display}</Sensitive> : display}
             {planValue != null && (
@@ -297,21 +305,30 @@ export function AnalyticsTile({
         </div>
       )}
 
-      {/* ---- План: толстая шкала до нормы + крупный процент ---- */}
+      {/* ---- План: толстая шкала до нормы; правки 7.0 — без процента,
+             вместо него премия за выполнение («выполнишь план — получишь»). ---- */}
       {state && !gaugeMode && (
         <footer className="relative flex shrink-0 flex-col" style={{ gap: "1.1cqh" }}>
-          <div className="flex items-center" style={{ gap: "3cqw" }}>
-            <PlanBarThick state={state} wall={dark} hidden={hidden} className="min-w-0 flex-1" />
-            <span
-              style={{ fontSize: pctSize(compact) }}
+          <PlanBarThick state={state} wall={dark} hidden={hidden} className="w-full" />
+          {bonus != null && (
+            <div
+              style={{ fontSize: captionSize(compact) }}
               className={cn(
-                "shrink-0 font-display font-extrabold leading-none tabular-nums",
-                dark ? ui!.inkWall : ui!.ink,
+                "flex min-w-0 items-center gap-[0.4em] truncate font-bold",
+                state.done ? (dark ? "text-emerald-300" : "text-emerald-700") : dark ? "text-amber-200" : "text-amber-700",
               )}
+              data-plan-bonus
             >
-              {hidden ? <Sensitive dark={dark}>{state.pct}%</Sensitive> : `${state.pct}%`}
-            </span>
-          </div>
+              <Gift className="h-[1.1em] w-[1.1em] shrink-0" />
+              <span className="truncate">
+                {/* На узкой плитке остаётся «🎁 5 000 ₽» — фраза не обрезается. */}
+                <span className="a-hide-narrow">
+                  {state.done ? "План выполнен — премия " : "Выполнишь план — получишь "}
+                </span>
+                {fmtRub(bonus)}
+              </span>
+            </div>
+          )}
         </footer>
       )}
 
@@ -329,6 +346,17 @@ export function AnalyticsTile({
           <div className="text-[11.5px] leading-snug text-muted">
             <b className="text-ink">План — {planHint(def)}.</b>{" "}
             {def.periodic ? "Сколько должно быть за выбранный период." : "Сколько должно быть сейчас."}
+          </div>
+          <div className="relative">
+            <input
+              inputMode="numeric"
+              value={bonusDraft}
+              onChange={(e) => setBonusDraft(e.target.value.replace(/[^\d]/g, "").slice(0, 8))}
+              placeholder="Премия за 100% — необязательно"
+              aria-label="Премия за выполнение плана"
+              className="h-8 w-full rounded-lg border border-border bg-surface pl-2 pr-9 text-[13px] font-bold tabular-nums outline-none focus:border-blue-600"
+            />
+            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[12px] font-bold text-muted-2">₽</span>
           </div>
           <div className="flex items-center gap-1.5">
           <div className="relative min-w-0 flex-1">
@@ -351,7 +379,8 @@ export function AnalyticsTile({
           <button
             type="button"
             onClick={() => {
-              onPlan?.(planDraft ? Number(planDraft) : null);
+              const plan = planDraft ? Number(planDraft) : null;
+              onPlan?.(plan, plan != null && bonusDraft ? Number(bonusDraft) : null);
               setPlanOpen(false);
             }}
             className="h-8 rounded-lg bg-ink px-3 text-[12px] font-bold text-white"
@@ -364,7 +393,8 @@ export function AnalyticsTile({
               title="Убрать план"
               onClick={() => {
                 setPlanDraft("");
-                onPlan?.(null);
+                setBonusDraft("");
+                onPlan?.(null, null);
                 setPlanOpen(false);
               }}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-2 hover:bg-red-soft hover:text-red-ink"
@@ -378,6 +408,8 @@ export function AnalyticsTile({
     </div>
   );
 }
+
+const fmtRub = (n: number) => `${Math.round(n).toLocaleString("ru-RU")} ₽`;
 
 /** Единица плана: %, ₽ или штуки — чтобы было понятно, что вбивать. */
 function planUnit(def: MetricDef): string {
@@ -401,10 +433,6 @@ function titleSize(compact: boolean): string {
 
 function captionSize(compact: boolean): string {
   return compact ? "13px" : "max(10px, min(8.5cqh, 5cqw, 26px))";
-}
-
-function pctSize(compact: boolean): string {
-  return compact ? "22px" : "max(14px, min(20cqh, 11cqw))";
 }
 
 /**

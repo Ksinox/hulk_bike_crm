@@ -31,6 +31,7 @@ export function adaptScooter(a: ApiScooter): FleetScooter {
     note: a.note ?? undefined,
     // Пункт 15/16: арендное место, ярлык «был в аренде», ID по раме.
     rentalSlot: a.rentalSlot ?? undefined,
+    slotPool: a.slotPool ?? "petrol",
     exRentalSlot: a.exRentalSlot ?? undefined,
     uid: a.uid ?? undefined,
     isPartner: a.isPartner ?? false,

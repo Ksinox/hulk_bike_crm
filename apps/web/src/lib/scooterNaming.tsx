@@ -24,6 +24,8 @@ export type ScooterNaming = {
   numbersOf: (name: string | null | undefined) => {
     number?: number;
     exNumber?: number;
+    /** Ряд номера: у электро кружок зелёный. */
+    electric?: boolean;
   };
   /** Готовый JSX: модель + бейдж номера. */
   render: (
@@ -37,13 +39,14 @@ export function useScooterNaming(): ScooterNaming {
   const byName = useMemo(() => {
     const m = new Map<
       string,
-      { number?: number; exNumber?: number; isPartner?: boolean }
+      { number?: number; exNumber?: number; isPartner?: boolean; electric?: boolean }
     >();
     for (const s of fleet) {
       m.set(s.name, {
         number: s.rentalSlot,
         exNumber: s.exRentalSlot,
         isPartner: s.isPartner,
+        electric: s.slotPool === "electric",
       });
     }
     return m;
@@ -72,6 +75,7 @@ export function useScooterNaming(): ScooterNaming {
         <ScooterName
           name={name}
           number={n.number}
+          electric={n.electric}
           size={opts?.size}
           className={opts?.className}
         />

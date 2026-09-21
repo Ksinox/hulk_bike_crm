@@ -13,7 +13,7 @@ import {
   scooters,
   users,
 } from "../db/schema.js";
-import { logActivity } from "../services/activityLog.js";
+import { logActivity, type DiffPayload } from "../services/activityLog.js";
 import { requireRole } from "../auth/plugin.js";
 import { scooterLabel } from "./scooters.js";
 import { makeFileKey, removeObject } from "../storage/index.js";
@@ -341,6 +341,116 @@ export async function salesRoutes(app: FastifyInstance) {
     });
     return row;
   });
+
+  /**
+   * Правки 7.0 (п.7): директор исправляет уже проданную сделку — цену
+   * продажи, закуп, менеджера и его процент. Вознаграждение и расчёт
+   * пересчитываются; в журнал — «было → стало» по каждому полю. Снимок
+   * закупа в карточке техники не трогаем: правится именно сделка.
+   */
+  app.patch<{ Params: { id: string } }>(
+    "/deals/:id/signed",
+    { preHandler: directorOnly },
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      const Body = z
+        .object({
+          price: z.number().int().min(1).max(100_000_000).optional(),
+          purchasePrice: z.number().int().min(0).max(100_000_000).nullable().optional(),
+          managerId: z.number().int().positive().nullable().optional(),
+          managerCommissionPct: z.number().int().min(0).max(100).optional(),
+        })
+        .strict();
+      const parsed = Body.safeParse(req.body ?? {});
+      if (!Number.isFinite(id) || !parsed.success)
+        return reply.code(400).send({ error: "validation", message: "Проверьте суммы: цена больше нуля, процент от 0 до 100." });
+      const [before] = await db.select().from(saleDeals).where(eq(saleDeals.id, id));
+      if (!before) return reply.code(404).send({ error: "not found" });
+      if (before.status !== "signed")
+        return reply.code(409).send({ error: "not_signed", message: "Так правят только проданные сделки — черновик меняется обычной правкой." });
+      const b = parsed.data;
+      const price = b.price ?? before.price;
+      const purchase = b.purchasePrice !== undefined ? b.purchasePrice : before.purchasePrice;
+      const managerId = b.managerId !== undefined ? b.managerId : before.managerId;
+      let newManager: typeof saleManagers.$inferSelect | null = null;
+      if (managerId != null && managerId !== before.managerId) {
+        const [m] = await db.select().from(saleManagers).where(eq(saleManagers.id, managerId));
+        if (!m) return reply.code(400).send({ error: "bad_manager", message: "Менеджер не найден." });
+        newManager = m;
+      }
+      // Процент: явно заданный; сменили менеджера — его процент; убрали — 0.
+      const pct =
+        managerId == null
+          ? 0
+          : b.managerCommissionPct !== undefined
+            ? b.managerCommissionPct
+            : newManager
+              ? newManager.commissionPct
+              : (before.managerCommissionPct ?? 0);
+      const profit = price - (purchase ?? 0);
+      const commission = pct > 0 ? Math.max(0, Math.round((profit * pct) / 100)) : 0;
+      // Расчёт за технику следует за ценой: смешанный — наличные те же
+      // (не больше цены), остальное переводом.
+      const payCash =
+        before.payMethod === "cash"
+          ? price
+          : before.payMethod === "transfer"
+            ? 0
+            : Math.min(price, before.payCash ?? 0);
+      const payTransfer = price - payCash;
+
+      const diff: DiffPayload = {};
+      const parts: string[] = [];
+      if (price !== before.price) {
+        diff.price = { label: "Цена продажи", from: before.price, to: price, kind: "money" };
+        parts.push(`цена ${fmtMoney(before.price)} → ${fmtMoney(price)} ₽`);
+      }
+      if ((purchase ?? null) !== (before.purchasePrice ?? null)) {
+        diff.purchasePrice = { label: "Закуп", from: before.purchasePrice ?? "—", to: purchase ?? "—", kind: "money" };
+        parts.push(`закуп ${before.purchasePrice != null ? fmtMoney(before.purchasePrice) : "—"} → ${purchase != null ? fmtMoney(purchase) : "—"} ₽`);
+      }
+      if ((managerId ?? null) !== (before.managerId ?? null)) {
+        const [prev] = before.managerId
+          ? await db.select({ name: saleManagers.name }).from(saleManagers).where(eq(saleManagers.id, before.managerId))
+          : [];
+        diff.manager = { label: "Менеджер", from: prev?.name ?? "—", to: newManager?.name ?? "—", kind: "text" };
+        parts.push(`менеджер ${prev?.name ?? "—"} → ${newManager?.name ?? "—"}`);
+      }
+      if (pct !== (before.managerCommissionPct ?? 0)) {
+        diff.managerCommissionPct = { label: "Процент менеджера", from: before.managerCommissionPct ?? 0, to: pct, kind: "number", suffix: "%" };
+        parts.push(`процент ${before.managerCommissionPct ?? 0} → ${pct}%`);
+      }
+      if (commission !== (before.managerCommission ?? 0)) {
+        diff.managerCommission = { label: "Вознаграждение", from: before.managerCommission ?? 0, to: commission, kind: "money" };
+        parts.push(`менеджеру ${fmtMoney(before.managerCommission ?? 0)} → ${fmtMoney(commission)} ₽`);
+      }
+      if (parts.length === 0) return before;
+
+      const [row] = await db
+        .update(saleDeals)
+        .set({
+          price,
+          purchasePrice: purchase,
+          managerId,
+          managerCommissionPct: managerId == null ? null : pct,
+          managerCommission: commission,
+          payCash,
+          payTransfer,
+          updatedAt: new Date(),
+        })
+        .where(eq(saleDeals.id, id))
+        .returning();
+      await logActivity(req, {
+        entity: "sale_deal",
+        entityId: id,
+        action: "updated",
+        summary: `Исправлена проданная ${dealLabel(row!)}: ${parts.join(" · ")}`,
+        diff,
+        meta: { dealId: id, profit },
+      });
+      return row;
+    },
+  );
 
   /** Договор сформирован — фиксируем факт и время. */
   app.post<{ Params: { id: string } }>(

@@ -37,10 +37,12 @@ import {
   useSetSlotsTotal,
   type BatchInput,
   type BatchRowError,
+  slotsOf,
+  type SlotPool,
 } from "@/lib/api/scooters";
 import { ModelPicker } from "./ModelPicker";
 import { scooterModelName } from "@/components/ScooterName";
-import { rankSuggestions } from "@/components/SuggestInput";
+import { rankSuggestions, suggestKey } from "@/components/SuggestInput";
 import { TABLET_WIZARD_PANEL, TABLET_WIZARD_PANEL_WIDE } from "@/mobile/tablet";
 import {
   ADD_SCOOTER_REOPEN_EVENT,
@@ -180,8 +182,14 @@ export function AddScooterModal({
   defaultInvestorId,
   defaultCategory,
   skipCategory = false,
+  presetBatch,
 }: {
   onClose: () => void;
+  /**
+   * Правки 7.0 (п.15): «+ Модель» у партии — номер и дата партии уже
+   * вписаны, остаётся выбрать модель и её закуп.
+   */
+  presetBatch?: { batch: string; purchaseDate: string | null };
   /**
    * Правка 27.08: техника добавляется прямо из «Партнёрки». В этом режиме
    * единица всегда партнёрская, обязателен инвестор (его процент техника
@@ -225,8 +233,6 @@ export function AddScooterModal({
   const fleetQ = useApiScootersWithArchive();
   const fleet = fleetQ.data ?? [];
   const slotsQ = useRentalSlots();
-  const freeSlots = slotsQ.data?.free ?? [];
-  const slotsTotal = slotsQ.data?.total ?? 0;
   const setSlotsTotal = useSetSlotsTotal();
   const { data: investorsData } = useApiInvestors();
   const investors = investorsData?.items ?? [];
@@ -240,6 +246,11 @@ export function AddScooterModal({
 
   const { step, category, rows, common } = draft;
   const model = models.find((m) => m.id === draft.modelId) ?? null;
+  // Правки 7.0 (п.5): у электро свой ряд номеров — и свободные, и «всего».
+  const slotPool: SlotPool = model?.isElectric ? "electric" : "petrol";
+  const poolSlots = slotsOf(slotsQ.data, slotPool);
+  const freeSlots = poolSlots.free;
+  const slotsTotal = poolSlots.total;
   const status = category ? statusOf(category, draft.rentalState) : "ready";
   const holds = holdsSlot(status);
   const purpose: "rent" | "sale" | null =
@@ -328,6 +339,41 @@ export function AddScooterModal({
   const leftAfter = holds ? Math.max(0, freeSlots.length - rows.length) : null;
 
   const purchaseNum = draft.purchasePrice ? Number(draft.purchasePrice) : null;
+
+  // «+ Модель» у партии: номер и дата — из партии (один раз при открытии).
+  useEffect(() => {
+    if (!presetBatch) return;
+    patch({
+      batch: presetBatch.batch,
+      ...(presetBatch.purchaseDate ? { purchaseDate: presetBatch.purchaseDate } : {}),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Правки 7.0 (п.15): в выбранной партии уже есть другие модели — их закуп
+   * подсказкой рядом с полем. У каждой модели закуп свой.
+   */
+  const batchOtherModels = useMemo(() => {
+    const k = draft.batch.trim() ? suggestKey(draft.batch.trim()) : null;
+    if (!k) return [] as { name: string; n: number; price: number | null; mixed: boolean }[];
+    const by = new Map<string, { name: string; prices: Set<number | null>; n: number }>();
+    for (const s of fleet) {
+      if (s.deletedAt || !s.purchaseBatch || suggestKey(s.purchaseBatch.trim()) !== k) continue;
+      if (model && s.modelId === model.id) continue;
+      const key = String(s.modelId ?? "none");
+      const g = by.get(key) ?? { name: models.find((m) => m.id === s.modelId)?.name ?? "без модели", prices: new Set(), n: 0 };
+      g.prices.add(s.purchasePrice ?? null);
+      g.n++;
+      by.set(key, g);
+    }
+    return [...by.values()].map((g) => ({
+      name: g.name,
+      n: g.n,
+      price: g.prices.size === 1 ? [...g.prices][0]! : null,
+      mixed: g.prices.size > 1,
+    }));
+  }, [draft.batch, fleet, model, models]);
   const resolved = useMemo(() => rows.map((r) => resolveRow(r, common)), [rows, common]);
   const withoutVin = resolved.filter((r) => !r.vin).length;
   const oddVinRows = resolved
@@ -481,7 +527,7 @@ export function AddScooterModal({
     });
     if (!ok) return;
     try {
-      await setSlotsTotal.mutateAsync(target);
+      await setSlotsTotal.mutateAsync({ total: target, pool: slotPool });
     } catch (e) {
       toast.error("Не удалось изменить количество номеров", (e as Error).message);
     }
@@ -735,7 +781,7 @@ export function AddScooterModal({
             </Block>
             {showPurchase && (
               <Block
-                title="Цена закупа за 1 шт., ₽"
+                title={`Цена закупа за 1 шт.${model ? ` · ${model.name}` : ""}, ₽`}
                 badge="только директору"
                 touch={touch}
               >
@@ -750,6 +796,15 @@ export function AddScooterModal({
                   <div className="mt-1.5 text-[12px] text-muted">
                     {rows.length} × {fmtMoney(purchaseNum)} ={" "}
                     <b className="text-ink">{fmtMoney(purchaseNum * rows.length)}</b>
+                  </div>
+                )}
+                {batchOtherModels.length > 0 && (
+                  <div className="mt-1.5 text-[12px] leading-snug text-muted" data-batch-other-models>
+                    В этой партии уже:{" "}
+                    {batchOtherModels
+                      .map((g) => `${g.name} — ${g.mixed ? "разный" : g.price != null ? fmtMoney(g.price) : "не указан"} (${g.n} шт.)`)
+                      .join(" · ")}
+                    . У каждой модели закуп свой.
                   </div>
                 )}
               </Block>

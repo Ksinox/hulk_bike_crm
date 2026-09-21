@@ -31,7 +31,21 @@ export type SlotsState = {
   total: number;
   used: { slot: number; id: number; name: string }[];
   free: number[];
+  /** Правки 7.0 (п.5): у электро свой ряд номеров. */
+  electric?: { total: number; used: { slot: number; id: number; name: string }[]; free: number[] };
 };
+
+export type SlotPool = "petrol" | "electric";
+
+/** Номера нужного ряда: бензин — верхний уровень ответа, электро — свой. */
+export function slotsOf(
+  state: SlotsState | undefined,
+  pool: SlotPool,
+): { total: number; used: { slot: number; id: number; name: string }[]; free: number[] } {
+  if (!state) return { total: 0, used: [], free: [] };
+  if (pool === "electric") return state.electric ?? { total: 0, used: [], free: [] };
+  return { total: state.total, used: state.used, free: state.free };
+}
 
 export function useRentalSlots() {
   return useQuery({
@@ -89,6 +103,8 @@ export type BatchEditInput = {
   ids: number[];
   batch: string;
   rename?: string;
+  /** Правки 7.0 (п.15): свой закуп по каждой модели партии. */
+  purchaseByModel?: { modelId: number | null; price: number | null }[];
   purchaseDate?: string | null;
   purchasePrice?: number | null;
   salePrice?: number | null;
@@ -143,8 +159,11 @@ export function useApiScootersWithArchive(enabled = true) {
 export function useSetSlotsTotal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (total: number) =>
-      api.post<{ total: number }>("/api/scooters/slots-total", { total }),
+    mutationFn: (arg: number | { total: number; pool?: SlotPool }) =>
+      api.post<{ total: number }>(
+        "/api/scooters/slots-total",
+        typeof arg === "number" ? { total: arg } : arg,
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: scootersKeys.all }),
   });
 }

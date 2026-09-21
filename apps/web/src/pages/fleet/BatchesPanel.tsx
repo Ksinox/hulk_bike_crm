@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, Layers, Pencil, Search, X } from "lucide-react";
+import { ChevronDown, Layers, Pencil, Plus, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCan } from "@/lib/permissions";
 import { useRole } from "@/lib/role";
@@ -12,6 +12,7 @@ import { suggestKey } from "@/components/SuggestInput";
 import { fmtMoney, plural } from "./addScooterDraft";
 import { GROUP_LABEL, GROUP_TONE, groupOf, unitHint, type Group } from "./batchGroups";
 import { BatchEditSheet } from "./BatchEditSheet";
+import { AddScooterModal } from "./AddScooterModal";
 
 /**
  * «Партии» (2.0.1) — как отбилась поставка: сколько единиц на витрине,
@@ -114,6 +115,8 @@ export function BatchesPanel({
   const [open, setOpen] = useState<string | null>(null);
   /** Партия в окне правки (2.0.3) — по ключу, чтобы окно видело свежие данные. */
   const [editKey, setEditKey] = useState<string | null>(null);
+  /** Правки 7.0 (п.15): «+ Модель» — в какую партию добавляем. */
+  const [addTo, setAddTo] = useState<BatchSummary | null>(null);
 
   const modelName = (s: ApiScooter) =>
     models.find((m) => m.id === s.modelId)?.name ?? scooterModelName(s.name);
@@ -191,9 +194,18 @@ export function BatchesPanel({
             onToggle={() => setOpen((k) => (k === b.key ? null : b.key))}
             onOpenScooter={onOpenScooter}
             onEdit={() => setEditKey(b.key)}
+            onAddModel={() => setAddTo(b)}
           />
         ))}
       </div>
+
+      {/* Правки 7.0 (п.15): ещё модель в ту же партию — со своим закупом. */}
+      {addTo && (
+        <AddScooterModal
+          presetBatch={{ batch: addTo.label, purchaseDate: addTo.purchaseDate }}
+          onClose={() => setAddTo(null)}
+        />
+      )}
 
       {editKey && batches.find((x) => x.key === editKey) && (
         <BatchEditSheet
@@ -216,6 +228,7 @@ function BatchCard({
   onToggle,
   onOpenScooter,
   onEdit,
+  onAddModel,
 }: {
   b: BatchSummary;
   touch: boolean;
@@ -224,6 +237,7 @@ function BatchCard({
   onToggle: () => void;
   onOpenScooter?: (s: ApiScooter) => void;
   onEdit: () => void;
+  onAddModel: () => void;
 }) {
   const total = b.units.length;
   const soldPct = total ? Math.round((b.counts.sold / total) * 100) : 0;
@@ -318,10 +332,22 @@ function BatchCard({
         </button>
         <button
           type="button"
+          onClick={onAddModel}
+          data-batch-add-model
+          title="Добавить в партию технику другой модели — со своим закупом"
+          className={cn(
+            "ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-white font-semibold text-ink-2 hover:border-blue-600/50 hover:text-blue-700",
+            touch ? "h-11 px-4 text-[14px]" : "h-8 px-3 text-[12.5px]",
+          )}
+        >
+          <Plus size={touch ? 15 : 13} /> Модель
+        </button>
+        <button
+          type="button"
           onClick={onEdit}
           data-batch-edit-open
           className={cn(
-            "ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-white font-semibold text-ink-2 hover:border-blue-600/50 hover:text-blue-700",
+            "inline-flex items-center gap-1.5 rounded-full border border-border bg-white font-semibold text-ink-2 hover:border-blue-600/50 hover:text-blue-700",
             touch ? "h-11 px-4 text-[14px]" : "h-8 px-3 text-[12.5px]",
           )}
         >

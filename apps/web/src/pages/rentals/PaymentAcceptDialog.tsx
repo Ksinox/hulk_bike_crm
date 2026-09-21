@@ -232,7 +232,7 @@ export function PaymentAcceptDialog({
     setPayStep(n);
   };
   // Какое поле редактирует нативная клавиатура в этом мастере.
-  const [payPad, setPayPad] = useState<null | "cash" | "security" | "deposit">(
+  const [payPad, setPayPad] = useState<null | "cash" | "security" | "deposit" | "amount">(
     null,
   );
   // Оператор вручную задал «клиент вносит» (частичная оплата) → не
@@ -568,7 +568,14 @@ export function PaymentAcceptDialog({
     .filter((s) => s.amount > s.paidAmount)
     .reduce((sum, s) => sum + s.days, 0);
   const [payParking, setPayParking] = useState(true);
-  const parkingDue = unpaidParking > 0 && payParking ? unpaidParking : 0;
+  // Правки 7.0 (п.16): «Игнорировать долг» — принять оплату за продление, не
+  // трогая долг вне просрочки (ущерб, начисления, доплата за замену,
+  // неоплаченная аренда, паркинг): с клиентом договорились, что его он
+  // закроет отдельно. Просрочку переключатель не снимает — это те же дни
+  // аренды, для неё есть прощение.
+  const [ignoreDebt, setIgnoreDebt] = useState(false);
+  const ignoring = ignoreDebt && !completing && rental.status === "active";
+  const parkingDue = unpaidParking > 0 && payParking && !ignoring ? unpaidParking : 0;
 
   // Этап 2: ущерб по приёмке (только в режиме завершения). Залог по
   // умолчанию идёт в счёт ущерба; «вернуть залог» обнуляет зачёт.
@@ -601,18 +608,25 @@ export function PaymentAcceptDialog({
   // по приоритету. Формулы и накопление долга НЕ трогаем — завтра он снова
   // подрастёт штатно. Ограничиваем введённое суммой долга.
   const [debtPayStr, setDebtPayStr] = useState("");
+  // Правки 7.0 (п.16): долг, который можно оставить клиенту, и то, что
+  // собираем сейчас (при «Игнорировать долг» — только просрочку).
+  const ignorableDebt = pendingRent + pendingSwapFee + damageBalance + manualBalance;
+  const canIgnoreDebt =
+    !completing && rental.status === "active" && ignorableDebt + unpaidParking > 0;
+  const ignoredDebt = ignoring ? ignorableDebt : 0;
+  const debtToCollect = totalDebt - ignoredDebt;
   const paidDebtNow =
     debtPayStr.trim() === ""
-      ? totalDebt
+      ? debtToCollect
       : Math.max(
           0,
           Math.min(
-            totalDebt,
+            debtToCollect,
             parseInt(debtPayStr.replace(/\D/g, "") || "0", 10),
           ),
         );
-  const isPartialDebt = totalDebt > 0 && paidDebtNow < totalDebt;
-  const debtRemainAfter = Math.max(0, totalDebt - paidDebtNow);
+  const isPartialDebt = debtToCollect > 0 && paidDebtNow < debtToCollect;
+  const debtRemainAfter = Math.max(0, debtToCollect - paidDebtNow);
   // dueAmount теперь = сколько по долгу гасим СЕЙЧАС + паркинг (а не весь долг).
   const dueAmount = paidDebtNow + parkingDue;
 
@@ -736,6 +750,14 @@ export function PaymentAcceptDialog({
   const [extendOn, setExtendOn] = useState<boolean>(
     () => (initialExtDays ?? 0) > 0,
   );
+  /** «Игнорировать долг»: включили — сразу продление, долг в оплату не идёт. */
+  const toggleIgnoreDebt = (on: boolean) => {
+    setIgnoreDebt(on);
+    if (on) {
+      setExtendOn(true);
+      setDebtPayStr("");
+    }
+  };
   const extInputBase = extendOn ? Math.max(0, extInputOverride ?? 0) : 0;
   const extDays = extIsWeekly ? extInputBase * 7 : extInputBase;
   const extWeeks = extIsWeekly ? extInputBase : 0;
@@ -1029,30 +1051,34 @@ export function PaymentAcceptDialog({
       { cap: overdueDaysBalance, target: "overdue_days" },
       { cap: overdueFineBalance, target: "overdue_fine" },
     ];
-    for (const dr of debt?.damageReports ?? []) {
-      const reportPaid = payments
-        .filter(
-          (p) =>
-            p.rentalId === rental.id &&
-            p.type === "damage" &&
-            p.paid &&
-            p.damageReportId === dr.id,
-        )
-        .reduce((s, p) => s + p.amount, 0);
-      const reportDebt = Math.max(0, dr.total - dr.depositCovered - reportPaid);
-      queue.push({ cap: reportDebt, target: "damage", damageReportId: dr.id });
+    // Правки 7.0 (п.16): «Игнорировать долг» — в очереди только просрочка и
+    // продление; ущерб, начисления, доплата за замену и старая аренда не трогаются.
+    if (!ignoring) {
+      for (const dr of debt?.damageReports ?? []) {
+        const reportPaid = payments
+          .filter(
+            (p) =>
+              p.rentalId === rental.id &&
+              p.type === "damage" &&
+              p.paid &&
+              p.damageReportId === dr.id,
+          )
+          .reduce((s, p) => s + p.amount, 0);
+        const reportDebt = Math.max(0, dr.total - dr.depositCovered - reportPaid);
+        queue.push({ cap: reportDebt, target: "damage", damageReportId: dr.id });
+      }
+      // Этап 2: акт, созданный в этом же сабмите завершения, ещё не попал
+      // в debt.damageReports (кэш) — добавляем его слот вручную, чтобы
+      // «вносит сейчас» лёг на новый ущерб по приоритету.
+      for (const s of extraDamageSlots) {
+        if (s.cap > 0)
+          queue.push({ cap: s.cap, target: "damage", damageReportId: s.damageReportId });
+      }
+      queue.push({ cap: manualBalance, target: "manual" });
+      // #20-B: доплата за замену — слот перед rent (тот же тир, что аренда).
+      queue.push({ cap: pendingSwapFee, target: "swap_fee" });
+      queue.push({ cap: pendingRent, target: "rent" });
     }
-    // Этап 2: акт, созданный в этом же сабмите завершения, ещё не попал
-    // в debt.damageReports (кэш) — добавляем его слот вручную, чтобы
-    // «вносит сейчас» лёг на новый ущерб по приоритету.
-    for (const s of extraDamageSlots) {
-      if (s.cap > 0)
-        queue.push({ cap: s.cap, target: "damage", damageReportId: s.damageReportId });
-    }
-    queue.push({ cap: manualBalance, target: "manual" });
-    // #20-B: доплата за замену — слот перед rent (тот же тир, что аренда).
-    queue.push({ cap: pendingSwapFee, target: "swap_fee" });
-    queue.push({ cap: pendingRent, target: "rent" });
     // v0.4.49: rent от продления — отдельный target, добавляем в очередь
     // последним перед излишком. Маркер damageReportId=-1 — чтобы submit()
     // понимал что это продление и вызывал extend-inplace вместо обычного
@@ -1403,9 +1429,14 @@ export function PaymentAcceptDialog({
           paid: boolean;
         }>;
       }>(`/api/payments?rentalId=${rental.id}`);
+      // Правки 7.0 (п.16): при «Игнорировать долг» деньги — за продление, и
+      // гасить надо его строку (самую новую), а не старую неоплаченную аренду.
       const unpaidRent = (freshPayments.items ?? [])
         .filter((p) => p.rentalId === rental.id && p.type === "rent" && !p.paid)
-        .sort((a, b) => a.id - b.id);
+        .sort((a, b) => (ignoring ? b.id - a.id : a.id - b.id));
+      const ignoreNote = ignoring
+        ? { note: `Продление без погашения долга: ${fmt(ignoredDebt + unpaidParking)} ₽ остаётся за клиентом по договорённости` }
+        : {};
 
       // Второй проход: только rent.
       for (const op of ops) {
@@ -1430,6 +1461,7 @@ export function PaymentAcceptDialog({
                 paid: true,
                 paidAt: paymentTimestamp ?? new Date().toISOString(),
                 method: op.method,
+                ...ignoreNote,
               });
               amountLeft -= ph.amount;
               unpaidRent.shift();
@@ -1446,6 +1478,7 @@ export function PaymentAcceptDialog({
                 method: op.method,
                 paid: true,
                 paidAt: paymentTimestamp ?? new Date().toISOString(),
+                ...ignoreNote,
               });
               ph.amount = ph.amount - amountLeft;
               amountLeft = 0;
@@ -1460,6 +1493,7 @@ export function PaymentAcceptDialog({
               method: op.method,
               paid: true,
               paidAt: paymentTimestamp ?? new Date().toISOString(),
+              ...ignoreNote,
             });
           }
         }
@@ -1795,6 +1829,7 @@ export function PaymentAcceptDialog({
   // приняты все позиции; способ оплаты обязателен только при accepted>0.
   const submitDisabled =
     saving ||
+    (ignoring && extDays <= 0) ||
     (accepted > 0 && method === null && !splitValid) ||
     (completing ? intake.blocked : totalReceived <= 0 && !forgiveDebt);
 
@@ -1990,6 +2025,14 @@ export function PaymentAcceptDialog({
                   </span>
                   {" "}— сначала закрытие долга, затем продление.
                 </>
+              ) : ignoring ? (
+                <>
+                  Долг{" "}
+                  <span className="font-semibold tabular-nums text-ink-2">
+                    {fmt(ignorableDebt + unpaidParking)} ₽
+                  </span>{" "}
+                  оставляем клиенту — принимаем только продление.
+                </>
               ) : totalDebt > 0 || unpaidParking > 0 ? (
                 // v0.8.29 (H3): есть долг (паркинг/ущерб/неоплачено) — сначала
                 // предлагаем погасить, продление — по желанию.
@@ -2180,7 +2223,7 @@ export function PaymentAcceptDialog({
               явно опционально (Step 2). */}
           {!isOverdueState && (totalDebt > 0 || unpaidParking > 0) && (
             <div
-              className="border-b border-border px-5 py-3.5"
+              className={cn("border-b border-border px-5 py-3.5 transition-opacity", ignoring && "opacity-45")}
               style={{ background: "hsl(var(--red-soft) / 0.3)" }}
             >
               <div className="mb-2.5 flex items-center gap-2">
@@ -2194,7 +2237,7 @@ export function PaymentAcceptDialog({
                   className="text-[11px] font-bold uppercase tracking-wider"
                   style={{ color: "hsl(var(--red-ink))" }}
                 >
-                  Сначала — долг
+                  {ignoring ? "Долг — не берём сейчас" : "Сначала — долг"}
                 </div>
                 <span
                   className="ml-auto font-display text-[18px] font-extrabold tabular-nums"
@@ -2264,6 +2307,44 @@ export function PaymentAcceptDialog({
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Правки 7.0 (п.16): оплатить продление, не трогая долг. */}
+          {canIgnoreDebt && (
+            <div
+              className={cn(
+                "flex items-center justify-between gap-3 border-b border-border px-5 py-3",
+                ignoring && "bg-amber-50/70",
+              )}
+              data-ignore-debt
+            >
+              <div className="min-w-0">
+                <div className="text-[13px] font-bold text-ink">Игнорировать долг</div>
+                <div className="text-[11px] text-muted">
+                  {ignoring
+                    ? `${fmt(ignorableDebt + unpaidParking)} ₽ долга остаются за клиентом — принимаем только продление`
+                    : "с клиентом договорились о долге — принять оплату только за продление"}
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={ignoreDebt}
+                aria-label="Игнорировать долг"
+                onClick={() => toggleIgnoreDebt(!ignoreDebt)}
+                className={cn(
+                  "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+                  ignoreDebt ? "bg-amber-500" : "bg-border",
+                )}
+              >
+                <span
+                  className={cn(
+                    "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+                    ignoreDebt ? "translate-x-[22px]" : "translate-x-0.5",
+                  )}
+                />
+              </button>
             </div>
           )}
 
@@ -2790,7 +2871,7 @@ export function PaymentAcceptDialog({
               долга. Пусто = гасим полностью. Можно ввести меньше (частично) —
               остаток просто останется долгом и завтра продолжит расти штатно.
               Сумму раскидывает по составу distribute() по приоритету. */}
-          {totalDebt > 0 && (
+          {debtToCollect > 0 && (
             <div className="border-b border-border px-5 py-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] font-bold text-ink">
@@ -2816,7 +2897,7 @@ export function PaymentAcceptDialog({
                 <span className="text-muted">
                   {isPartialDebt ? (
                     <>
-                      из {fmt(totalDebt)} ₽ долга
+                      из {fmt(debtToCollect)} ₽ долга
                       <button
                         type="button"
                         onClick={() => setDebtPayStr("")}
@@ -2885,17 +2966,27 @@ export function PaymentAcceptDialog({
                           tone="green"
                         />
                       )}
-                      {pendingSwapFee > 0 && (
+                      {ignoring ? (
+                        // Правки 7.0 (п.16): долг в оплату не идёт — одной строкой.
                         <FooterRow
-                          label="Доплата за замену скутера"
-                          value={`${fmt(pendingSwapFee)} ₽`}
+                          label="Долг — не трогаем, остаётся за клиентом"
+                          value={`${fmt(ignorableDebt + unpaidParking)} ₽`}
                         />
-                      )}
-                      {otherDebt > 0 && (
-                        <FooterRow
-                          label="Прочий долг (экип./аренда/ущерб/ручной)"
-                          value={`${fmt(otherDebt)} ₽`}
-                        />
+                      ) : (
+                        <>
+                          {pendingSwapFee > 0 && (
+                            <FooterRow
+                              label="Доплата за замену скутера"
+                              value={`${fmt(pendingSwapFee)} ₽`}
+                            />
+                          )}
+                          {otherDebt > 0 && (
+                            <FooterRow
+                              label="Прочий долг (экип./аренда/ущерб/ручной)"
+                              value={`${fmt(otherDebt)} ₽`}
+                            />
+                          )}
+                        </>
                       )}
                       {completing && intakeDamageDebt > 0 && (
                         <FooterRow
@@ -3156,6 +3247,68 @@ export function PaymentAcceptDialog({
     setDateConfirmed(true);
   };
 
+  // Правки 7.0 (паритет): календарь даты оплаты — тот же на компьютере и
+  // в мастере телефона/планшета (там он был не нужен — шага не было).
+  const dateStepBody = (
+    <>
+      <div className="rounded-[12px] border border-border bg-surface-soft/50 px-3 py-2 text-[12px] text-ink-2">
+        Аренда: <b>{rental.start}</b> → <b>{rental.endPlanned}</b>
+        {overdueDaysCount > 0 && (
+          <>
+            {" "}
+            · сегодня просрочка{" "}
+            <b className="text-red-ink">{overdueDaysCount} дн</b>
+          </>
+        )}
+        <div className="mt-1 text-[11px] text-muted">
+          Если клиент заплатил вовремя, а вы фиксируете позже — укажите дату
+          оплаты. Отсчёт продления/закрытия пойдёт от неё (как будто сегодня —
+          эта дата). Это не прощение долга.
+        </div>
+      </div>
+
+      <div className="mx-auto w-fit rounded-2xl border border-border bg-surface p-2 [&_table]:w-auto">
+        <I18nProvider locale="ru-RU">
+          <CalendarPicker
+            aria-label="Дата поступления оплаты"
+            value={safeCalDate(paymentDateIso)}
+            minValue={safeCalDate(startIso)}
+            maxValue={safeCalDate(todayIso)}
+            onChange={(d) => {
+              if (d) {
+                const cd = d as CalendarDate;
+                setPaymentDateIso(
+                  `${cd.year}-${String(cd.month).padStart(2, "0")}-${String(cd.day).padStart(2, "0")}`,
+                );
+              }
+            }}
+          />
+        </I18nProvider>
+      </div>
+
+      {dateEffDays === 0 ? (
+        <div className="rounded-[12px] border border-green-ink/30 bg-green-soft/50 px-3 py-2.5 text-[12.5px] text-green-ink">
+          Оплата <b>{paymentRu}</b> — в срок, просрочки на эту дату нет
+          {dateRemovedAmount > 0 && (
+            <> ({fmt(dateRemovedAmount)} ₽ за {dateDelayDays} дн не начисляются)</>
+          )}
+          . Продление и закрытие пойдут от <b>{paymentRu}</b>.
+        </div>
+      ) : dateDelayDays > 0 ? (
+        <div className="rounded-[12px] border border-amber-300 bg-amber-50 px-3 py-2.5 text-[12.5px] text-amber-900">
+          На <b>{paymentRu}</b> просрочка <b>{dateEffDays} дн</b> (вместо{" "}
+          {overdueDaysCount} сегодня). Отсчёт продления/закрытия — от этой
+          даты.
+        </div>
+      ) : (
+        <div className="rounded-[12px] border border-border bg-surface-soft/50 px-3 py-2.5 text-[12.5px] text-ink-2">
+          Просрочка <b>{overdueDaysCount} дн</b> начисляется полностью —
+          оплата фиксируется сегодня.
+        </div>
+      )}
+    </>
+  );
+
   const dateStepPanel = (
     <div className="flex h-full flex-col overflow-hidden bg-surface">
       <div className="flex items-center gap-3 border-b border-border bg-gradient-to-r from-blue-50 to-surface px-5 py-3">
@@ -3181,61 +3334,7 @@ export function PaymentAcceptDialog({
       </div>
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
-        <div className="rounded-[12px] border border-border bg-surface-soft/50 px-3 py-2 text-[12px] text-ink-2">
-          Аренда: <b>{rental.start}</b> → <b>{rental.endPlanned}</b>
-          {overdueDaysCount > 0 && (
-            <>
-              {" "}
-              · сегодня просрочка{" "}
-              <b className="text-red-ink">{overdueDaysCount} дн</b>
-            </>
-          )}
-          <div className="mt-1 text-[11px] text-muted">
-            Если клиент заплатил вовремя, а вы фиксируете позже — укажите дату
-            оплаты. Отсчёт продления/закрытия пойдёт от неё (как будто сегодня —
-            эта дата). Это не прощение долга.
-          </div>
-        </div>
-
-        <div className="mx-auto w-fit rounded-2xl border border-border bg-surface p-2 [&_table]:w-auto">
-          <I18nProvider locale="ru-RU">
-            <CalendarPicker
-              aria-label="Дата поступления оплаты"
-              value={safeCalDate(paymentDateIso)}
-              minValue={safeCalDate(startIso)}
-              maxValue={safeCalDate(todayIso)}
-              onChange={(d) => {
-                if (d) {
-                  const cd = d as CalendarDate;
-                  setPaymentDateIso(
-                    `${cd.year}-${String(cd.month).padStart(2, "0")}-${String(cd.day).padStart(2, "0")}`,
-                  );
-                }
-              }}
-            />
-          </I18nProvider>
-        </div>
-
-        {dateEffDays === 0 ? (
-          <div className="rounded-[12px] border border-green-ink/30 bg-green-soft/50 px-3 py-2.5 text-[12.5px] text-green-ink">
-            Оплата <b>{paymentRu}</b> — в срок, просрочки на эту дату нет
-            {dateRemovedAmount > 0 && (
-              <> ({fmt(dateRemovedAmount)} ₽ за {dateDelayDays} дн не начисляются)</>
-            )}
-            . Продление и закрытие пойдут от <b>{paymentRu}</b>.
-          </div>
-        ) : dateDelayDays > 0 ? (
-          <div className="rounded-[12px] border border-amber-300 bg-amber-50 px-3 py-2.5 text-[12.5px] text-amber-900">
-            На <b>{paymentRu}</b> просрочка <b>{dateEffDays} дн</b> (вместо{" "}
-            {overdueDaysCount} сегодня). Отсчёт продления/закрытия — от этой
-            даты.
-          </div>
-        ) : (
-          <div className="rounded-[12px] border border-border bg-surface-soft/50 px-3 py-2.5 text-[12.5px] text-ink-2">
-            Просрочка <b>{overdueDaysCount} дн</b> начисляется полностью —
-            оплата фиксируется сегодня.
-          </div>
-        )}
+        {dateStepBody}
       </div>
 
       <div className="flex items-center gap-2 border-t border-border px-5 py-3">
@@ -4302,17 +4401,27 @@ export function PaymentAcceptDialog({
   if (isMobile) {
     // Умные шаги: показываем только применимые (нет долга → без «Долга»;
     // аренда не активна → без «Продления»). «Оплата» — всегда последняя.
-    const wizSteps: ("debt" | "extend" | "pay")[] = [
-      ...(totalDebt + parkingDue > 0 ? (["debt"] as const) : []),
+    // Правки 7.0 (паритет с компьютером): при просрочке первый шаг — дата
+    // оплаты (как окно «Когда поступила оплата?»); шаг «Долг» есть, пока
+    // у клиента вообще есть долг — даже если его сейчас не берём.
+    const wizSteps: ("date" | "debt" | "extend" | "pay")[] = [
+      ...(hasOverdue ? (["date"] as const) : []),
+      ...(totalDebt + unpaidParking > 0 || crossDebtTotal > 0 ? (["debt"] as const) : []),
       ...(canExtend ? (["extend"] as const) : []),
       "pay",
     ];
     const stepCount = wizSteps.length;
     const curStep = wizSteps[payStep] ?? wizSteps[stepCount - 1];
-    const stepTitle: Record<"debt" | "extend" | "pay", string> = {
+    const stepTitle: Record<"date" | "debt" | "extend" | "pay", string> = {
+      date: "Дата оплаты",
       debt: "Долг",
       extend: "Продление",
       pay: "Оплата",
+    };
+    /** «Далее»: с шага даты — дата подтверждена (как «Продолжить» на компьютере). */
+    const nextPayStep = () => {
+      if (curStep === "date") confirmDate();
+      goPayStep(payStep + 1);
     };
     const pAnim = payStepDir === "fwd" ? "animate-wz-fwd" : "animate-wz-back";
     const forgiveOptions = [
@@ -4331,9 +4440,10 @@ export function PaymentAcceptDialog({
       },
     ].filter((o) => o.show);
     const totalDue = totalDebt + parkingDue;
-    const noDebt = totalDue <= 0;
-    // Предоплата = нет долга И не продлеваем (клиент просто кладёт на депозит).
-    const isPrepay = noDebt && periodTotal <= 0;
+    // Долг показываем весь, даже если паркинг или прочее сейчас не берём.
+    const noDebt = totalDebt + unpaidParking <= 0;
+    // Предоплата = нечего гасить И не продлеваем (клиент просто кладёт на депозит).
+    const isPrepay = debtToCollect + parkingDue <= 0 && periodTotal <= 0 && !ignoring;
     // Всё к сбору = долг(+паркинг) + продление; наличные = это минус источники.
     const cashMax = Math.max(0, grossTotal - securityToUse - depositToUse);
     // Сколько всего закрываем сейчас и сколько останется (долг/недобор продления).
@@ -4346,7 +4456,9 @@ export function PaymentAcceptDialog({
           : { label: "Клиент вносит", hint: `остаток ${fmt(cashMax)} ₽`, initial: accepted, max: cashMax as number | undefined }
         : payPad === "security"
           ? { label: "Сумма из залога", hint: `доступно ${fmt(securityAvailable)} ₽`, initial: securityToUse, max: securityCap as number | undefined }
-          : { label: "Сумма с депозита", hint: `доступно ${fmt(depositBalance)} ₽`, initial: depositToUse, max: depositCap as number | undefined };
+          : payPad === "amount"
+            ? { label: "Клиент даёт", hint: "посчитаем, до какой даты хватит", initial: Number(amountInput || 0), max: undefined as number | undefined }
+            : { label: "Сумма с депозита", hint: `доступно ${fmt(depositBalance)} ₽`, initial: depositToUse, max: depositCap as number | undefined };
     return (
       <>
         {actPreview}
@@ -4387,6 +4499,13 @@ export function PaymentAcceptDialog({
 
           {/* BODY */}
           <div key={payStep} className={cn("flex-1 overflow-y-auto px-4 pb-3", pAnim)}>
+            {/* ----- ШАГ «ДАТА ОПЛАТЫ» (только при просрочке) ----- */}
+            {curStep === "date" && (
+              <div className="flex flex-col gap-3 pt-1 [&_table]:mx-auto" data-pay-date-step>
+                {dateStepBody}
+              </div>
+            )}
+
             {/* ----- ШАГ «ДОЛГ» ----- */}
             {curStep === "debt" && (
               <div className="flex flex-col gap-3 pt-1">
@@ -4402,7 +4521,7 @@ export function PaymentAcceptDialog({
                   </div>
                 ) : (
                   <>
-                    <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+                    <div className={cn("overflow-hidden rounded-2xl border border-border bg-surface transition-opacity", ignoring && !hasOverdue && "opacity-50")}>
                       {hasOverdue && (
                         <div className="px-3.5 py-3">
                           <div className="flex items-center justify-between gap-2">
@@ -4431,11 +4550,11 @@ export function PaymentAcceptDialog({
                       )}
                       {otherExistingDebt > 0 && (
                         <div className={cn("flex items-center justify-between gap-2 px-3.5 py-3 text-[14px] text-ink", hasOverdue && "border-t border-border")}>
-                          <span className="flex items-center gap-2">
+                          <span className="flex min-w-0 items-center gap-2">
                             <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-muted-2" />
                             Прочий долг (аренда/ущерб/ручной)
                           </span>
-                          <b className="text-[15px] tabular-nums">{fmt(otherExistingDebt)} ₽</b>
+                          <b className="shrink-0 whitespace-nowrap text-[15px] tabular-nums">{fmt(otherExistingDebt)} ₽</b>
                         </div>
                       )}
                       {pendingSwapFee > 0 && (
@@ -4462,11 +4581,101 @@ export function PaymentAcceptDialog({
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-blue-100 bg-blue-50/30 px-4 py-3 text-center text-[12.5px] text-blue-800">
-                      Дальше выберите, чем закрываем: залог, депозит, наличные —
-                      и сколько вносит клиент.
-                    </div>
+                    {/* При «Игнорировать долг» всё сказано в самом переключателе. */}
+                    {!ignoring && (
+                      <div className="rounded-2xl border border-blue-100 bg-blue-50/30 px-4 py-3 text-center text-[12.5px] text-blue-800">
+                        Дальше выберите, чем закрываем: залог, депозит, наличные —
+                        и сколько вносит клиент.
+                      </div>
+                    )}
                   </>
+                )}
+                {/* Паркинг: как на компьютере — можно не брать сейчас. */}
+                {unpaidParking > 0 && !ignoring && (
+                  <MobileToggleCard
+                    title="Взять оплату за паркинг"
+                    hint={`${unpaidParkingDays} дн · ${fmt(unpaidParking)} ₽${payParking ? "" : " — сейчас не берём"}`}
+                    on={payParking}
+                    onChange={setPayParking}
+                  />
+                )}
+                {/* Правки 7.0 (п.16): оплатить продление, не трогая долг. */}
+                {canIgnoreDebt && (
+                  <MobileToggleCard
+                    tone="amber"
+                    title="Игнорировать долг"
+                    hint={
+                      ignoring
+                        ? `${fmt(ignorableDebt + unpaidParking)} ₽ остаются за клиентом — принимаем только продление`
+                        : "Договорились с клиентом о долге — принять оплату только за продление"
+                    }
+                    on={ignoreDebt}
+                    onChange={toggleIgnoreDebt}
+                  />
+                )}
+                {/* Долг с прошлых аренд — как на компьютере, своей кнопкой. */}
+                {crossDebtTotal > 0 && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3.5" data-cross-debt>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[12px] font-bold uppercase tracking-wider text-amber-800">
+                        Долг с прошлых аренд
+                      </span>
+                      <b className="font-display text-[18px] tabular-nums text-amber-900">{fmt(crossDebtTotal)} ₽</b>
+                    </div>
+                    <div className="mt-1.5 flex flex-col gap-0.5 text-[12px] text-amber-900/90">
+                      {crossSources.map((s) => (
+                        <div key={s.rentalId} className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 flex-1 truncate">
+                            {s.label} · аренда #{String(s.rentalId).padStart(4, "0")}
+                          </span>
+                          <b className="shrink-0 tabular-nums">{fmt(s.amount)} ₽</b>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2.5 grid grid-cols-2 gap-2">
+                      {(
+                        [
+                          ["cash", "Наличные"],
+                          ["transfer", "Перевод"],
+                        ] as const
+                      ).map(([m, lbl]) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setCrossMethod(m)}
+                          className={cn(
+                            "h-11 rounded-xl border text-[13.5px] font-semibold transition-colors",
+                            crossMethod === m ? "border-amber-500 bg-amber-100 text-amber-900" : "border-amber-200 bg-white text-ink-2",
+                          )}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        inputMode="numeric"
+                        value={crossPayStr}
+                        placeholder={String(crossDebtTotal)}
+                        onChange={(e) => setCrossPayStr(e.target.value.replace(/\D/g, ""))}
+                        aria-label="Сколько принять по долгу с прошлых аренд"
+                        className="h-12 w-[40%] min-w-0 rounded-xl border border-amber-300 bg-white px-3 text-right text-[16px] font-bold tabular-nums text-ink outline-none focus:border-amber-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handlePayCrossDebt}
+                        disabled={crossPayNow <= 0 || payCrossDebt.isPending}
+                        className="h-12 min-w-0 flex-1 rounded-xl bg-amber-600 px-2 text-[13.5px] font-bold text-white disabled:opacity-50"
+                      >
+                        {payCrossDebt.isPending ? "Принимаем…" : `Принять ${fmt(crossPayNow)} ₽`}
+                      </button>
+                    </div>
+                    {crossPayNow > 0 && crossPayNow < crossDebtTotal && (
+                      <div className="mt-1.5 text-[11.5px] text-amber-800/80">
+                        Частично · останется {fmt(crossDebtTotal - crossPayNow)} ₽ долга
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -4515,6 +4724,69 @@ export function PaymentAcceptDialog({
                           </div>
                         )}
 
+                        {/* Как на компьютере: по дням — или по сумме, которую даёт клиент. */}
+                        <div className="grid grid-cols-2 gap-1 rounded-2xl bg-surface-soft p-1" role="radiogroup" aria-label="Как продлеваем">
+                          {(
+                            [
+                              ["days", "По дням"],
+                              ["amount", "По сумме клиента"],
+                            ] as const
+                          ).map(([m, lbl]) => (
+                            <button
+                              key={m}
+                              type="button"
+                              role="radio"
+                              aria-checked={mode === m}
+                              onClick={() => {
+                                setMode(m);
+                                if (m === "amount" && selectedTariff !== "custom") setTariffPinned(false);
+                              }}
+                              className={cn(
+                                "h-11 rounded-xl text-[13.5px] font-semibold transition-colors",
+                                mode === m ? "bg-white text-ink shadow-card-sm" : "text-muted",
+                              )}
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+
+                        {mode === "amount" ? (
+                          <div className="rounded-2xl border border-border bg-surface p-3.5" data-ext-amount>
+                            <button
+                              type="button"
+                              onClick={() => setPayPad("amount")}
+                              className="flex w-full items-center justify-between rounded-2xl border-2 border-blue-200 bg-blue-soft/15 px-4 py-3 text-left active:border-blue-400"
+                            >
+                              <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">Клиент даёт</span>
+                              <span className="flex items-center gap-1.5">
+                                <span className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">
+                                  {amountInput ? `${fmt(Number(amountInput))} ₽` : "—"}
+                                </span>
+                                <Pencil size={15} className="text-blue-600" />
+                              </span>
+                            </button>
+                            <div className="mt-2.5 flex items-center justify-between">
+                              <span className="text-[12.5px] text-muted">
+                                {extDays > 0 ? `хватит на ${extDays} ${extDays === 1 ? "день" : "дн"}` : amountInput ? "недостаточно на сутки" : "введите сумму"}
+                              </span>
+                              <span className="font-display text-[18px] font-extrabold tabular-nums text-blue-700">
+                                {newEnd && extDays > 0 ? `до ${fmtDDMMYYYY(newEnd)}` : "—"}
+                              </span>
+                            </div>
+                            {accepted > 0 && extUpsell && (
+                              <div className="mt-2 rounded-xl bg-surface-soft px-3 py-2 text-[12px] text-ink-2">
+                                Докиньте <b className="tabular-nums text-ink">{fmt(extUpsell.add)} ₽</b> —{" "}
+                                {extDays > 0 ? "продлите до" : "хватит на"} <b className="tabular-nums text-ink">{extUpsell.days}</b> дн.
+                              </div>
+                            )}
+                            {extLeftover > 0 && (
+                              <div className="mt-2 text-[12px] text-orange-ink">
+                                Сверх целых дней остаётся {fmt(extLeftover)} ₽ — верните клиенту или оставьте на депозите.
+                              </div>
+                            )}
+                          </div>
+                        ) : (
                         <div className="rounded-2xl border border-border bg-surface p-3.5">
                           <div className="mb-2 flex items-center justify-between">
                             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">На сколько {extIsWeekly ? "недель" : "дней"}</span>
@@ -4538,6 +4810,7 @@ export function PaymentAcceptDialog({
                             })}
                           </div>
                         </div>
+                        )}
 
                         <div className="rounded-2xl border border-border bg-surface p-3.5">
                           <div className="mb-1.5 flex items-center justify-between">
@@ -4669,6 +4942,17 @@ export function PaymentAcceptDialog({
                     <span className="text-muted-2">Останется долгом</span>
                     <b className={cn("font-display text-[17px] tabular-nums", remainDebt > 0 ? "text-orange-ink" : "text-emerald-600")}>{fmt(remainDebt)} ₽</b>
                   </div>
+                  {ignoring && (
+                    <div className="mt-1 flex items-baseline justify-between text-[13px]" data-ignored-debt>
+                      <span className="text-amber-800">Долг не трогаем</span>
+                      <b className="font-display text-[17px] tabular-nums text-amber-800">{fmt(ignorableDebt + unpaidParking)} ₽</b>
+                    </div>
+                  )}
+                  {ignoring && extDays <= 0 && (
+                    <div className="mt-2 text-[12px] font-semibold text-red-ink">
+                      Включите продление — без него принимать нечего.
+                    </div>
+                  )}
                 </div>
                   </>
                 )}
@@ -4692,7 +4976,7 @@ export function PaymentAcceptDialog({
                 )}
                 <button
                   type="button"
-                  onClick={() => goPayStep(payStep + 1)}
+                  onClick={nextPayStep}
                   className="h-12 flex-[2] rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98]"
                 >
                   Далее
@@ -4735,7 +5019,7 @@ export function PaymentAcceptDialog({
                       onClick={async () => {
                         const ok = await confirmDialog({
                           title: "Принять оплату?",
-                          message: `Закрываем ${fmt(coveredNow)} ₽${remainDebt > 0 ? `, останется долгом ${fmt(remainDebt)} ₽` : " — всё закрывается полностью"}.`,
+                          message: `Закрываем ${fmt(coveredNow)} ₽${remainDebt > 0 ? `, останется долгом ${fmt(remainDebt)} ₽` : " — всё закрывается полностью"}.${ignoring ? ` Долг ${fmt(ignorableDebt + unpaidParking)} ₽ не трогаем — останется за клиентом.` : ""}`,
                           confirmText: "Да, принять",
                         });
                         if (ok) submit();
@@ -4828,7 +5112,9 @@ export function PaymentAcceptDialog({
               max={padCfg.max}
               onCancel={() => setPayPad(null)}
               onConfirm={(n) => {
-                if (payPad === "cash") {
+                if (payPad === "amount") {
+                  setAmountInput(n > 0 ? String(n) : "");
+                } else if (payPad === "cash") {
                   setAcceptedStr(String(n));
                   setCashTouched(true);
                 } else if (payPad === "security") {
@@ -4910,6 +5196,52 @@ export function PaymentAcceptDialog({
  * v0.6.5: строка футера в 2-колоночном layout — слева подпись, справа
  * сумма. Tones: 'red'/'green' для просрочки/прощения, undefined — нейтр.
  */
+/** Карточка с переключателем в мобильном мастере оплаты (правки 7.0). */
+function MobileToggleCard({
+  title,
+  hint,
+  on,
+  onChange,
+  tone = "blue",
+}: {
+  title: string;
+  hint: string;
+  on: boolean;
+  onChange: (v: boolean) => void;
+  tone?: "blue" | "amber";
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
+        on && tone === "amber" ? "border-amber-300 bg-amber-50" : "border-border bg-surface",
+      )}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14px] font-semibold text-ink">{title}</span>
+        <span className="block text-[12px] leading-snug text-muted">{hint}</span>
+      </span>
+      <span
+        className={cn(
+          "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors",
+          on ? (tone === "amber" ? "bg-amber-500" : "bg-blue-600") : "bg-border",
+        )}
+      >
+        <span
+          className={cn(
+            "inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform",
+            on ? "translate-x-[22px]" : "translate-x-0.5",
+          )}
+        />
+      </span>
+    </button>
+  );
+}
+
 function FooterRow({
   label,
   value,

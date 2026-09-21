@@ -39,7 +39,12 @@ const FIELD_RULES: FieldRule[] = [
     keys: ["share", "invested", "revenue", "income", "monthlyIncome", "accrued", "incomeAll", "revenueAll", "paidTotal", "amount"],
   },
   { prefix: "/api/scooters", perm: "data.partnerShares", keys: ["partnerShare"] },
-  { prefix: "/api/service-orders", perm: "data.repairProfit", keys: ["cost", "profit"] },
+  // Правки 7.0: доля механика и наша прибыль, процент механика — тоже про прибыль.
+  {
+    prefix: "/api/service-orders",
+    perm: "data.repairProfit",
+    keys: ["cost", "profit", "mechanicShare", "ourProfit", "percent", "mechanicPercent"],
+  },
   // 2.0.2: закуп в прайсе запчастей.
   { prefix: "/api/price-list", perm: "data.repairProfit", keys: ["cost"] },
 ];
@@ -49,20 +54,25 @@ const DENY_RULES: { prefix: string; perm: PermissionKey }[] = [
   // Карточка инвестора, начисления и выплаты — целиком про доли.
   { prefix: "/api/investors/", perm: "data.partnerShares" },
   { prefix: "/api/scooters/partner-share", perm: "data.partnerShares" },
+  // Блок «Финансы» (20.09) — целиком про деньги организации.
+  { prefix: "/api/finance/", perm: "data.finance" },
 ];
 
 /** Ключи в meta журнала и фрагменты текста, которые выдают закрытые числа. */
 const JOURNAL_META_KEYS: Record<PermissionKey, string[]> = {
   "data.profit": ["purchasePrice", "profit", "marginPct", "commission", "commissionPct", "managerCommission", "managerCommissionPct"],
-  "data.repairProfit": ["cost", "profit"],
+  "data.repairProfit": ["cost", "profit", "mechanicShare", "ourProfit", "mechanicPercent"],
   "data.partnerShares": ["partnerShare", "share", "accrued"],
+  // Блок «Финансы»: суммы прихода/расхода и ФОТ.
+  "data.finance": ["amount", "salary", "salesBonus", "income", "expense"],
 };
 /**
  * Текст записи журнала собран из фрагментов через « · ». Фрагмент про
  * закрытое выбрасывается целиком — в каком бы виде он ни был записан:
  * «закуп 84 200 ₽», «цена закупа — → 85000», «процент 10%».
  */
-const PROFIT_WORDS = /закуп|прибыл|марж|комисси|вознагражден|процент\s*\d|процент с прибыли|\d\s*%\s*с прибыли/i;
+// «менеджеру 3 500 ₽» — вознаграждение из записи о продаже (правки 7.0).
+const PROFIT_WORDS = /закуп|прибыл|марж|комисси|вознагражден|процент\s*\d|процент с прибыли|\d\s*%\s*с прибыли|менеджеру\s*\d/i;
 const REPAIR_PROFIT_WORDS = /закуп|прибыл|себестоим/i;
 const SHARE_WORDS = /инвестор\S*\s*\d|доля|процент инвестора|\d\s*%\s*инвестор/i;
 
@@ -125,7 +135,8 @@ function redactJournal(payload: unknown, perms: Perms): unknown {
       // Записи о правах сотрудников называют права, но чисел не содержат.
       if (entity !== "user") {
         if (!perms["data.profit"]) words.push(PROFIT_WORDS);
-        if (!perms["data.repairProfit"] && entity === "service_order") words.push(REPAIR_PROFIT_WORDS);
+        if (!perms["data.repairProfit"] && (entity === "service_order" || entity === "service_mechanic"))
+          words.push(REPAIR_PROFIT_WORDS);
         if (!perms["data.partnerShares"]) words.push(SHARE_WORDS);
       }
       const summary = redactSummary(typeof it.summary === "string" ? it.summary : "", words);

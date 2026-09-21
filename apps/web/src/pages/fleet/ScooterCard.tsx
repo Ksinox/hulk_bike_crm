@@ -31,7 +31,7 @@ import { useScooterMaintenance } from "@/lib/api/scooter-maintenance";
 import { useRepairJobs } from "@/lib/api/repair-jobs";
 import { useRole } from "@/lib/role";
 import { useCan } from "@/lib/permissions";
-import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
+import { type ScooterModel } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useApiClients } from "@/lib/api/clients";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -50,6 +50,8 @@ import {
   usePatchScooter,
   useRentalSlots,
   useSetSlotsTotal,
+  slotsOf,
+  type SlotPool,
 } from "@/lib/api/scooters";
 import { useMe } from "@/lib/api/auth";
 import { Archive, Loader2 } from "lucide-react";
@@ -66,6 +68,7 @@ import {
 } from "@/components/ScooterName";
 import { askArchiveReason } from "./archiveReason";
 import { Sensitive } from "@/components/Sensitive";
+import { useModelName } from "@/lib/useModelName";
 
 type TabId =
   | "overview"
@@ -187,6 +190,7 @@ export function ScooterCard({
    */
   drawerChrome?: boolean;
 }) {
+  const modelName = useModelName();
   const rentals = useRentals();
   const { data: apiClients } = useApiClients();
   const { data: cardModels = [] } = useApiScooterModels();
@@ -687,7 +691,7 @@ export function ScooterCard({
                 <div className="flex min-w-0 items-center gap-2">
                   <div className="min-w-0">
                     <div className="truncate font-display text-[16px] font-extrabold leading-tight text-ink">
-                      {MODEL_LABEL[scooter.model]}
+                      {modelName(scooter)}
                     </div>
                     <div className="text-[11.5px] text-muted">
                       {[scooter.year ? `${scooter.year} г.` : null, scooter.color]
@@ -699,7 +703,11 @@ export function ScooterCard({
                       отдельная строка ради одной цифры не нужна. */}
                   <span className="ml-auto shrink-0 text-right">
                     {scooter.rentalSlot != null ? (
-                      <ScooterNumberBadge number={scooter.rentalSlot} size="md" />
+                      <ScooterNumberBadge
+                        number={scooter.rentalSlot}
+                        size="md"
+                        electric={scooter.slotPool === "electric"}
+                      />
                     ) : (
                       <span className="rounded-full bg-surface-soft px-2 py-0.5 text-[10px] font-semibold text-muted-2">
                         без номера
@@ -843,7 +851,7 @@ export function ScooterCard({
               )}
             >
               {!drawerChrome && (
-                <SpecCell label="Модель" value={MODEL_LABEL[scooter.model]} />
+                <SpecCell label="Модель" value={modelName(scooter)} />
               )}
               {!drawerChrome && (
                 <>
@@ -1770,10 +1778,13 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
     );
   }
 
-  const free = slotsQ.data?.free ?? [];
-  const total = slotsQ.data?.total ?? 0;
+  // Правки 7.0 (п.5): номера того ряда, в котором стоит техника.
+  const pool: SlotPool = scooter.slotPool === "electric" ? "electric" : "petrol";
+  const poolSlots = slotsOf(slotsQ.data, pool);
+  const free = poolSlots.free;
+  const total = poolSlots.total;
   const holderOf = new Map(
-    (slotsQ.data?.used ?? []).map((u) => [u.slot, u] as const),
+    poolSlots.used.map((u) => [u.slot, u] as const),
   );
   const numbers = Array.from({ length: total }, (_, i) => i + 1);
 
@@ -1808,7 +1819,7 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
       return;
     }
     try {
-      await setTotal.mutateAsync(n);
+      await setTotal.mutateAsync({ total: n, pool });
       setMoreOpen(false);
       setMoreTotal("");
       toast.success("Номера добавлены", `В арендном парке теперь ${n} номеров`);
@@ -1823,7 +1834,7 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
   return (
     <div className="relative">
       <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-        Номер в аренде
+        {pool === "electric" ? "Номер электро" : "Номер в аренде"}
       </div>
       <button
         type="button"
@@ -2106,6 +2117,7 @@ function ScooterPhotoArea({
   /** Дровер (правка 27.08): фото-зона ниже, без гигантской пустоты. */
   compact?: boolean;
 }) {
+  const modelName = useModelName();
   const { data: models = [] } = useApiScooterModels();
   // Ищем модель по modelId (новый FK); если нет — по совпадению названия с enum
   const model = scooter.modelId
@@ -2141,7 +2153,7 @@ function ScooterPhotoArea({
             )}
           />
           <div className="text-[15px] font-bold text-ink">
-            {model?.name ?? MODEL_LABEL[scooter.model]}
+            {model?.name ?? modelName(scooter)}
           </div>
           <div className="text-[10px] text-muted-2">аватарка модели</div>
         </>
@@ -2152,7 +2164,7 @@ function ScooterPhotoArea({
           </div>
           <div className="text-[13px] font-semibold text-ink-2">Нет фото</div>
           <div className="max-w-[200px] text-center text-[11px] leading-snug text-muted-2">
-            Загрузите аватарку модели {MODEL_LABEL[scooter.model]} в
+            Загрузите аватарку модели {modelName(scooter)} в
             «Гараж → Модели» — она появится здесь для всех скутеров этой модели
           </div>
         </>

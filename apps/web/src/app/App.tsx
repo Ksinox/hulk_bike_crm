@@ -17,6 +17,7 @@ import { AnalyticsWall } from "@/pages/analytics/AnalyticsWall";
 import { Progress } from "@/pages/progress/Progress";
 import { Partners } from "@/pages/partners/Partners";
 import { Sales } from "@/pages/sales/Sales";
+import { Finance } from "@/pages/finance/Finance";
 import { Buyout } from "@/pages/buyout/Buyout";
 import { Applications } from "@/pages/applications/Applications";
 import { UpdateToast } from "./UpdateToast";
@@ -340,6 +341,8 @@ function AppShell({
       <Partners />
     ) : route === "sales" ? (
       <Sales />
+    ) : route === "finance" ? (
+      <Finance />
     ) : route === "rassrochki" ? (
       <Buyout />
     ) : route === "settings" || route === "storage" ? (

@@ -8,10 +8,16 @@ import { currentBillingPeriod } from "@/lib/billingPeriod";
  * дню, и подписи «отстаём от графика», «идём с опережением», «чуть не
  * дотянули». Заказчик: «продано 3 из 10, 30% — согласен, а почему написано
  * "с опережением"? Непонятно. Это вообще не надо». Поэтому теперь только
- * честный процент от плана и один критерий цвета:
- *   • weak — наполнилось меньше половины: оранжево-красный;
- *   • good — половина и больше: зелёный;
- *   • done — план выполнен (100%+): зелёный + галочка.
+ * честный процент от плана и один критерий цвета.
+ *
+ * Правки 7.0 (19.09, п.12) — геймификация, пороги ровно как в задании
+ * заказчика (20.09: «нет, надо так, как сказано в ТЗ» — промежуточный
+ * оранжевый убран, цветов три):
+ *   • red    — меньше 50% плана (в ТЗ «меньше 33 — красный», жёлтый
+ *              начинается только с 50, поэтому до 50 остаётся красный);
+ *   • yellow — от 50%;
+ *   • green  — от 90%;
+ *   • done   — план выполнен (100%+): зелёный + галочка.
  */
 
 /**
@@ -31,10 +37,13 @@ export function planTail(display: string, planText: string): string {
   return tail;
 }
 
-export type PlanStatus = "weak" | "good" | "done";
+export type PlanStatus = "red" | "yellow" | "green" | "done";
 
-/** Порог «хорошо»: от этой доли плана заливка становится зелёной. */
+/** Порог «идём нормально» (советы, гейдж): половина плана. */
 export const GOOD_FROM_PCT = 50;
+/** Пороги цвета (правки 7.0): красный до 50, жёлтый от 50, зелёный от 90. */
+export const RED_BELOW_PCT = GOOD_FROM_PCT;
+export const GREEN_FROM_PCT = 90;
 
 export type PlanState = {
   /** Процент выполнения плана, 0…999. */
@@ -51,7 +60,14 @@ export function planState(
   _period: BoardPeriod = "month",
 ): PlanState {
   const pct = plan > 0 ? Math.min(999, Math.round((fact / plan) * 100)) : 0;
-  const status: PlanStatus = pct >= 100 ? "done" : pct >= GOOD_FROM_PCT ? "good" : "weak";
+  const status: PlanStatus =
+    pct >= 100
+      ? "done"
+      : pct >= GREEN_FROM_PCT
+        ? "green"
+        : pct >= GOOD_FROM_PCT
+          ? "yellow"
+          : "red";
   return { pct, status, done: pct >= 100 };
 }
 
@@ -85,7 +101,7 @@ function clamp01(v: number): number {
   return Math.min(1, Math.max(0.02, v));
 }
 
-/** Палитра: два цвета, третий — тот же зелёный для выполненного плана. */
+/** Палитра: красный → жёлтый → зелёный; выполнено — зелёный. */
 export const STATUS_UI: Record<
   PlanStatus,
   {
@@ -109,7 +125,7 @@ export const STATUS_UI: Record<
     hex: "#10B981",
     hexWall: "#34D399",
   },
-  good: {
+  green: {
     ink: "text-emerald-700",
     inkWall: "text-emerald-300",
     bar: "bg-emerald-500",
@@ -119,15 +135,25 @@ export const STATUS_UI: Record<
     hex: "#10B981",
     hexWall: "#34D399",
   },
-  weak: {
-    ink: "text-orange-700",
-    inkWall: "text-orange-300",
-    bar: "bg-orange-500",
-    barWall: "bg-orange-400",
-    chip: "bg-orange-500/15 text-orange-900",
-    chipWall: "bg-orange-400/20 text-orange-100",
-    hex: "#EA580C",
-    hexWall: "#F97316",
+  yellow: {
+    ink: "text-amber-600",
+    inkWall: "text-amber-300",
+    bar: "bg-amber-400",
+    barWall: "bg-amber-300",
+    chip: "bg-amber-400/20 text-amber-800",
+    chipWall: "bg-amber-300/20 text-amber-100",
+    hex: "#F59E0B",
+    hexWall: "#FCD34D",
+  },
+  red: {
+    ink: "text-red-600",
+    inkWall: "text-red-400",
+    bar: "bg-red-500",
+    barWall: "bg-red-500",
+    chip: "bg-red-500/15 text-red-800",
+    chipWall: "bg-red-500/20 text-red-100",
+    hex: "#EF4444",
+    hexWall: "#F87171",
   },
 };
 

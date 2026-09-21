@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
 import { useReloadRestoredState } from "@/lib/usePersistedState";
-import { ShoppingBag, Bike, ScrollText, Printer, Layers } from "lucide-react";
+import { Archive, Bike, Layers, Package, Printer, ScrollText, ShoppingBag, Tag } from "lucide-react";
 import { StaticDocPreview } from "@/components/StaticDocPreview";
 import { useInventorySheet } from "@/pages/fleet/useInventorySheet";
 import { ScooterJournal } from "@/pages/fleet/ScooterJournal";
 import { BatchesPanel } from "@/pages/fleet/BatchesPanel";
+import { ModelsCatalog } from "@/pages/fleet/ModelsCatalog";
+import { EquipmentCatalog } from "@/pages/fleet/EquipmentCatalog";
+import { ScooterArchive } from "@/pages/fleet/ScooterArchive";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -21,7 +24,7 @@ import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { ExNumberTag, ScooterName } from "@/components/ScooterName";
 import { usePageFab } from "../fab";
-import type { ApiScooter, ScooterModel } from "@/lib/api/types";
+import type { ApiScooter } from "@/lib/api/types";
 import {
   matchId,
   matchScooterName,
@@ -37,6 +40,7 @@ import {
   MobileSearch,
   type ChipOption,
 } from "../ui";
+import { useModelName } from "@/lib/useModelName";
 
 type Filter =
   | "all"
@@ -51,12 +55,6 @@ type Filter =
   /** Продан: права перешли покупателю, в парке не числится. */
   | "gone";
 
-const MODEL_LABEL: Record<ScooterModel, string> = {
-  jog: "Yamaha Jog",
-  gear: "Honda Gear",
-  honda: "Honda",
-  tank: "Tank",
-};
 
 // Тон под канонический статус. Ярлык берём из SCOOTER_STATUS_LABEL (единый
 // источник с десктопом — никаких выдуманных «В прокате»).
@@ -81,6 +79,7 @@ function num(n: number): string {
 }
 
 export function MobileScooters() {
+  const modelName = useModelName();
   const { data: scooters = [] } = useApiScooters();
   const { data: models = [] } = useApiScooterModels();
   // Картинка модели для аватарки скутера: по modelId, иначе по совпадению
@@ -92,8 +91,12 @@ export function MobileScooters() {
     return fileUrl(m?.avatarKey, { variant: "thumb" }) ?? undefined;
   };
   const [filter, setFilter] = useState<Filter>("all");
+  /** Фильтр по модели (правки 7.0, паритет с компьютером): «Все» или модель. */
+  const [modelFilter, setModelFilter] = useState<string>("");
   /** Журнал техники — тот же, что на компьютере (паритет, 06.09). */
   const [journalOpen, setJournalOpen] = useState(false);
+  /** Справочники и архив — как на компьютере (паритет, 20.09). */
+  const [catalog, setCatalog] = useState<null | "models" | "equipment" | "archive">(null);
   /** «Партии» — та же сводка, что на компьютере (2.0.1). */
   const [batchesOpen, setBatchesOpen] = useState(false);
   /** «Ревизия парка» — тот же печатный лист, что на компьютере (06.09, п.2). */
@@ -180,7 +183,7 @@ export function MobileScooters() {
       const q = normalizeQuery(search);
       return (
         // 15.09: номер скутера — «5», «05», «№5», «айма 01», «бывший 80».
-        (numberQ != null && matchScooterNumber(s, numberQ, MODEL_LABEL[s.model]) != null) ||
+        (numberQ != null && matchScooterNumber(s, numberQ, modelName(s)) != null) ||
         matchScooterName(s.name, q) ||
         matchId(s.id, q) ||
         matchScooterName(s.vin ?? undefined, q) ||
@@ -190,12 +193,17 @@ export function MobileScooters() {
       );
     };
     return (filter === "gone" ? goneList : live)
-      .filter((s) => (filter === "gone" ? true : matchStatus(s)) && matchSearch(s))
+      .filter(
+        (s) =>
+          (filter === "gone" ? true : matchStatus(s)) &&
+          matchSearch(s) &&
+          (modelFilter === "" || modelName(s) === modelFilter),
+      )
       .sort((a, b) => {
         if (numberQ) {
           const order = { current: 0, name: 1, former: 2 } as const;
           const rank = (x: ApiScooter) => {
-            const hit = matchScooterNumber(x, numberQ, MODEL_LABEL[x.model]);
+            const hit = matchScooterNumber(x, numberQ, modelName(x));
             return hit ? order[hit] : 3;
           };
           const d = rank(a) - rank(b);
@@ -204,7 +212,7 @@ export function MobileScooters() {
         return a.name.localeCompare(b.name, "ru", { numeric: true });
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, goneList, filter, search, rentedSet]);
+  }, [live, goneList, filter, search, rentedSet, modelFilter]);
 
   const chips: ChipOption<Filter>[] = [
     { id: "all", label: "Все", count: live.length },
@@ -221,6 +229,22 @@ export function MobileScooters() {
       ? [{ id: "gone" as const, label: "Проданы", count: goneList.length }]
       : []),
   ];
+
+  /** Модели в текущем списке — по каталогу (частые первыми). */
+  const modelChips = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const s of filter === "gone" ? goneList : live) {
+      const name = modelName(s);
+      if (name) n.set(name, (n.get(name) ?? 0) + 1);
+    }
+    const list = [...n.entries()].sort((a, b) => b[1] - a[1]);
+    if (list.length < 2) return [];
+    return [
+      { id: "", label: "Все модели", count: list.reduce((x, [, c]) => x + c, 0) },
+      ...list.map(([name, count]) => ({ id: name, label: name, count })),
+    ] as ChipOption<string>[];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, goneList, filter]);
 
   // Ищем среди ВСЕЙ техники, а не только «живой»: карточка проданной
   // единицы тоже должна открываться (её смотрят из чипа «Проданы»).
@@ -245,6 +269,9 @@ export function MobileScooters() {
       {/* 2.0.1: фильтры — во всю ширину, инструменты — строкой ниже (иначе
           «Партии» и «Журнал» съедали место и фильтры не читались). */}
       <MobileChips options={chips} value={filter} onChange={setFilter} />
+      {modelChips.length > 0 && (
+        <MobileChips options={modelChips} value={modelFilter} onChange={setModelFilter} />
+      )}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -273,6 +300,42 @@ export function MobileScooters() {
           <Printer size={15} />
         </button>
       </div>
+
+      {/* Паритет (20.09): модели, экипировка и архив — с телефона тоже. */}
+      <div className="flex items-center gap-2">
+        {(
+          [
+            { id: "models" as const, label: "Модели", icon: Tag },
+            { id: "equipment" as const, label: "Экипировка", icon: Package },
+            { id: "archive" as const, label: "Архив", icon: Archive },
+          ]
+        ).map((c) => {
+          const Icon = c.icon;
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setCatalog(c.id)}
+              className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full bg-surface px-2 text-[13px] font-semibold text-ink shadow-card-sm"
+            >
+              <Icon size={15} /> {c.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <MobileSheet
+        open={catalog != null}
+        onClose={() => setCatalog(null)}
+        title={catalog === "models" ? "Модели" : catalog === "equipment" ? "Экипировка" : "Архив техники"}
+      >
+        {/* Справочники свёрстаны под компьютер: на телефоне держим ширину. */}
+        <div className="min-w-0 overflow-x-hidden">
+          {catalog === "models" && <ModelsCatalog />}
+          {catalog === "equipment" && <EquipmentCatalog />}
+          {catalog === "archive" && <ScooterArchive />}
+        </div>
+      </MobileSheet>
 
       {revisionOpen && (
         <StaticDocPreview
@@ -431,6 +494,7 @@ function ScooterTile({
   avatar?: string;
   onClick: () => void;
 }) {
+  const modelName = useModelName();
   const meta = statusMeta(status);
   const oilState =
     status === "rental_pool" || status === "rented" ? oilFlag(scooter) : null;
@@ -450,14 +514,14 @@ function ScooterTile({
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-display text-[15px] font-bold text-ink">
+          <div className="flex min-w-0 font-display text-[15px] font-bold text-ink">
             <ScooterName
               name={scooter.name}
               number={scooter.rentalSlot ?? undefined}
             />
           </div>
           <div className="truncate text-[12px] text-muted">
-            {MODEL_LABEL[scooter.model]}
+            {modelName(scooter)}
             {/* 2.0.1: без арендного номера одинаковые «Jog» различает ID. */}
             {scooter.rentalSlot == null && scooter.uid && ` · ID ${scooter.uid}`}
           </div>

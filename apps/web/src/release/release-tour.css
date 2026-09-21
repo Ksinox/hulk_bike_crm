@@ -189,7 +189,7 @@
 }
 
 @media (max-width: 767px) {
-  .rt-sheet { width: 100vw; height: 100dvh; border-radius: 0; grid-template-columns: 1fr; grid-template-rows: 47% 53%; }
+  .rt-sheet { width: 100vw; height: 100dvh; border-radius: 0; grid-template-columns: 1fr; grid-template-rows: 42% 58%; }
   .rt-card-title { font-size: 2em; }
   .rt-body { padding: 1.1em 1.1em 0; }
   .rt-card-actions { padding-bottom: calc(1em + env(safe-area-inset-bottom)); }

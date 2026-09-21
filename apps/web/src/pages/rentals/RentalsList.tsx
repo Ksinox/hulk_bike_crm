@@ -104,9 +104,11 @@ function ScooterTag({
       {num != null && (
         <span
           className={cn(
-            "inline-flex items-center justify-center rounded-full bg-ink px-1.5 font-bold tabular-nums text-white",
+            "inline-flex items-center justify-center rounded-full px-1.5 font-bold tabular-nums text-white",
+            electric ? "bg-green-600" : "bg-ink",
             dot,
           )}
+          title={`${electric ? "Номер электро" : "Номер в арендном парке"}: ${num}`}
         >
           {num}
         </span>

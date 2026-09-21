@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Minus, Plus, Target, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Gift, Minus, Plus, Target, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Board } from "./board";
 import { METRIC_BY_ID, METRIC_GROUP_UI } from "./metrics";
@@ -16,6 +16,7 @@ export function MobileBoardEditor({
   onMove,
   onResize,
   onPlan,
+  onBonus,
   onRemove,
   cols,
 }: {
@@ -23,6 +24,8 @@ export function MobileBoardEditor({
   onMove: (from: number, to: number) => void;
   onResize: (index: number, w: number, h: number) => void;
   onPlan: (index: number, plan: number | null) => void;
+  /** Премия за выполнение плана (правки 7.0, п.12). */
+  onBonus: (index: number, bonus: number | null) => void;
   onRemove: (index: number) => void;
   /** Сколько колонок будет на стене — предел ширины плитки. */
   cols: number;
@@ -113,6 +116,26 @@ export function MobileBoardEditor({
                   <span className="shrink-0 text-[12px] font-bold text-muted-2">
                     {def.percentValue ? "%" : def.format(1).includes("₽") ? "₽" : "шт"}
                   </span>
+                </label>
+              )}
+              {def.planable && !def.comingSoon && tile.plan != null && tile.plan > 0 && (
+                <label className="flex min-w-[150px] flex-1 items-center gap-1.5 rounded-xl bg-surface-soft px-2.5 py-1.5">
+                  <Gift size={14} className="shrink-0 text-amber-600" />
+                  <span className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                    Премия
+                  </span>
+                  <input
+                    inputMode="numeric"
+                    value={tile.bonus != null && tile.bonus > 0 ? String(tile.bonus) : ""}
+                    placeholder="—"
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/[^\d]/g, "").slice(0, 8);
+                      onBonus(i, v ? Number(v) : null);
+                    }}
+                    aria-label="Премия за выполнение плана"
+                    className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-surface px-2 text-right text-[13px] font-bold tabular-nums outline-none focus:border-blue-600"
+                  />
+                  <span className="shrink-0 text-[12px] font-bold text-muted-2">₽</span>
                 </label>
               )}
             </div>

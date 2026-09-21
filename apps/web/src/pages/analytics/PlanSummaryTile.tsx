@@ -1,10 +1,16 @@
-import { GripVertical, Target, X } from "lucide-react";
+import { Gift, GripVertical, Target, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sensitive } from "@/components/Sensitive";
 import { useSensitiveRevealed } from "@/lib/sensitive";
 import type { BoardPeriod, BoardTile } from "./board";
 import { METRIC_BY_ID, METRIC_GROUP_UI, type MetricValue } from "./metrics";
-import { planState, STATUS_UI, type PlanState } from "./status";
+import { planState, planTail, STATUS_UI, type PlanState } from "./status";
+
+/** 12 100 → «12,1»; 100 000 → «100». */
+function thousands(v: number): string {
+  const k = v / 1000;
+  return (k >= 100 ? Math.round(k) : Math.round(k * 10) / 10).toLocaleString("ru-RU");
+}
 import { ResizeHandle } from "./ResizeHandle";
 import { DoneBadge } from "./Gauge";
 
@@ -56,13 +62,20 @@ export function PlanSummaryTile({
       const v = values[t.metric];
       if (!def || !v || def.comingSoon) return null;
       const plan = t.plan ?? 0;
+      // Правки 7.0 (п.12): «факт/план» вместо процента. Деньги — в тысячах,
+      // иначе «12 100 ₽/100 000 ₽» съедало название строки.
+      const money = def.format(1).includes("₽");
+      const pair = money && plan >= 10_000
+        ? { fact: thousands(v.value), plan: `${thousands(plan)} тыс ₽` }
+        : { fact: def.format(v.value), plan: planTail(def.format(v.value), def.format(plan)) };
       return {
         id: t.metric,
         title: def.title,
-        fact: def.format(v.value),
-        plan: def.format(plan),
+        fact: pair.fact,
+        plan: pair.plan,
         state: planState(v.value, plan, !!def.periodic, periodOf(t.metric)),
         hidden: !!def.sensitive && !revealed,
+        bonus: t.bonus != null && t.bonus > 0 ? t.bonus : null,
       };
     })
     .filter(Boolean) as {
@@ -72,6 +85,7 @@ export function PlanSummaryTile({
     plan: string;
     state: PlanState;
     hidden: boolean;
+    bonus: number | null;
   }[];
 
   const spanStyle = {
@@ -197,19 +211,19 @@ export function PlanSummaryTile({
               <div key={r.id} style={{ fontSize: line }} className="flex min-h-0 items-center gap-[0.7em]">
                 <span className={cn("min-w-0 flex-1 truncate font-bold", wall ? "text-white/85" : "text-ink")}>
                   {r.title}
-                </span>
-                <span
-                  className={cn("a-hide-narrow shrink-0 truncate tabular-nums", wall ? "text-white/50" : "text-muted")}
-                  style={{ fontSize: "0.8em", maxWidth: "30%" }}
-                >
-                  {r.hidden ? (
-                    <>
-                      <Sensitive dark={wall}>{r.fact}</Sensitive> /{r.plan}
-                    </>
-                  ) : (
-                    <>
-                      {r.fact} /{r.plan}
-                    </>
+                  {r.bonus != null && (
+                    // Премия за план — рядом с названием (правки 7.0).
+                    <span
+                      className={cn(
+                        "a-hide-narrow ml-[0.5em] inline-flex items-center gap-[0.25em] align-middle font-semibold",
+                        r.state.done ? (wall ? "text-emerald-300" : "text-emerald-700") : wall ? "text-amber-200/90" : "text-amber-700",
+                      )}
+                      style={{ fontSize: "0.72em" }}
+                      title="Премия за выполнение плана"
+                    >
+                      <Gift className="h-[1.05em] w-[1.05em]" />
+                      {r.bonus.toLocaleString("ru-RU")} ₽
+                    </span>
                   )}
                 </span>
                 <span
@@ -217,7 +231,7 @@ export function PlanSummaryTile({
                     "relative shrink-0 overflow-hidden rounded-full",
                     wall ? "bg-white/[0.12]" : "bg-ink/[0.08]",
                   )}
-                  style={{ height: "0.6em", width: "24%" }}
+                  style={{ height: "0.6em", width: "18%" }}
                 >
                   <span
                     className={cn(
@@ -227,19 +241,23 @@ export function PlanSummaryTile({
                     style={{ width: r.hidden ? 0 : `${Math.min(100, r.state.pct)}%` }}
                   />
                 </span>
+                {/* Правки 7.0 (п.12): вместо процента — «факт/план», цветом статуса. */}
                 <span
                   className={cn(
-                    "shrink-0 text-right font-display font-extrabold leading-none tabular-nums",
+                    "shrink-0 whitespace-nowrap text-right font-display font-extrabold leading-none tabular-nums",
                     wall ? ui.inkWall : ui.ink,
                   )}
-                  style={{ fontSize: "1.2em", width: r.state.done ? "4.6em" : "3.4em" }}
+                  style={{ fontSize: "1.2em", minWidth: "3.4em" }}
+                  data-plan-fact={r.state.status}
                 >
                   {r.hidden ? (
-                    <Sensitive dark={wall}>{r.state.pct}%</Sensitive>
+                    <>
+                      <Sensitive dark={wall}>{r.fact}</Sensitive>/{r.plan}
+                    </>
                   ) : (
                     <span className="inline-flex items-center justify-end gap-[0.3em]">
                       {r.state.done && <DoneBadge wall={wall} withText={false} className="p-0" />}
-                      {`${r.state.pct}%`}
+                      {r.fact}/{r.plan}
                     </span>
                   )}
                 </span>

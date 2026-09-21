@@ -76,25 +76,26 @@ export function DebtorsMorning({
   const { hottest, queue, totalActiveCount, totalActiveSum } = todayQ.data;
 
   return (
-    <section className="rounded-[18px] bg-white p-9 shadow-card-sm">
+    <section className="rounded-[18px] bg-white p-4 shadow-card-sm sm:p-9">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      {/* Телефон: кнопки уходят под заголовок и тянутся на всю ширину. */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="mb-2 font-mono text-[12px] uppercase tracking-[0.08em] text-muted-2">
             {date} · {now.toTimeString().slice(0, 5)}
           </div>
-          <h1 className="font-display text-[36px] font-bold leading-none tracking-[-0.022em] text-ink">
+          <h1 className="font-display text-[26px] font-bold leading-none tracking-[-0.022em] text-ink sm:text-[36px]">
             {greeting},{" "}
             <em className="font-display font-semibold not-italic text-blue-700">
               {name}
             </em>
           </h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full gap-2 sm:w-auto">
           <button
             type="button"
             onClick={onOpenList}
-            className="inline-flex h-9 items-center gap-2 rounded-[10px] border border-border bg-white px-3.5 text-[13px] font-semibold text-ink hover:border-border-strong"
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] border border-border bg-white px-3.5 text-[13px] font-semibold text-ink hover:border-border-strong sm:h-9 sm:flex-none"
           >
             <Filter size={14} />
             Все дела
@@ -102,7 +103,7 @@ export function DebtorsMorning({
           <button
             type="button"
             onClick={onAddNew}
-            className="inline-flex h-9 items-center gap-2 rounded-[10px] bg-ink px-3.5 text-[13px] font-semibold text-white hover:bg-[#16213a]"
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] bg-ink px-3.5 text-[13px] font-semibold text-white hover:bg-[#16213a] sm:h-9 sm:flex-none"
           >
             <Plus size={14} />
             Новое дело
@@ -117,12 +118,12 @@ export function DebtorsMorning({
             <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-red-600" />
             Самое срочное сегодня
           </div>
-          <div className="relative overflow-hidden rounded-[22px] border border-red-100 bg-white p-9 shadow-[0_32px_64px_-24px_rgba(220,38,38,0.25),0_8px_22px_-8px_rgba(11,18,32,0.12)]">
+          <div className="relative overflow-hidden rounded-[22px] border border-red-100 bg-white p-4 shadow-[0_32px_64px_-24px_rgba(220,38,38,0.25),0_8px_22px_-8px_rgba(11,18,32,0.12)] sm:p-9">
             <div className="absolute left-0 top-0 h-full w-[5px] bg-gradient-to-b from-red-600 to-rose-400" />
             <div className="absolute right-0 top-0 h-full w-1/2 bg-[radial-gradient(ellipse_at_top_right,rgba(220,38,38,0.06),transparent_60%)]" />
 
             <div className="relative z-10">
-              <div className="mb-4 flex items-center gap-2.5">
+              <div className="mb-4 flex flex-wrap items-center gap-2.5">
                 <span
                   className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-semibold ${TYPE_BG[hottest.debtor.type]}`}
                 >
@@ -137,10 +138,10 @@ export function DebtorsMorning({
                 </span>
               </div>
 
-              <h2 className="mb-1.5 font-display text-[44px] font-bold leading-[1.05] tracking-[-0.025em] text-ink">
+              <h2 className="mb-1.5 font-display text-[28px] font-bold leading-[1.05] tracking-[-0.025em] text-ink sm:text-[44px]">
                 {hottest.debtor.clientName}
               </h2>
-              <p className="mb-6 max-w-[580px] text-[17px] leading-[1.5] text-ink-2">
+              <p className="mb-6 max-w-[580px] text-[15px] leading-[1.5] text-ink-2 sm:text-[17px]">
                 Сумма к взысканию <b className="font-display text-[22px] font-bold tracking-[-0.01em] text-ink">{formatRub(hottest.debtor.totalAmount)}</b>.
                 Открой и разберись — система покажет где сейчас в процессе и
                 какой следующий шаг.
@@ -149,7 +150,7 @@ export function DebtorsMorning({
                 <button
                   type="button"
                   onClick={() => onOpenCase(hottest.debtor.id)}
-                  className="group inline-flex h-14 items-center gap-2.5 rounded-[14px] bg-ink px-7 text-[16px] font-semibold text-white shadow-[0_12px_24px_-8px_rgba(11,18,32,0.35)] transition-transform hover:-translate-y-0.5"
+                  className="group inline-flex h-14 w-full items-center justify-center gap-2.5 rounded-[14px] bg-ink px-7 text-[16px] font-semibold text-white shadow-[0_12px_24px_-8px_rgba(11,18,32,0.35)] transition-transform hover:-translate-y-0.5 sm:w-auto sm:justify-start"
                 >
                   Открыть и разобраться
                   <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
@@ -174,7 +175,7 @@ export function DebtorsMorning({
                 key={debtor.id}
                 type="button"
                 onClick={() => onOpenCase(debtor.id)}
-                className="grid grid-cols-[36px_1fr_auto_auto] items-center gap-3.5 rounded-[12px] border border-border bg-white px-4 py-3.5 text-left transition-all hover:translate-x-1 hover:border-ink hover:shadow-card"
+                className="grid grid-cols-[32px_1fr_auto] items-center gap-2.5 rounded-[12px] border border-border bg-white px-3 py-3.5 text-left transition-all hover:translate-x-1 hover:border-ink hover:shadow-card sm:grid-cols-[36px_1fr_auto_auto] sm:gap-3.5 sm:px-4"
               >
                 <div className="grid h-9 w-9 place-items-center rounded-full border border-border bg-gradient-to-br from-blue-50 to-surface-soft text-[12px] font-semibold text-ink">
                   {(debtor.clientName ?? "?").slice(0, 2).toUpperCase()}
@@ -192,7 +193,7 @@ export function DebtorsMorning({
                   {formatRub(debtor.totalAmount).replace(" ₽", "")}
                   <span className="ml-1 text-[12px] text-muted">₽</span>
                 </div>
-                <ArrowRight size={14} className="text-muted-2" />
+                <ArrowRight size={14} className="hidden text-muted-2 sm:block" />
               </button>
             ))}
           </div>
@@ -203,7 +204,7 @@ export function DebtorsMorning({
       <button
         type="button"
         onClick={onOpenList}
-        className="mt-8 flex w-full items-center gap-3 rounded-[14px] border border-dashed border-border-strong bg-white px-5 py-4 text-left text-[13px] text-muted transition-colors hover:border-ink hover:bg-surface-soft"
+        className="mt-8 flex w-full items-center gap-3 rounded-[14px] border border-dashed border-border-strong bg-white px-4 py-4 text-left text-[13px] text-muted transition-colors hover:border-ink hover:bg-surface-soft sm:px-5"
       >
         <Clock size={16} className="text-muted-2" />
         <div className="flex-1">

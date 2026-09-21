@@ -103,7 +103,15 @@ async function loadJobFull(jobId: number) {
   return {
     ...job,
     scooter: scooter
-      ? { id: scooter.id, name: scooter.name, model: scooter.model }
+      ? {
+          id: scooter.id,
+          name: scooter.name,
+          model: scooter.model,
+          // Правки 7.0 (п.9): модель из каталога — у SEM/AIMA старое поле «jog».
+          modelId: scooter.modelId ?? null,
+          rentalSlot: scooter.rentalSlot ?? null,
+          slotPool: scooter.slotPool,
+        }
       : null,
     rental: rentalCtx,
     progress: progressRows.map((p) => ({

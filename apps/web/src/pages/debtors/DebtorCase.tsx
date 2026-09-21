@@ -41,6 +41,10 @@ import { DonutProgress } from "@/components/DonutProgress";
 import { ScheduleBuilderDialog } from "./ScheduleBuilderDialog";
 import { DamageDebtorActSection } from "./DamageDebtorActSection";
 import { toast, confirmDialog } from "@/lib/toast";
+import { isTouchPrimary } from "@/lib/useIsMobile";
+
+/** На пальце кнопки дела — не мельче 44px, на мыши остаются компактными. */
+const TAP = isTouchPrimary() ? "min-h-[44px] " : "";
 
 // Локальная копия логики state machine для UI (зеркало бэка).
 // Зеркало TRANSITIONS бэка (для отрисовки кнопок). closed_paid здесь НЕ
@@ -336,7 +340,7 @@ export function DebtorCase({
         <button
           type="button"
           onClick={onBack}
-          className="mb-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted hover:text-ink"
+          className={`${TAP}mb-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted hover:text-ink`}
         >
           <ArrowLeft size={13} />
           Назад к очереди
@@ -366,7 +370,7 @@ export function DebtorCase({
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13.5px] text-muted">
           <a
             href={`tel:${d.displayPhone}`}
-            className="inline-flex items-center gap-1.5 font-semibold text-ink-2 hover:text-blue-700"
+            className={`${TAP}inline-flex items-center gap-1.5 font-semibold text-ink-2 hover:text-blue-700`}
           >
             <Phone size={13} className="text-blue-600" />
             {d.displayPhone}
@@ -428,7 +432,7 @@ export function DebtorCase({
                 <button
                   type="button"
                   onClick={() => setScheduleOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[12px] font-semibold text-muted hover:border-ink hover:text-ink"
+                  className={`${TAP}inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[12px] font-semibold text-muted hover:border-ink hover:text-ink`}
                 >
                   <CalendarRange size={12} /> Пересоздать
                 </button>
@@ -498,7 +502,7 @@ export function DebtorCase({
                         <button
                           type="button"
                           onClick={() => onOpenPayment(p.n)}
-                          className="inline-flex items-center rounded-full bg-ink px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-[#16213a]"
+                          className={`${TAP}inline-flex items-center rounded-full bg-ink px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-[#16213a]`}
                         >
                           Принять
                         </button>
@@ -649,7 +653,7 @@ export function DebtorCase({
                         key={t.to}
                         type="button"
                         onClick={() => handleStep(t.to, t.label)}
-                        className="text-[13px] font-medium text-muted hover:text-ink"
+                        className={`${TAP}inline-flex items-center text-[13px] font-medium text-muted hover:text-ink`}
                       >
                         {t.label}
                       </button>
@@ -672,7 +676,7 @@ export function DebtorCase({
                             key={t.to}
                             type="button"
                             onClick={() => onClose(t.to, t.label)}
-                            className={`inline-flex h-9 items-center gap-1.5 rounded-[10px] border px-3 text-[12.5px] font-semibold transition-colors ${
+                            className={`inline-flex ${isTouchPrimary() ? "h-11" : "h-9"} items-center gap-1.5 rounded-[10px] border px-3 text-[12.5px] font-semibold transition-colors ${
                               recovered
                                 ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400"
                                 : "border-border bg-white text-ink-2 hover:border-ink"
@@ -700,7 +704,7 @@ export function DebtorCase({
                   </div>
                   <a
                     href={`tel:${d.displayPhone}`}
-                    className="mt-1 inline-flex items-center gap-2 font-display text-[22px] font-bold tracking-[-0.01em] text-ink hover:text-blue-700"
+                    className="mt-1 inline-flex items-center gap-2 whitespace-nowrap font-display text-[19px] font-bold tracking-[-0.01em] text-ink hover:text-blue-700 xl:text-[22px]"
                   >
                     <Phone size={17} className="text-blue-600" />
                     {d.displayPhone}

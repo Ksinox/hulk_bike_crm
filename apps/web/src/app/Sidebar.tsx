@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   FileText,
   Home,
+  Landmark,
   LogOut,
   Receipt,
   Scale,
@@ -27,6 +28,7 @@ import { UpdateBanner, useDesktopUpdate } from "./UpdateBanner";
 import { isElectron } from "@/platform";
 import type { RouteId } from "./route";
 import { useMe } from "@/lib/api/auth";
+import { usePerms } from "@/lib/permissions";
 import { useUnreadChangelog } from "@/pages/whats-new/useUnreadChangelog";
 import { countFreshProgress } from "@/pages/progress/useFreshProgress";
 import { useApplications } from "@/lib/api/clientApplications";
@@ -38,7 +40,7 @@ type NavItem = {
   ready?: boolean;
 };
 
-function buildMainItems(canManageStaff: boolean): NavItem[] {
+function buildMainItems(canManageStaff: boolean, canFinance: boolean): NavItem[] {
   /**
    * Правка 31.08 (заказчик): порядок — по тому, как разделом пользуются.
    *
@@ -56,6 +58,11 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
     { id: "fleet", label: "Скутеры", icon: ShoppingBag, ready: true },
     { id: "sales", label: "Продажи", icon: Wallet, ready: true },
     { id: "partners", label: "Партнёрка", icon: Handshake, ready: true },
+    // «Финансы» (20.09) — рядом с денежными разделами, а не в конце списка:
+    // это ежедневный экран директора, а не справочник. Нет права — пункта нет.
+    ...(canFinance
+      ? [{ id: "finance" as const, label: "Финансы", icon: Landmark, ready: true }]
+      : []),
     { id: "service", label: "Ремонты", icon: Wrench, ready: true },
     { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "docs", label: "Документы", icon: FileText, ready: true },
@@ -104,7 +111,8 @@ export function Sidebar({
   const { phase, version } = useDesktopUpdate();
   const { data: me } = useMe();
   const canManageStaff = me?.role === "creator" || me?.role === "director";
-  const mainItems = buildMainItems(canManageStaff);
+  const perms = usePerms();
+  const mainItems = buildMainItems(canManageStaff, perms["data.finance"]);
   // 15.09: метка «новое» у новых разделов релиза (7 дней или до первого захода).
   const isNewSection = useNewSections();
   const { unreadCount: changelogUnread } = useUnreadChangelog();

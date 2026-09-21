@@ -71,6 +71,19 @@ export function isTouchPrimary(): boolean {
   }
 }
 
+/**
+ * Планшет под пальцем (правки 7.0, п.8б): основной указатель — палец, а
+ * короткая сторона экрана от 600px (iPad mini — 744). У телефона, даже
+ * повёрнутого, короткая сторона ~390px. На планшете числа вводятся родной
+ * клавиатурой — своя цифровая клавиатура для телефона там мелкая.
+ */
+export function isTouchTablet(): boolean {
+  if (typeof window === "undefined" || !isTouchPrimary()) return false;
+  // Окно, а не screen: у iPad в Split View узкое окно — там телефонная
+  // клавиатура уместнее; у повёрнутого телефона короткая сторона < 450.
+  return Math.min(window.innerWidth, window.innerHeight) >= 600;
+}
+
 export function useIsMobile(breakpoint = 768): boolean {
   const [isMobile, setIsMobile] = useState<boolean>(() =>
     computeIsMobile(breakpoint),
@@ -130,6 +143,23 @@ export function useIsTabletScreen(breakpoint = 1200): boolean {
  *
  * Порог: высота ≤ 860 (1280×720, 1366×768) или ширина ≤ 1440.
  */
+/**
+ * Телефон по ширине экрана (<768px) — для раскладок, где планшет должен вести
+ * себя как компьютер: окно по центру, а не лист снизу во всю ширину.
+ */
+export function useIsPhoneWidth(): boolean {
+  const compute = () => (typeof window === "undefined" ? false : window.innerWidth < 768);
+  const [phone, setPhone] = useState<boolean>(compute);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const update = () => setPhone(compute());
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return phone;
+}
+
 export function useIsCompactScreen(): boolean {
   const compute = () => {
     if (typeof window === "undefined") return false;

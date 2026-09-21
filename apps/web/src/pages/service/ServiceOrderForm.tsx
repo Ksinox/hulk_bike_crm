@@ -9,6 +9,8 @@ import { PayMethodPicker, splitByMethod, type PayMethod } from "@/components/Pay
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 import { useCreateServiceOrder, type SavedToPrice, type ServiceOrder } from "@/lib/api/service-orders";
 import { ItemsSection, PricePicker, type ItemPatch, type NewRowValue } from "./ServiceItemsEditor";
+import { MechanicChips } from "./ServiceMechanics";
+import { useServiceMechanics } from "@/lib/api/service-orders";
 import { digits, money } from "./serviceOrderUi";
 
 /**
@@ -41,6 +43,8 @@ type Draft = {
   vehicle: string;
   vehicleNumber: string;
   complaint: string;
+  /** Правки 7.0: механик (необязательно). */
+  mechanicId?: number | null;
   items: DraftItem[];
   advanceOn: boolean;
   advance: string;
@@ -54,6 +58,7 @@ const fresh = (): Draft => ({
   vehicle: "",
   vehicleNumber: "",
   complaint: "",
+  mechanicId: null,
   items: [],
   advanceOn: false,
   advance: "",
@@ -78,6 +83,8 @@ export function ServiceOrderForm({
 }) {
   const canRepairProfit = useCan("data.repairProfit");
   const create = useCreateServiceOrder();
+  const { data: mechanics = [] } = useServiceMechanics();
+  const hasMechanics = mechanics.some((m) => !m.archivedAt);
   const [draft, setDraft, clearDraft] = usePersistedFormState<Draft>("service-order-new", fresh);
   const [restored, setRestored] = useState(() => hasData(draft));
   const [pickerOpen, setPickerOpen] = useState<"work" | "part" | null>(null);
@@ -152,6 +159,7 @@ export function ServiceOrderForm({
         vehicle: draft.vehicle.trim(),
         vehicleNumber: draft.vehicleNumber.trim() || null,
         complaint: draft.complaint.trim() || null,
+        mechanicId: draft.mechanicId ?? null,
         items: draft.items.map((i) => ({
           kind: i.kind,
           name: i.name,
@@ -273,6 +281,12 @@ export function ServiceOrderForm({
             </div>
           </div>
         </Group>
+
+        {hasMechanics && (
+          <Group title="Механик">
+            <MechanicChips value={draft.mechanicId ?? null} onChange={(v) => set("mechanicId", v)} touch={touch} />
+          </Group>
+        )}
 
         <ItemsSection
           kind="work"

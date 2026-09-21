@@ -28,6 +28,8 @@ export type BoardTile = {
   size?: TileSize;
   /** Ручной план. null/undefined — плана нет. */
   plan?: number | null;
+  /** Премия за выполнение плана на 100%, ₽ (правки 7.0, п.12). */
+  bonus?: number | null;
   /** Свой период плитки; null — общий период доски. */
   period?: BoardPeriod | null;
 };

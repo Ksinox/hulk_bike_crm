@@ -29,7 +29,8 @@ type Sub =
   | { kind: "case"; id: number }
   | { kind: "payment"; id: number; paymentN?: number };
 
-export function Debtors() {
+/** `embedded` — раздел внутри мобильной оболочки: без десктопной шапки. */
+export function Debtors({ embedded = false }: { embedded?: boolean } = {}) {
   const [sub, setSub] = useState<Sub>({ kind: "landing" });
   const todayQ = useDebtorsToday();
 
@@ -91,7 +92,8 @@ export function Debtors() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
-      <Topbar />
+      {/* `embedded` — внутри мобильной оболочки: своя шапка уже есть. */}
+      {!embedded && <Topbar />}
       {body}
     </main>
   );
