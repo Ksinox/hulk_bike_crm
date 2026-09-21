@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -149,18 +150,28 @@ export function MobileSheet({
   children: React.ReactNode;
 }) {
   const { handleProps, sheetStyle } = useSheetDrag(onClose);
+  // Планшет: не шторка снизу шириной 640px, а окно по центру — на 820–1180px
+  // шторка занимала треть экрана, вокруг оставалось пустое место
+  // (правка заказчика 21.09).
+  const tabletLayout = useTabletLayout();
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 backdrop-blur-[2px]"
+      className={cn(
+        "fixed inset-0 z-50 flex flex-col justify-end bg-black/40 backdrop-blur-[2px]",
+        tabletLayout && "items-center justify-center p-6",
+      )}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={sheetStyle}
-        className="mx-auto max-h-[85vh] w-full max-w-[640px] overflow-y-auto rounded-t-3xl bg-bg px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up"
+        style={tabletLayout ? undefined : sheetStyle}
+        className={cn(
+          "mx-auto max-h-[85vh] w-full max-w-[640px] overflow-y-auto rounded-t-3xl bg-bg px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up",
+          tabletLayout && "max-h-[88dvh] max-w-[860px] rounded-3xl px-6 pb-6",
+        )}
       >
-        <SheetHandle handleProps={handleProps} />
+        {!tabletLayout && <SheetHandle handleProps={handleProps} />}
         {title && (
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="font-display text-[17px] font-bold text-ink">

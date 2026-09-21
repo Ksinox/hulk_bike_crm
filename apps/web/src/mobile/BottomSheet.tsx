@@ -1,4 +1,5 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import { cn } from "@/lib/utils";
 
 type SheetChildren = ReactNode | ((api: { close: () => void }) => ReactNode);
@@ -26,6 +27,8 @@ export function MobileBottomSheet({
   z?: number;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  /** Планшет: лист снизу превращается в окно по центру. */
+  const tabletLayout = useTabletLayout();
   const startY = useRef<number | null>(null);
   // dragY дублируем в ref — решение «закрыть/вернуть» в endDrag не должно
   // зависеть от тайминга ре-рендера (замыкание могло бы видеть старое значение).
@@ -95,6 +98,10 @@ export function MobileBottomSheet({
     <div
       className={cn(
         "fixed inset-0 flex items-end bg-ink/50 backdrop-blur-sm",
+        // Планшет: не лист снизу, а окно по центру — на 820–1180px лист
+        // занимал бы четверть экрана, а вокруг оставалось пустое место
+        // (правка заказчика 21.09).
+        tabletLayout && "items-center justify-center p-6",
         closing ? "animate-fade-out" : "animate-fade-in",
       )}
       style={{ zIndex: z }}
@@ -105,6 +112,8 @@ export function MobileBottomSheet({
         className={cn(
           // max-w: на планшете лист не растягивается на всю ширину экрана
           "mx-auto w-full max-w-[640px] rounded-t-3xl bg-surface shadow-card-lg",
+          tabletLayout &&
+            "scrollbar-thin max-h-[88dvh] max-w-[860px] overflow-y-auto rounded-3xl !pb-4",
           // въезд снизу — только в покое; во время drag/закрытия рулит inline-transform
           !closing && !dragging && dragY === 0 && "animate-sheet-up",
           "pb-[max(env(safe-area-inset-bottom),1.5rem)]",
@@ -115,7 +124,10 @@ export function MobileBottomSheet({
       >
         {/* «ручка» — тянем её вниз, чтобы закрыть лист */}
         <div
-          className="flex touch-none justify-center pb-1.5 pt-2.5"
+          className={cn(
+            "flex touch-none justify-center pb-1.5 pt-2.5",
+            tabletLayout && "hidden",
+          )}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}

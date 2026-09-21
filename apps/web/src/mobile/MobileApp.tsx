@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Calculator, Plus, ReceiptText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import type { RouteId } from "@/app/route";
 import { useMe, useLogout } from "@/lib/api/auth";
 import { usePerms } from "@/lib/permissions";
@@ -385,6 +386,8 @@ function MoreSheet({
 }) {
   const logoutMut = useLogout();
   const { handleProps, sheetStyle } = useSheetDrag(onClose);
+  /** Планшет: меню разделов — окно по центру в шесть колонок. */
+  const tabletLayout = useTabletLayout();
   const isNewSection = useNewSections();
   const handleLogout = async () => {
     try {
@@ -396,16 +399,24 @@ function MoreSheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 backdrop-blur-[2px]"
+      className={cn(
+        "fixed inset-0 z-50 flex flex-col justify-end bg-black/40 backdrop-blur-[2px]",
+        // Планшет: меню разделов — окно по центру, а не шторка снизу,
+        // которая на 820px не помещалась целиком (правка 21.09).
+        tabletLayout && "items-center justify-center p-6",
+      )}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={sheetStyle}
-        className="mx-auto w-full max-w-[640px] rounded-t-3xl bg-surface px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up"
+        style={tabletLayout ? undefined : sheetStyle}
+        className={cn(
+          "mx-auto w-full max-w-[640px] rounded-t-3xl bg-surface px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up",
+          tabletLayout && "max-w-[820px] rounded-3xl px-6 pb-6 pt-6",
+        )}
       >
-        <SheetHandle handleProps={handleProps} />
-        <div className="grid grid-cols-4 gap-2">
+        {!tabletLayout && <SheetHandle handleProps={handleProps} />}
+        <div className={cn("grid grid-cols-4 gap-2", tabletLayout && "grid-cols-6 gap-3")}>
           {items.map((item) => {
             const Icon = item.icon;
             const active = item.id === activeRoute;
