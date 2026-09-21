@@ -34,6 +34,7 @@ import {
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import {
   formatRub,
   greetingByHour,
@@ -57,6 +58,8 @@ export function MobileDashboard({
   onSelect: (id: RouteId) => void;
 }) {
   const { data: me } = useMe();
+  /** Планшет: верхние плашки — одним рядом, а не колонкой во всю ширину. */
+  const tabletLayout = useTabletLayout();
   const m = useDashboardMetrics();
   // Есть ли электротранспорт — от этого зависит раскладка верхних плиток.
   const hasElectro = m.rentableElectro > 0 || m.activeElectroCount > 0;
@@ -103,6 +106,16 @@ export function MobileDashboard({
         </div>
       </div>
 
+      {/* Планшет лёжа: выручка, оба гейджа и «Поступит сегодня» — одним
+          рядом. По отдельности каждая плашка растягивалась на 1180px и
+          наполовину пустовала (правка заказчика 21.09). */}
+      <div
+        className={cn(
+          "flex flex-col gap-4",
+          tabletLayout &&
+            "landscape:grid landscape:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)] landscape:items-stretch landscape:gap-3",
+        )}
+      >
       {/* Выручка — тап открывает банковскую сводку (графики/показатели). */}
       <button
         type="button"
@@ -132,7 +145,12 @@ export function MobileDashboard({
           логично сравнивать друг с другом, а не через «Поступит сегодня».
           Деньги переехали под них во всю ширину. Если электротранспорта нет,
           пара как раньше: парк + деньги. */}
-      <div className="grid grid-cols-2 items-stretch gap-3">
+      <div
+        className={cn(
+          "grid grid-cols-2 items-stretch gap-3",
+          tabletLayout && "landscape:contents",
+        )}
+      >
         <ParkLoadGauge
           title="Бензиновые"
           percent={m.loadPercent}
@@ -186,6 +204,7 @@ export function MobileDashboard({
           }
         />
       )}
+      </div>
 
       {/* Планшет: блоки сводки — в две колонки. На телефоне это лента сверху
           вниз, а на широком экране половина ширины пустовала. */}

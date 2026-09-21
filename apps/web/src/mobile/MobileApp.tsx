@@ -61,6 +61,8 @@ export function MobileApp({
   const moreItems = buildMoreItems(canManageStaff, perms["data.finance"]);
   const [moreOpen, setMoreOpen] = useState(false);
   const [fab, setFab] = useState<PageFab | null>(null);
+  /** Планшет: действие экрана переезжает в шапку (парящая кнопка накрывала список). */
+  const tabletLayout = useTabletLayout();
   // 16.09 (заказчик): кнопка «Сделка» оставалась поверх открытого окна.
   // Пока на странице открыто любое окно или лист — кнопку не показываем.
   const mainRef = useRef<HTMLElement>(null);
@@ -125,7 +127,10 @@ export function MobileApp({
     //  • FAB — absolute внутри relative-корня (не fixed) по той же причине.
     <FabProvider set={setFab}>
       <div className="relative flex h-[100dvh] flex-col overflow-hidden bg-bg">
-        <MobileTopBar title={routeTitle(route)} />
+        <MobileTopBar
+          title={routeTitle(route)}
+          action={tabletLayout && !overlayOpen && !moreOpen ? fab : null}
+        />
 
         <main
           ref={mainRef}
@@ -147,7 +152,7 @@ export function MobileApp({
           moreActive={moreOpen || isMoreRoute(route)}
         />
 
-        {fab && !overlayOpen && !moreOpen && (
+        {fab && !tabletLayout && !overlayOpen && !moreOpen && (
           <button
             type="button"
             data-tour="fab"
@@ -269,7 +274,18 @@ function MobilePage({
 
 /* ───────────────────────── верхняя панель ───────────────────────── */
 
-function MobileTopBar({ title }: { title: string }) {
+function MobileTopBar({
+  title,
+  action,
+}: {
+  title: string;
+  /**
+   * Планшет: действие экрана («+ Аренда», «+ Сделка») живёт в шапке, а не
+   * парящей кнопкой — на планшете она накрывала последние строки списка
+   * (правка заказчика 21.09).
+   */
+  action?: PageFab | null;
+}) {
   // Пункт 7: сводка дня (Z-отчёт) — доступна в любой момент с телефона.
   const [dayReportOpen, setDayReportOpen] = useState(false);
   return (
@@ -280,6 +296,16 @@ function MobileTopBar({ title }: { title: string }) {
         {title}
       </h1>
       <div className="ml-auto flex items-center gap-1.5">
+        {action && (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="mr-1 flex h-11 items-center gap-2 rounded-full bg-blue-600 px-5 text-[15px] font-bold text-white transition-transform active:scale-95"
+          >
+            <Plus size={19} strokeWidth={2.5} />
+            {action.label}
+          </button>
+        )}
         <button
           type="button"
           aria-label="Сводка дня"
