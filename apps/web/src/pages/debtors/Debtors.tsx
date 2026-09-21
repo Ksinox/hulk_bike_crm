@@ -12,6 +12,8 @@
  * чтобы перемещаться по флоу.
  */
 import { useEffect, useState } from "react";
+import { usePageFab } from "@/mobile/fab";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { consumePending } from "@/app/navigationStore";
 import { DebtorsMorning } from "./DebtorsMorning";
@@ -33,6 +35,17 @@ type Sub =
 export function Debtors({ embedded = false }: { embedded?: boolean } = {}) {
   const [sub, setSub] = useState<Sub>({ kind: "landing" });
   const todayQ = useDebtorsToday();
+  /**
+   * Планшет: главное действие раздела живёт в нижней панели справа —
+   * планшет держат в руках, и палец сам оказывается в правом нижнем углу
+   * (правка заказчика 21.09). На компьютере хук ничего не делает.
+   */
+  const tabletLayout = useTabletLayout();
+  usePageFab(
+    "Дело",
+    () => setSub({ kind: "new" }),
+    !tabletLayout || sub.kind !== "landing",
+  );
 
   // Deep-link из карточки клиента: navigate({route:"debtors", debtorId}) →
   // сразу открываем нужное дело.

@@ -8,6 +8,7 @@
  *  - Сводка по всем активным
  */
 import { useMe } from "@/lib/api/auth";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import { useDebtorsToday } from "@/lib/api/debtors";
 import { Plus, ArrowRight, Filter, Clock } from "lucide-react";
 import { TYPE_LABEL, formatRub, type DebtType } from "@/lib/debtors/types";
@@ -51,6 +52,8 @@ export function DebtorsMorning({
   onAddNew: () => void;
   onOpenList: () => void;
 }) {
+  /** Планшет: главное действие раздела — в нижней панели справа. */
+  const tabletLayout = useTabletLayout();
   const me = useMe();
   const todayQ = useDebtorsToday();
   const now = new Date();
@@ -100,14 +103,17 @@ export function DebtorsMorning({
             <Filter size={14} />
             Все дела
           </button>
-          <button
-            type="button"
-            onClick={onAddNew}
-            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] bg-ink px-3.5 text-[13px] font-semibold text-white hover:bg-[#16213a] sm:h-9 sm:flex-none"
-          >
-            <Plus size={14} />
-            Новое дело
-          </button>
+          {/* На планшете «Новое дело» живёт в нижней панели справа (21.09). */}
+          {!tabletLayout && (
+            <button
+              type="button"
+              onClick={onAddNew}
+              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] bg-ink px-3.5 text-[13px] font-semibold text-white hover:bg-[#16213a] sm:h-9 sm:flex-none"
+            >
+              <Plus size={14} />
+              Новое дело
+            </button>
+          )}
         </div>
       </div>
 

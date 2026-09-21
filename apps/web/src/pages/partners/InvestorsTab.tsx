@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { useTabletLayout } from "@/lib/useIsMobile";
+import { usePageFab } from "@/mobile/fab";
 import {
   Banknote,
   CalendarClock,
@@ -88,11 +90,21 @@ export function InvestorsTab({
   /** Открыть карточку техники внутри партнёрки. */
   onOpenScooter: (id: number) => void;
 }) {
+  /** Планшет: «Добавить инвестора» — в нижней панели справа (21.09). */
+  const tabletLayout = useTabletLayout();
   const { data, isLoading } = useApiInvestors();
   const investors = data?.items ?? [];
   const [openId, setOpenId] = useState<number | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ApiInvestor | null>(null);
+  usePageFab(
+    "Инвестор",
+    () => {
+      setEditing(null);
+      setFormOpen(true);
+    },
+    !tabletLayout || formOpen,
+  );
 
   const totals = useMemo(
     () => ({
@@ -169,16 +181,19 @@ export function InvestorsTab({
       <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div className="text-[13px] font-bold text-ink">Инвесторы</div>
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(null);
-              setFormOpen(true);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[12.5px] font-bold text-white transition-transform active:scale-[0.98]"
-          >
-            <UserPlus size={14} /> Добавить инвестора
-          </button>
+          {/* На планшете кнопка живёт в нижней панели справа (21.09). */}
+          {!tabletLayout && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(null);
+                setFormOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[12.5px] font-bold text-white transition-transform active:scale-[0.98]"
+            >
+              <UserPlus size={14} /> Добавить инвестора
+            </button>
+          )}
         </div>
 
         {isLoading ? (

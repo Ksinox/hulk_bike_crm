@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { ReleaseViewsPanel } from "@/release/ReleaseViewsPanel";
 import { TABLET_MASONRY_2 } from "../tablet";
+import { usePageFab } from "../fab";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { useApiUsers, type ApiStaffUser } from "@/lib/api/users";
@@ -55,6 +57,9 @@ export function MobileStaff() {
   // 14.09: заводить сотрудников, задавать пароль и права можно и с телефона —
   // то же окно, что на компьютере, на весь экран.
   const [addOpen, setAddOpen] = useState(false);
+  /** Планшет: «Новый сотрудник» — в нижней панели справа (21.09). */
+  const tabletLayout = useTabletLayout();
+  usePageFab("Сотрудник", () => setAddOpen(true), !tabletLayout || addOpen);
   const [editUser, setEditUser] = useState<ApiStaffUser | null>(null);
   const [resetUser, setResetUser] = useState<ApiStaffUser | null>(null);
   const [revealed, setRevealed] = useState<{
@@ -85,12 +90,13 @@ export function MobileStaff() {
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Планшет: кнопка по содержимому справа, а не полосой во всю ширину. */}
-      <div className="flex tab:justify-end">
+      {/* На планшете кнопка живёт в нижней панели справа (21.09), на
+          телефоне — полосой вверху раздела. */}
+      <div className={cn("flex", tabletLayout && "hidden")}>
         <button
           type="button"
           onClick={() => setAddOpen(true)}
-          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-ink text-[14px] font-bold text-white active:scale-[0.99] tab:w-auto tab:px-6"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-ink text-[14px] font-bold text-white active:scale-[0.99]"
         >
           <Plus size={18} /> Новый сотрудник
         </button>

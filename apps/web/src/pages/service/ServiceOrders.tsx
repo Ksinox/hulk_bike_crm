@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTabletLayout } from "@/lib/useIsMobile";
+import { usePageFab } from "@/mobile/fab";
 import { useCan } from "@/lib/permissions";
 import {
   Banknote,
@@ -62,6 +64,8 @@ const FILTERS: { id: ServiceOrderStatus | "all"; label: string }[] = [
 ];
 
 export function ServiceOrders() {
+  /** Планшет: «Новый ремонт» уходит в нижнюю панель справа (21.09). */
+  const tabletLayout = useTabletLayout();
   const isMobile = useIsMobile();
   // 14.09: прибыль ремонтов — отдельное право. Без него плашки нет, а три
   // оставшиеся делят ряд (на телефоне последняя растягивается на две колонки).
@@ -74,6 +78,7 @@ export function ServiceOrders() {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  usePageFab("Ремонт", () => setCreating(true), !tabletLayout || creating);
   /** Правки 7.0: справочник механиков (директор) и разбивка денег. */
   const [mechanicsOpen, setMechanicsOpen] = useState(false);
   const [moneyOpen, setMoneyOpen] = useState(false);
@@ -153,16 +158,19 @@ export function ServiceOrders() {
                 <HardHat size={15} /> Механики
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full bg-ink px-4 font-bold text-white hover:bg-ink-2",
-                isMobile ? "h-11 text-[13.5px]" : "h-9 text-[12.5px]",
-              )}
-            >
-              <Plus size={15} /> Новый ремонт
-            </button>
+            {/* На планшете эта кнопка живёт в нижней панели справа. */}
+            {!tabletLayout && (
+              <button
+                type="button"
+                onClick={() => setCreating(true)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full bg-ink px-4 font-bold text-white hover:bg-ink-2",
+                  isMobile ? "h-11 text-[13.5px]" : "h-9 text-[12.5px]",
+                )}
+              >
+                <Plus size={15} /> Новый ремонт
+              </button>
+            )}
           </div>
         </div>
 
