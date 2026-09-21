@@ -24,6 +24,7 @@ import type { ApiScooter, ScooterBaseStatus } from "@/lib/api/types";
 import { ScooterPosterAvatar } from "./ScooterPosterAvatar";
 import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
+import { useTabletLayout } from "@/lib/useIsMobile";
 
 type OldStatus = ScooterBaseStatus;
 
@@ -90,6 +91,10 @@ export function SwapScooterDialog({
   // 2 — новый скутер, 3 — подтверждение. На десктопе не используется.
   const [step, setStep] = useState(0);
   const isMobile = useIsMobile();
+  /** Планшет: варианты в две колонки, действия справа. */
+  const tabletLayout = useTabletLayout();
+  /** Список вариантов: телефон — колонкой, планшет — в две. */
+  const optionListCls = tabletLayout ? "grid grid-cols-2 gap-2" : "flex flex-col gap-2";
 
   // #20: выбор категории причины. Если оператор ещё не трогал «куда деть
   // старый скутер» вручную — подставляем умный дефолт под причину
@@ -395,7 +400,7 @@ export function SwapScooterDialog({
               <div className="mb-2 text-[13px] font-bold text-ink">
                 Что делаем со старым скутером?
               </div>
-              <div className="flex flex-col gap-2">
+              <div className={optionListCls}>
                 {SCOOTER_BASE_STATUS_OPTIONS.filter(
                   // Правка 27.08: партнёрская техника не наша — в выкуп её
                   // передать нельзя, статус скрываем.
@@ -450,7 +455,7 @@ export function SwapScooterDialog({
               <div className="mb-2 text-[13px] font-bold text-ink">
                 Почему меняем? <span className="text-red-600">*</span>
               </div>
-              <div className="flex flex-col gap-2">
+              <div className={optionListCls}>
                 {REASON_CATEGORIES.map((c) => {
                   const active = reasonCategory === c.value;
                   const Icon = c.icon;
@@ -584,13 +589,19 @@ export function SwapScooterDialog({
 
         {/* ФУТЕР: назад / далее (или заменить) */}
         <div
-          className="flex items-center gap-2.5 border-t border-border bg-white px-4 py-3"
+          className={cn(
+            "flex items-center gap-2.5 border-t border-border bg-white px-4 py-3",
+            tabletLayout && "justify-end gap-3 px-7 py-4",
+          )}
           style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
         >
           <button
             type="button"
             onClick={goBack}
-            className="rounded-2xl bg-surface-soft px-5 py-3 text-[14px] font-semibold text-ink-2 active:bg-surface"
+            className={cn(
+              "rounded-2xl bg-surface-soft px-5 py-3 text-[14px] font-semibold text-ink-2 active:bg-surface",
+              tabletLayout && "h-14 min-w-[170px] text-[15px]",
+            )}
           >
             {step === 0 ? "Отмена" : "← Назад"}
           </button>
@@ -599,7 +610,10 @@ export function SwapScooterDialog({
               type="button"
               onClick={goNext}
               disabled={!stepValid[step]}
-              className="flex-1 rounded-2xl bg-blue-600 px-5 py-3 text-[14px] font-bold text-white active:bg-blue-700 disabled:opacity-50"
+              className={cn(
+                "flex-1 rounded-2xl bg-blue-600 px-5 py-3 text-[14px] font-bold text-white active:bg-blue-700 disabled:opacity-50",
+                tabletLayout && "h-14 flex-none min-w-[300px] text-[16px]",
+              )}
             >
               Далее →
             </button>
@@ -608,7 +622,10 @@ export function SwapScooterDialog({
               type="button"
               onClick={submit}
               disabled={!selectedId || swap.isPending}
-              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-[14px] font-bold text-white active:bg-blue-700 disabled:opacity-50"
+              className={cn(
+                "flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-[14px] font-bold text-white active:bg-blue-700 disabled:opacity-50",
+                tabletLayout && "h-14 flex-none min-w-[340px] text-[16px]",
+              )}
             >
               {swap.isPending && <Loader2 size={16} className="animate-spin" />}
               Заменить и распечатать акт

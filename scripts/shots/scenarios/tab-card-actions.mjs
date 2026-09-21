@@ -66,6 +66,20 @@ export async function run(page, ctx) {
   await ctx.shot(`card-${vp}`, { jpeg: true });
 
   if (act) {
+    // Действия карточки живут в меню «…» в шапке.
+    const dots = await page.evaluate(() => {
+      const el = [...document.querySelectorAll("button")].find((b) => {
+        const r = b.getBoundingClientRect();
+        return r.width > 20 && r.width < 60 && r.top < 70 && r.left > window.innerWidth - 90;
+      });
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    if (dots) {
+      await page.mouse.click(dots.x, dots.y);
+      await ctx.sleep(900);
+    }
     console.log("действие:", await tap(new RegExp(act)));
     await ctx.sleep(2200);
     const m = await page.evaluate(() => {

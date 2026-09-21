@@ -45,7 +45,7 @@ import {
   type StagedMedia,
 } from "./DamageMediaCapture";
 import { ScooterName } from "@/components/ScooterName";
-import { useIsMobile } from "@/lib/useIsMobile";
+import { useIsMobile, useTabletLayout } from "@/lib/useIsMobile";
 import { MobileNumPad } from "@/mobile/MobileNumPad";
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 
@@ -447,6 +447,8 @@ export function DamageReportDialog({
   //  2 — фото, комментарий, «в ремонт» и сохранение.
   // Десктоп использует прежний двухколоночный layout ниже без изменений.
   const isMobile = useIsMobile();
+  /** Планшет: прейскурант в две колонки, действия справа. */
+  const tabletLayout = useTabletLayout();
   const [step, setStep] = useState(0);
   const [stepDir, setStepDir] = useState<"fwd" | "back">("fwd");
   const [numpad, setNumpad] = useState<null | {
@@ -821,8 +823,14 @@ export function DamageReportDialog({
                 </div>
               )}
 
-              <div className="sticky top-0 z-10 -mx-4 border-b border-border bg-surface px-4 pb-2 pt-2">
-                <div className="relative">
+              <div
+                className={cn(
+                  "sticky top-0 z-10 -mx-4 border-b border-border bg-surface px-4 pb-2 pt-2",
+                  // Планшет: поиск и «своя позиция» — в одну строку.
+                  tabletLayout && "flex items-center gap-3",
+                )}
+              >
+                <div className="relative flex-1">
                   <Search
                     size={16}
                     className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
@@ -837,7 +845,10 @@ export function DamageReportDialog({
                 <button
                   type="button"
                   onClick={addCustomItem}
-                  className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-blue-300 bg-blue-50 text-[14px] font-semibold text-blue-700 transition-transform active:scale-[0.99]"
+                  className={cn(
+                    "mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-blue-300 bg-blue-50 text-[14px] font-semibold text-blue-700 transition-transform active:scale-[0.99]",
+                    tabletLayout && "mt-0 w-auto shrink-0 px-6",
+                  )}
                 >
                   <Plus size={16} /> Своя позиция
                 </button>
@@ -852,7 +863,15 @@ export function DamageReportDialog({
                   Прейскурант пуст. Заполните его в «Документы → Прейскурант».
                 </div>
               ) : (
-                <div className="flex flex-col gap-2 pt-2">
+                <div
+                  className={cn(
+                    "flex flex-col gap-2 pt-2",
+                    // Планшет: прейскурант в две колонки — 25 позиций в одну
+                    // колонку на 1180px читаются как телефон во всю ширину.
+                    tabletLayout &&
+                      "block columns-2 gap-x-3 [&>*]:mb-2 [&>*]:break-inside-avoid",
+                  )}
+                >
                   {visibleGroups.map((g) => {
                     const isOpen = openGroups.has(g.id);
                     const items = g.items.filter(matchItem);
@@ -1106,7 +1125,12 @@ export function DamageReportDialog({
         </div>
 
         {/* FOOTER */}
-        <div className="border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+        <div
+          className={cn(
+            "border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]",
+            tabletLayout && "px-7 py-4",
+          )}
+        >
           {step < stepCount - 1 && selected.length > 0 && (
             <div
               key={`sum-${selected.length}-${total}`}
@@ -1120,12 +1144,15 @@ export function DamageReportDialog({
               </span>
             </div>
           )}
-          <div className="flex gap-2">
+          <div className={cn("flex gap-2", tabletLayout && "justify-end gap-3")}>
             {step > 0 && (
               <button
                 type="button"
                 onClick={() => goStep(step - 1)}
-                className="h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]"
+                className={cn(
+                  "h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]",
+                  tabletLayout && "h-14 flex-none min-w-[170px]",
+                )}
               >
                 Назад
               </button>
@@ -1135,7 +1162,10 @@ export function DamageReportDialog({
                 type="button"
                 onClick={() => goStep(step + 1)}
                 disabled={!canNext}
-                className="h-12 flex-[2] rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
+                className={cn(
+                  "h-12 flex-[2] rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50",
+                  tabletLayout && "h-14 flex-none min-w-[300px] text-[16px]",
+                )}
               >
                 Далее
               </button>
@@ -1144,7 +1174,10 @@ export function DamageReportDialog({
                 type="button"
                 onClick={onSubmit}
                 disabled={!valid || isPending || mediaBusy}
-                className="h-12 flex-[2] rounded-2xl bg-red-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
+                className={cn(
+                  "h-12 flex-[2] rounded-2xl bg-red-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50",
+                  tabletLayout && "h-14 flex-none min-w-[300px] text-[16px]",
+                )}
               >
                 {isPending || mediaBusy
                   ? "Сохраняем…"
