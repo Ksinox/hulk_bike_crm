@@ -61,6 +61,15 @@ const todayISO = (from: string, to: string): string => {
   return iso >= from && iso <= to ? iso : from;
 };
 
+/** «1 строка · 2 строки · 5 строк» — иначе интерфейс выглядит неряшливо. */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
 function dateLabel(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const date = new Date(y!, (m ?? 1) - 1, d ?? 1);
@@ -175,7 +184,7 @@ export function EntryDialog({
   const close = () => {
     if (rows.length > 0) {
       const ok = window.confirm(
-        `В окне ${rows.length} ${rows.length === 1 ? "строка" : "строки"} — они ещё не записаны. Закрыть и потерять?`,
+        `В окне ${rows.length} ${plural(rows.length, "строка", "строки", "строк")} — они ещё не записаны. Закрыть и потерять?`,
       );
       if (!ok) return;
     }
@@ -449,7 +458,8 @@ export function EntryDialog({
           ) : (
             <div className="flex flex-col gap-1.5">
               <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
-                В этом окне · {rows.length} {rows.length === 1 ? "строка" : "строк"} на {fmtMoney(total)}
+                В этом окне · {rows.length} {plural(rows.length, "строка", "строки", "строк")} на{" "}
+                {fmtMoney(total)}
               </div>
               {rows.map((r, i) => (
                 <div
@@ -510,7 +520,7 @@ export function EntryDialog({
             <Check size={17} />
             {rows.length === 0
               ? "Записать строки"
-              : `Записать ${rows.length} ${rows.length === 1 ? "строку" : "строк"} · ${fmtMoney(total)}`}
+              : `Записать ${rows.length} ${plural(rows.length, "строку", "строки", "строк")} · ${fmtMoney(total)}`}
           </Btn>
         </div>
       )}

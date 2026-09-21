@@ -16,7 +16,7 @@ import {
 } from "@/lib/api/finance";
 import { fmtMoney } from "./Finance";
 import { Btn, EmptyHint, SectionCard } from "./ui";
-import { EntryDialog, type EntryDraft } from "./EntryDialog";
+import { EntryDialog, plural, type EntryDraft } from "./EntryDialog";
 
 /**
  * Приход и расход за период.
@@ -91,7 +91,7 @@ export function FinanceFlows({
     const ids = (res.items ?? []).map((r) => r.id);
     const sum = list.reduce((s, r) => s + r.amount, 0);
     toast.action({
-      title: `Записано ${list.length} ${list.length === 1 ? "строка" : "строк"}`,
+      title: `Записано ${list.length} ${plural(list.length, "строка", "строки", "строк")}`,
       message: `${kind === "income" ? "Приход" : "Расход"} на ${fmtMoney(sum)}`,
       onAction: async () => {
         if (ids.length) await deleteMany.mutateAsync(ids);
