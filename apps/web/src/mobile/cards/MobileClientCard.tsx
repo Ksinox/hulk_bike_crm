@@ -55,7 +55,7 @@ import {
 import { navigate } from "@/app/navigationStore";
 import { scooterModelName } from "@/components/ScooterName";
 import type { CardTab } from "@/pages/clients/ClientCard";
-import { TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
+import { TABLET_CARD_COLUMNS, TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
 
 function daysWord(n: number): string {
   const n10 = n % 10;
@@ -196,7 +196,15 @@ export function MobileClientCard({
         </button>
       </header>
 
-      <main className={cn("min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3 pb-8 overscroll-contain", TABLET_PAD_X)}>
+      <main
+        className={cn(
+          "min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3 pb-8 overscroll-contain",
+          TABLET_PAD_X,
+          // Планшет лёжа: блоки в два столбца — карточка видна разом, а не
+          // тянется колонкой во всю ширину (правка заказчика 21.09).
+          TABLET_CARD_COLUMNS,
+        )}
+      >
         {/* ===== Герой: аватар + имя + бейджи + телефоны ===== */}
         <section className="rounded-2xl bg-surface p-4 shadow-card-sm">
           <div className="flex items-start gap-3.5">
@@ -481,8 +489,10 @@ export function MobileClientCard({
         </section>
 
         {/* ===== Табы пилюлями (Apple-style segmented, прокручиваемые) ===== */}
-        <div className="no-scrollbar -mx-3 overflow-x-auto px-3">
-          <div className="flex w-max gap-1.5">
+        {/* Планшет лёжа: пилюли во всю ширину карточки и с переносом —
+            в колонке хвост вкладок обрезался. */}
+        <div className="no-scrollbar -mx-3 overflow-x-auto px-3 landscape:[column-span:all]">
+          <div className="flex w-max gap-1.5 landscape:w-full landscape:flex-wrap">
             {tabs.map((t) => (
               <button
                 key={t.id}
@@ -500,7 +510,7 @@ export function MobileClientCard({
             ))}
           </div>
         </div>
-        <section>
+        <section className="landscape:[column-span:all]">
           {tab === "rentals" && <RentalsTab client={client} />}
           {tab === "debtor" && <ClientDebtorsTab cases={debtorCases} />}
           {tab === "timeline" && <ClientTimelineTab clientId={client.id} />}

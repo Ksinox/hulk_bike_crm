@@ -5,6 +5,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { CheckBox, Picker } from "@/components/ui/picker";
 import { Switch } from "@/components/ui/switch";
+import { useTabletLayout } from "@/lib/useIsMobile";
+import { TABLET_DIALOG_OVERLAY, TABLET_DIALOG_PANEL } from "@/mobile/tablet";
 import {
   getClientDetails,
   SOURCE_LABEL,
@@ -563,16 +565,25 @@ export function AddClientModal({
   const markTouched = (key: string) =>
     setTouched((prev) => ({ ...prev, [key]: true }));
 
+  /** Планшет: окно во весь экран, анкета в две колонки. */
+  const tabletLayout = useTabletLayout();
+  /** `display:contents` — на компьютере и телефоне обёртки не видно. */
+  const colCls = tabletLayout
+    ? "scrollbar-thin flex h-full min-h-0 flex-col overflow-y-auto pr-1 [&>section]:shrink-0"
+    : "contents";
+
   return (
     <div
       className={cn(
         "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/50 p-0 backdrop-blur-sm sm:p-6",
+        tabletLayout && TABLET_DIALOG_OVERLAY,
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
           "min-h-[100dvh] w-full overflow-hidden rounded-none bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[720px] sm:rounded-2xl",
+          tabletLayout && TABLET_DIALOG_PANEL,
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -603,7 +614,18 @@ export function AddClientModal({
         </div>
 
         {/* Body */}
-        <div className="max-h-[calc(100vh-260px)] overflow-y-auto px-6 py-5">
+        <div
+          className={cn(
+            "max-h-[calc(100vh-260px)] overflow-y-auto px-6 py-5",
+            // Планшет: анкета в две колонки — иначе поля тянутся на 1180px
+            // в одну строку, а форма уходит в долгую прокрутку.
+            // Планшет: анкета в две колонки, каждая прокручивается сама —
+            // окно целиком не едет, а поля не растягиваются на 1180px.
+            tabletLayout &&
+              "!max-h-none grid min-h-0 flex-1 grid-cols-2 items-start gap-x-8 overflow-hidden px-7 py-5",
+          )}
+        >
+          <div className={colCls}>
           {/* Photo (optional) */}
           <div className="mb-6 flex items-center gap-4">
             <PhotoSlot
@@ -942,6 +964,8 @@ export function AddClientModal({
           </Section>
 
           {/* Section 3 — Адрес */}
+          </div>
+          <div className={colCls}>
           <Section num={3} title="Адрес" badge="регистрация и проживание">
             <Field
               label="Адрес регистрации (по паспорту)"
@@ -1040,6 +1064,7 @@ export function AddClientModal({
               </Field>
             )}
           </Section>
+          </div>
         </div>
 
         {/* Footer */}

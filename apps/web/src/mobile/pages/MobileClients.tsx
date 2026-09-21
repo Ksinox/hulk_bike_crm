@@ -3,6 +3,8 @@ import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { Users, ChevronRight, Ban } from "lucide-react";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import { MobileNewClient } from "../forms/MobileNewClient";
+import { AddClientModal } from "@/pages/clients/AddClientModal";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import { MobileClientCard } from "../cards/MobileClientCard";
 import { usePageFab } from "../fab";
 import { RowCallButton, useCallClient } from "../call";
@@ -36,6 +38,8 @@ export function MobileClients() {
     null,
   );
   const [newOpen, setNewOpen] = useState(false);
+  /** Планшет: заводим клиента полной формой, как на компьютере. */
+  const tabletLayout = useTabletLayout();
   const { callClient, callSheet } = useCallClient();
   // Прячем «+ Клиент» внутри карточки (drill-in) И пока открыта форма создания.
   usePageFab("Клиент", () => setNewOpen(true), openId != null || newOpen);
@@ -138,12 +142,23 @@ export function MobileClients() {
         </ErrorBoundary>
       )}
 
-      {newOpen && (
-        <MobileNewClient
-          onClose={() => setNewOpen(false)}
-          onCreated={(c) => setOpenId(c.id)}
-        />
-      )}
+      {/* Планшет — полная форма компьютера (паритет: фото, права, чёрный
+          список). Телефон — короткая пошаговая: там длинная форма не живёт. */}
+      {newOpen &&
+        (tabletLayout ? (
+          <AddClientModal
+            onClose={() => setNewOpen(false)}
+            onCreated={(c) => {
+              setNewOpen(false);
+              setOpenId(c.id);
+            }}
+          />
+        ) : (
+          <MobileNewClient
+            onClose={() => setNewOpen(false)}
+            onCreated={(c) => setOpenId(c.id)}
+          />
+        ))}
 
       {/* Нижний лист выбора номера (если у клиента два телефона). */}
       {callSheet}

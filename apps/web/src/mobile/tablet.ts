@@ -91,3 +91,13 @@ export const TABLET_CONTROL = "min-h-[48px] text-[15px]";
 /** Нижняя панель действий: крупные кнопки, основное действие справа. */
 export const TABLET_FOOTER = "gap-3 px-7 py-4";
 export const TABLET_FOOTER_BTN = "h-14 min-w-[200px] text-[16px]";
+
+/**
+ * Карточка (клиент, техника, аренда) на планшете лёжа — блоки в два столбца.
+ * Эти карточки рисует тот же код, что и узкий дровер компьютера (480px),
+ * поэтому на 1180px они выглядели «телефоном во всю ширину»: один столбец и
+ * долгая прокрутка. Вешается на контейнер блоков; `break-inside-avoid` не
+ * даёт разрезать блок между столбцами.
+ */
+export const TABLET_CARD_COLUMNS =
+  "landscape:block landscape:columns-2 landscape:gap-x-4 landscape:space-y-0 landscape:[&>*]:mb-3 landscape:[&>*]:break-inside-avoid";

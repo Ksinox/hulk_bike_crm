@@ -50,7 +50,7 @@ import { toast } from "@/lib/toast";
 import { askArchiveReason } from "@/pages/fleet/archiveReason";
 import type { Rental } from "@/lib/mock/rentals";
 import type { ApiClient } from "@/lib/api/types";
-import { TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
+import { TABLET_CARD_COLUMNS, TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
 import { useModelName } from "@/lib/useModelName";
 
 type TabId =
@@ -269,9 +269,19 @@ export function MobileScooterCard({
         </button>
       </header>
 
-      <main className={cn("min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3 pb-8 overscroll-contain", TABLET_PAD_X)}>
+      <main
+        className={cn(
+          "min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-3 pb-8 overscroll-contain",
+          TABLET_PAD_X,
+          // Планшет лёжа: блоки в два столбца — карточка видна разом, а не
+          // тянется колонкой во всю ширину (правка заказчика 21.09).
+          TABLET_CARD_COLUMNS,
+        )}
+      >
         {/* ===== Пилюли-табы: наверху, липкие ===== */}
-        <div className="no-scrollbar sticky -top-3 z-10 -mx-3 bg-bg/95 px-3 py-1 backdrop-blur overflow-x-auto">
+        {/* Пилюли разделов — во всю ширину, а не в колонке: иначе на планшете
+            лёжа хвост вкладок уезжал под второй столбец. */}
+        <div className="no-scrollbar sticky -top-3 z-10 -mx-3 bg-bg/95 px-3 py-1 backdrop-blur overflow-x-auto landscape:[column-span:all]">
           <div className="flex w-max gap-1.5">
             {tabs.map((t) => (
               <button

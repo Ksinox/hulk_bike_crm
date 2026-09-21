@@ -14,6 +14,9 @@ import { toast, confirmDialog } from "@/lib/toast";
 import { navigate } from "@/app/navigationStore";
 import { cn } from "@/lib/utils";
 import { MobileNewClient } from "../forms/MobileNewClient";
+import { AddClientModal } from "@/pages/clients/AddClientModal";
+import { applicationToFormInit } from "@/pages/clients/applicationConvert";
+import { useTabletLayout } from "@/lib/useIsMobile";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { ApplicationView } from "@/pages/applications/ApplicationView";
 import { SendApplicationButton } from "@/pages/applications/SendApplicationButton";
@@ -76,6 +79,8 @@ export function MobileApplications() {
   );
   /** Заявка, оформляемая в клиента (открыта форма convert). */
   const [convertApp, setConvertApp] = useState<ApiApplication | null>(null);
+  /** Планшет: заявку оформляем полной формой клиента, как на компьютере. */
+  const tabletLayout = useTabletLayout();
   /** Заявка, для которой открыт выбор причины отклонения. */
   const [rejectApp, setRejectApp] = useState<ApiApplication | null>(null);
   /** Возобновление аренды из принятой заявки (префилл модель/срок/экип.). */
@@ -244,7 +249,37 @@ export function MobileApplications() {
       </MobileSheet>
 
       {/* Оформление клиента из заявки (convert) */}
-      {convertApp && (
+      {/* Планшет: полная форма клиента, как на компьютере (фото, права,
+          чёрный список). Телефон — короткая пошаговая. */}
+      {convertApp && tabletLayout && (
+        <AddClientModal
+          applicationId={convertApp.id}
+          initialData={applicationToFormInit(convertApp)}
+          onClose={() => {
+            setConvertApp(null);
+            setOpenId(null);
+          }}
+          onCreated={(client) => {
+            const app = convertApp;
+            setConvertApp(null);
+            setOpenId(null);
+            if ((app?.purpose ?? "rent") === "sale") {
+              toast.success("Клиент создан", "Открываю оформление продажи");
+              navigate({ route: "sales", newSale: true, clientId: client.id });
+              return;
+            }
+            setRentalPrefill({
+              clientId: client.id,
+              modelFilter: app?.requestedModel ?? undefined,
+              days: app?.requestedDays ?? undefined,
+              equipmentIds: app?.requestedEquipmentIds ?? undefined,
+              start: app?.requestedStartDate ?? undefined,
+            });
+          }}
+        />
+      )}
+
+      {convertApp && !tabletLayout && (
         <MobileNewClient
           applicationId={convertApp.id}
           initial={{

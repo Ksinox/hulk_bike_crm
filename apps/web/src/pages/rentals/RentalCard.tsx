@@ -26,7 +26,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useIsMobile } from "@/lib/useIsMobile";
+import { useIsMobile, useTabletLayout } from "@/lib/useIsMobile";
 import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { MobileBottomSheet } from "@/mobile/BottomSheet";
 import { useCallClient } from "@/mobile/call";
@@ -528,6 +528,12 @@ export function RentalCard({
   // большим пальцем над футером, прячется при скролле. Звонок (или выбор из
   // двух номеров) — через общий useCallClient.
   const isMobile = useIsMobile();
+  /**
+   * Планшет: карточка раскладывается в две колонки. Она рисуется тем же
+   * кодом, что и узкий дровер компьютера (480px), поэтому на 1180px
+   * выглядела «телефоном во всю ширину»: один столбец и долгая прокрутка.
+   */
+  const tabletLayout = useTabletLayout();
   const { callClient, callSheet } = useCallClient();
   const drawerScrollRef = useRef<HTMLDivElement>(null);
   // ВАЖНО: для построения цепочки продлений берём И активные И архивные
@@ -2531,7 +2537,14 @@ export function RentalCard({
           В обычном режиме — прежний 2-col layout (MasterBlock слева,
           CalendarPanel/InlineHistory/DocsInline справа). */}
       {drawerChrome ? (
-        <div className="flex flex-col gap-3">
+        <div
+          className={cn(
+            "flex flex-col gap-3",
+            // Планшет лёжа: два столбца блоков — вся карточка видна разом.
+            tabletLayout &&
+              "landscape:block landscape:columns-2 landscape:gap-x-4 landscape:[&>*]:mb-3 landscape:[&>*]:break-inside-avoid",
+          )}
+        >
           <AccordionSection
             title="Информация о клиенте"
             icon={<User size={15} className="text-muted-2" />}
