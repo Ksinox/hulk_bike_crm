@@ -611,9 +611,13 @@ const COL = {
   /** «Возврат»: срок дублируется чипом «Дней», поэтому уходит раньше. */
   end: (on: boolean) => (on ? "hidden @[820px]:table-cell" : undefined),
   rentSum: (on: boolean) => (on ? "hidden @[930px]:table-cell" : undefined),
-  start: (on: boolean) => (on ? "hidden @[1030px]:table-cell" : undefined),
-  id: (on: boolean) => (on ? "hidden @[1110px]:table-cell" : undefined),
-  contact: (on: boolean) => (on ? "hidden @[1190px]:table-cell" : undefined),
+  // Пороги 21.09: на планшете (контейнер 1140px) таблица занимала 1245px —
+  // «Долг» обрезался, «Статус» уезжал за край. Замерили реальные ширины
+  // колонок и подняли пороги «Выдан», «№» и «Связь» так, чтобы строка
+  // помещалась целиком.
+  start: (on: boolean) => (on ? "hidden @[1180px]:table-cell" : undefined),
+  id: (on: boolean) => (on ? "hidden @[1280px]:table-cell" : undefined),
+  contact: (on: boolean) => (on ? "hidden @[1380px]:table-cell" : undefined),
 };
 
 function Th({
