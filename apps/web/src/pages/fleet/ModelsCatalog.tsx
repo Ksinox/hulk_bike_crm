@@ -17,6 +17,9 @@ import {
   Key,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Segmented } from "@/components/ui/picker";
+import { useTabletLayout } from "@/lib/useIsMobile";
+import { TABLET_DIALOG_PANEL } from "@/mobile/tablet";
 import {
   modelForRent,
   modelForSale,
@@ -260,6 +263,8 @@ function ModelFormModal({
   onClose: () => void;
 }) {
   const isEdit = !!initial;
+  /** Планшет: окно модели во весь экран, а не карточка по центру. */
+  const tabletLayout = useTabletLayout();
   const createMut = useCreateScooterModel();
   const patchMut = usePatchScooterModel();
 
@@ -361,7 +366,12 @@ function ModelFormModal({
     // в карточки-toggle, где хинт читается без потери приоритета.
     <div className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-start sm:p-6">
       <div
-        className="flex min-h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-10 sm:min-h-0 sm:max-w-[940px] sm:rounded-2xl"
+        className={cn(
+          // max-h: окно не вылезает за экран — иначе на планшете кнопка
+          // сохранения оказывалась ниже нижнего края.
+          "flex max-h-[100dvh] min-h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-10 sm:min-h-0 sm:max-h-[calc(100dvh-80px)] sm:max-w-[940px] sm:rounded-2xl",
+          tabletLayout && TABLET_DIALOG_PANEL,
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Шапка */}
@@ -492,17 +502,16 @@ function ModelFormModal({
                 />
               </Field>
               <Field label="Охлаждение">
-                <select
+                {/* Вариантов три — показываем сразу все, без выпадашки. */}
+                <Segmented
                   value={coolingType}
-                  onChange={(e) =>
-                    setCoolingType(e.target.value as "" | "air" | "liquid")
-                  }
-                  className="h-11 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                >
-                  <option value="">— не указано —</option>
-                  <option value="air">Воздушное</option>
-                  <option value="liquid">Жидкостное</option>
-                </select>
+                  onChange={(v) => setCoolingType(v)}
+                  options={[
+                    { value: "", label: "Не указано" },
+                    { value: "air", label: "Воздушное" },
+                    { value: "liquid", label: "Жидкостное" },
+                  ]}
+                />
               </Field>
             </div>
           </Section>

@@ -42,6 +42,7 @@ import { ScheduleBuilderDialog } from "./ScheduleBuilderDialog";
 import { DamageDebtorActSection } from "./DamageDebtorActSection";
 import { toast, confirmDialog } from "@/lib/toast";
 import { isTouchPrimary } from "@/lib/useIsMobile";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /** На пальце кнопки дела — не мельче 44px, на мыши остаются компактными. */
 const TAP = isTouchPrimary() ? "min-h-[44px] " : "";
@@ -762,11 +763,9 @@ export function DebtorCase({
                     <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-blue-700">
                       Обещал заплатить к дате
                     </label>
-                    <input
-                      type="date"
-                      value={promisedDate}
-                      onChange={(e) => setPromisedDate(e.target.value)}
-                      className="h-10 rounded-[10px] border border-blue-200 bg-white px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                    <DatePicker
+                      value={promisedDate || null}
+                      onChange={(v) => setPromisedDate(v ?? "")}
                     />
                   </div>
                   <button

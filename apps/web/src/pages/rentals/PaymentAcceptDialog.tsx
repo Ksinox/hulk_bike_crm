@@ -43,6 +43,7 @@ import {
   ArrowLeftRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CheckBox } from "@/components/ui/picker";
 import { toast, confirmDialog } from "@/lib/toast";
 import { toastRentalDone } from "./rentalUndo";
 import { api } from "@/lib/api";
@@ -2300,17 +2301,13 @@ export function PaymentAcceptDialog({
                         1-е сутки бесплатно, далее 250 ₽/сут.
                       </div>
                     </div>
-                    <label className="inline-flex cursor-pointer items-center gap-1.5">
-                      <input
-                        type="checkbox"
-                        checked={payParking}
-                        onChange={(e) => setPayParking(e.target.checked)}
-                        className="h-3.5 w-3.5 accent-blue-600"
-                      />
-                      <span className="text-[11px] font-semibold text-ink-2">
-                        оплатить
-                      </span>
-                    </label>
+                    <CheckBox
+                      compact
+                      checked={payParking}
+                      onChange={setPayParking}
+                      label="оплатить"
+                      className="w-auto"
+                    />
                   </div>
                 )}
               </div>
@@ -2693,23 +2690,19 @@ export function PaymentAcceptDialog({
                 })}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedTariff === "custom"}
-                    onChange={(e) => {
-                      // v0.6.14: вход/выход из custom — снимаем pin, чтобы
-                      // авто-подбор по дням снова заработал при возврате
-                      // в пресеты.
-                      setSelectedTariff(e.target.checked ? "custom" : initialTariff);
-                      setTariffPinned(e.target.checked);
-                    }}
-                    className="h-3.5 w-3.5 accent-blue-600"
-                  />
-                  <span className="text-[11.5px] font-semibold text-ink-2">
-                    Свой тариф
-                  </span>
-                </label>
+                <CheckBox
+                  compact
+                  checked={selectedTariff === "custom"}
+                  onChange={(v) => {
+                    // v0.6.14: вход/выход из custom — снимаем pin, чтобы
+                    // авто-подбор по дням снова заработал при возврате
+                    // в пресеты.
+                    setSelectedTariff(v ? "custom" : initialTariff);
+                    setTariffPinned(v);
+                  }}
+                  label="Свой тариф"
+                  className="w-auto"
+                />
                 {selectedTariff === "custom" && (
                   <div className="inline-flex items-stretch overflow-hidden rounded-[10px] border border-border">
                     <input
@@ -4853,10 +4846,16 @@ export function PaymentAcceptDialog({
                                 );
                               })}
                             </div>
-                            <label className="mt-2 inline-flex cursor-pointer items-center gap-1.5">
-                              <input type="checkbox" checked={selectedTariff === "custom"} onChange={(e) => { setSelectedTariff(e.target.checked ? "custom" : initialTariff); setTariffPinned(e.target.checked); }} className="h-3.5 w-3.5 accent-blue-600" />
-                              <span className={cn("font-semibold text-ink-2", tabletLayout ? "text-[14px]" : "text-[12px]")}>Свой тариф</span>
-                            </label>
+                            <CheckBox
+                              compact={!tabletLayout}
+                              checked={selectedTariff === "custom"}
+                              onChange={(v) => {
+                                setSelectedTariff(v ? "custom" : initialTariff);
+                                setTariffPinned(v);
+                              }}
+                              label="Свой тариф"
+                              className="mt-2 w-auto"
+                            />
                             {selectedTariff === "custom" && (
                               <input type="text" inputMode="numeric" value={extCustomRate || ""} onChange={(e) => setExtCustomRate(Math.max(0, parseInt(e.target.value.replace(/\D/g, "") || "0", 10)))} placeholder="3000 (₽/сут)" className="mt-2 w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-[14px] font-bold tabular-nums text-ink outline-none focus:border-blue-500" />
                             )}

@@ -36,6 +36,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Picker } from "@/components/ui/picker";
 import {
   PAYMENT_LABEL,
   rentalPaymentLabel,
@@ -1280,18 +1281,21 @@ function InlineIncidentForm({
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="text-[11px] font-semibold text-ink">
           Тип
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            className="mt-1 h-8 w-full rounded-[8px] border border-border bg-surface px-2 text-[12px] text-ink outline-none focus:border-blue-600"
-          >
-            <option>ДТП</option>
-            <option>Повреждение скутера</option>
-            <option>Эвакуация на штрафстоянку</option>
-            <option>Кража / пропажа</option>
-            <option>Жалоба</option>
-            <option>Другое</option>
-          </select>
+          <div className="mt-1">
+            <Picker
+              size="sm"
+              value={type}
+              onChange={setType}
+              options={[
+                "ДТП",
+                "Повреждение скутера",
+                "Эвакуация на штрафстоянку",
+                "Кража / пропажа",
+                "Жалоба",
+                "Другое",
+              ].map((v) => ({ value: v, label: v }))}
+            />
+          </div>
         </label>
         <label className="text-[11px] font-semibold text-ink">
           Ущерб, ₽

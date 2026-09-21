@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CheckBox } from "@/components/ui/picker";
 import {
   DEFAULT_RETURN_REASONS,
   useReturnReasons,
@@ -153,15 +154,13 @@ export function ReturnReasonPicker({
             className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-500"
           />
           <div className="flex items-center justify-between gap-2">
-            <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-muted">
-              <input
-                type="checkbox"
-                checked={saveToList}
-                onChange={(e) => setSaveToList(e.target.checked)}
-                className="h-3.5 w-3.5 accent-blue-600"
-              />
-              Сохранить в список
-            </label>
+            <CheckBox
+              compact
+              checked={saveToList}
+              onChange={setSaveToList}
+              label="Сохранить в список"
+              className="w-auto"
+            />
             <button
               type="button"
               onClick={applyCustom}

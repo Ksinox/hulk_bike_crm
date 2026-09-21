@@ -200,21 +200,27 @@ function CheckRow({
   label: string;
 }) {
   return (
-    <label
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
       className={cn(
-        "flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] transition-colors",
+        "flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors",
         checked ? "text-ink" : "text-ink-2 hover:bg-surface-soft",
       )}
     >
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-blue-600"
-      />
+      <span
+        className={cn(
+          "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[7px] border-2 transition-colors",
+          checked ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-white",
+        )}
+      >
+        {checked && <Check size={15} strokeWidth={3} />}
+      </span>
       <span className={cn(checked && "font-semibold")}>{label}</span>
       {checked && <Check size={12} className="ml-auto text-green-ink" />}
-    </label>
+    </button>
   );
 }
 

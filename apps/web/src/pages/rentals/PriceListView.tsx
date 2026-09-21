@@ -11,6 +11,7 @@ import {
   RefreshCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Picker } from "@/components/ui/picker";
 import { isTouchPrimary } from "@/lib/useIsMobile";
 import { useMe } from "@/lib/api/auth";
 import { useCan } from "@/lib/permissions";
@@ -627,17 +628,14 @@ function PriceItemRow({
           {moveTargets.length > 1 && (
             <label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted">
               Группа
-              <select
-                value={groupId}
-                onChange={(e) => setGroupId(Number(e.target.value))}
-                className="min-w-0 flex-1 rounded-[8px] border border-border bg-white px-1.5 py-0.5 text-[12px]"
-              >
-                {moveTargets.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
+              <span className="min-w-0 flex-1">
+                <Picker
+                  size="sm"
+                  value={groupId}
+                  onChange={setGroupId}
+                  options={moveTargets.map((g) => ({ value: g.id, label: g.name }))}
+                />
+              </span>
             </label>
           )}
         </td>
@@ -887,21 +885,17 @@ function GroupHeaderEdit({
       />
       {group.kind === "damage" && (
         <>
-          <select
-            value={modelId == null ? "" : String(modelId)}
-            onChange={(e) =>
-              setModelId(e.target.value === "" ? null : Number(e.target.value))
-            }
-            className="rounded-[8px] border border-border bg-white px-2 py-1 text-[12px]"
-            title="Привязка к модели скутера"
-          >
-            <option value="">Без привязки (общая)</option>
-            {modelOptions.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+          <span className="w-[220px]" title="Привязка к модели скутера">
+            <Picker
+              size="sm"
+              value={modelId ?? 0}
+              onChange={(v) => setModelId(v === 0 ? null : v)}
+              options={[
+                { value: 0, label: "Без привязки (общая)" },
+                ...modelOptions.map((m) => ({ value: m.id, label: m.name })),
+              ]}
+            />
+          </span>
           <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
             <Switch checked={twoPrices} onChange={setTwoPrices} label="Две колонки цен" />
             две колонки цен
@@ -997,21 +991,17 @@ function NewGroupForm({
           className="min-w-[200px] flex-1 rounded-[8px] border border-border bg-white px-2 py-1 text-[13px] font-semibold"
         />
         {kind === "damage" && (
-          <select
-            value={modelId == null ? "" : String(modelId)}
-            onChange={(e) =>
-              setModelId(e.target.value === "" ? null : Number(e.target.value))
-            }
-            className="rounded-[8px] border border-border bg-white px-2 py-1 text-[12px]"
-            title="Привязка к модели скутера"
-          >
-            <option value="">Без привязки (общая)</option>
-            {modelOptions.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+          <span className="w-[220px]" title="Привязка к модели скутера">
+            <Picker
+              size="sm"
+              value={modelId ?? 0}
+              onChange={(v) => setModelId(v === 0 ? null : v)}
+              options={[
+                { value: 0, label: "Без привязки (общая)" },
+                ...modelOptions.map((m) => ({ value: m.id, label: m.name })),
+              ]}
+            />
+          </span>
         )}
       </div>
 
@@ -1042,20 +1032,20 @@ function NewGroupForm({
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
           Скопировать позиции из:
         </span>
-        <select
-          value={copyFrom == null ? "" : String(copyFrom)}
-          onChange={(e) =>
-            setCopyFrom(e.target.value === "" ? null : Number(e.target.value))
-          }
-          className="rounded-[8px] border border-border bg-white px-2 py-1 text-[12px]"
-        >
-          <option value="">— не копировать —</option>
-          {allGroups.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name} ({g.items.length} поз.)
-            </option>
-          ))}
-        </select>
+        <span className="w-[260px]">
+          <Picker
+            size="sm"
+            value={copyFrom ?? 0}
+            onChange={(v) => setCopyFrom(v === 0 ? null : v)}
+            options={[
+              { value: 0, label: "— не копировать —" },
+              ...allGroups.map((g) => ({
+                value: g.id,
+                label: `${g.name} (${g.items.length} поз.)`,
+              })),
+            ]}
+          />
+        </span>
         {copyFrom != null && (
           <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
             <Switch checked={copyWithPrices} onChange={setCopyWithPrices} label="Копировать с ценами" />

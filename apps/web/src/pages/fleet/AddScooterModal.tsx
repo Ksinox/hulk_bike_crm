@@ -74,6 +74,7 @@ import {
   type UnitRow,
 } from "./addScooterDraft";
 import { PasteListDialog, UnitsEditor, applyGrid, columnsFor, type ColKey } from "./AddScooterUnits";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /**
  * «Новая техника» — мастер добавления (релиз 2.0.1, правки заказчика 16.09).
@@ -772,11 +773,9 @@ export function AddScooterModal({
               )}
             </Block>
             <Block title="Дата покупки" touch={touch}>
-              <input
-                type="date"
-                value={draft.purchaseDate}
-                onChange={(e) => patch({ purchaseDate: e.target.value })}
-                className={inputCls(touch)}
+              <DatePicker
+                value={draft.purchaseDate || null}
+                onChange={(v) => patch({ purchaseDate: v ?? "" })}
               />
             </Block>
             {showPurchase && (

@@ -39,6 +39,7 @@ import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 import { digitsOnly, fmtMoney, plural } from "./addScooterDraft";
 import { GROUP_LABEL, GROUP_TONE, UNIT_STATUS_LABEL, groupOf, unitHint, type Group } from "./batchGroups";
 import type { BatchSummary } from "./BatchesPanel";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /**
  * Правка партии после создания (2.0.3).
@@ -567,16 +568,15 @@ export function BatchEditSheet({
           </label>
           <label className="min-w-0">
             <span className={labelCls}>Дата закупа</span>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => {
-                setDate(e.target.value);
-                setDateTouched(true);
-              }}
-              className={inputCls}
-              data-batch-date
-            />
+            <span className="block" data-batch-date>
+              <DatePicker
+                value={date || null}
+                onChange={(v) => {
+                  setDate(v ?? "");
+                  setDateTouched(true);
+                }}
+              />
+            </span>
           </label>
         </div>
         {!dateC.same && !dateTouched && (

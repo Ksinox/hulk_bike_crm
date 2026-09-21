@@ -36,6 +36,7 @@ import {
 } from "@/lib/api/buyout";
 import { saleFormUrl } from "@/pages/sales/saleForm";
 import { fmt } from "@/pages/sales/salesUtils";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /**
  * Мастер сделки «аренда с выкупом» (01.09) — шаги из задания:
@@ -714,12 +715,7 @@ export function NewBuyoutWizard({
                 <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
                   Первый платёж
                 </span>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="h-11 rounded-[14px] border border-border bg-surface px-3 text-[14px] tabular-nums outline-none focus:border-blue-600"
-                />
+                <DatePicker value={startDate || null} onChange={(v) => setStartDate(v ?? "")} />
                 <span className="text-[11.5px] text-muted-2">
                   Можно указать прошедшую дату — сделка оформляется задним числом.
                 </span>
@@ -778,12 +774,12 @@ export function NewBuyoutWizard({
                           <span className="w-5 text-center text-[11px] font-bold text-muted-2">
                             {i + 1}
                           </span>
-                          <input
-                            type="date"
-                            value={r.dueDate}
-                            onChange={(e) => updateRow(i, { dueDate: e.target.value })}
-                            className="h-10 min-w-[140px] flex-1 rounded-[10px] border border-border bg-surface px-2 text-[13px] tabular-nums outline-none focus:border-blue-600"
-                          />
+                          <span className="min-w-[150px] flex-1">
+                            <DatePicker
+                              value={r.dueDate || null}
+                              onChange={(v) => updateRow(i, { dueDate: v ?? "" })}
+                            />
+                          </span>
                           <span className="relative min-w-[120px] flex-1">
                             <input
                               inputMode="numeric"
@@ -798,33 +794,40 @@ export function NewBuyoutWizard({
                               ₽
                             </span>
                           </span>
-                          <label
+                          <button
+                            type="button"
+                            role="checkbox"
+                            aria-checked={!!r.paidAt}
+                            onClick={() =>
+                              updateRow(i, { paidAt: r.paidAt ? null : r.dueDate || todayIso() })
+                            }
                             className={cn(
-                              "inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-[10px] border px-2 text-[12px] font-semibold",
+                              "inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-[10px] border px-2.5 text-[12px] font-semibold",
                               r.paidAt
                                 ? "border-emerald-500 bg-emerald-50 text-emerald-700"
                                 : "border-border bg-surface text-muted",
                             )}
                           >
-                            <input
-                              type="checkbox"
-                              checked={!!r.paidAt}
-                              onChange={(e) =>
-                                updateRow(i, { paidAt: e.target.checked ? r.dueDate || todayIso() : null })
-                              }
-                              className="h-4 w-4 accent-emerald-600"
-                            />
+                            <span
+                              className={cn(
+                                "flex h-[18px] w-[18px] items-center justify-center rounded-[6px] border-2",
+                                r.paidAt
+                                  ? "border-emerald-600 bg-emerald-600 text-white"
+                                  : "border-border bg-white",
+                              )}
+                            >
+                              {r.paidAt && <Check size={12} strokeWidth={3} />}
+                            </span>
                             оплачено
-                          </label>
+                          </button>
                           {r.paidAt && (
-                            <input
-                              type="date"
-                              value={r.paidAt}
-                              max={todayIso()}
-                              title="Когда получены деньги"
-                              onChange={(e) => updateRow(i, { paidAt: e.target.value })}
-                              className="h-10 min-w-[140px] rounded-[10px] border border-emerald-300 bg-emerald-50 px-2 text-[12.5px] tabular-nums text-emerald-800 outline-none"
-                            />
+                            <span className="min-w-[150px]" title="Когда получены деньги">
+                              <DatePicker
+                                value={r.paidAt || null}
+                                maxDate={todayIso()}
+                                onChange={(v) => updateRow(i, { paidAt: v ?? "" })}
+                              />
+                            </span>
                           )}
                           <button
                             type="button"

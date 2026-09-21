@@ -24,6 +24,7 @@ import {
   type ApiScooterDoc,
 } from "@/lib/api/documents";
 import { FilePreviewModal } from "@/pages/clients/FilePreviewModal";
+import { DatePicker } from "@/components/ui/date-picker";
 
 const TODAY = new Date();
 
@@ -185,18 +186,14 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
                 <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
                   Действует до
                 </span>
-                <input
-                  type="date"
+                <DatePicker
                   disabled={!osagoDoc}
-                  value={osagoDoc?.osagoValidUntil ?? ""}
-                  onChange={(e) => {
+                  value={osagoDoc?.osagoValidUntil ?? null}
+                  onChange={(v) => {
                     if (!osagoDoc) return;
-                    patchMut.mutate({
-                      id: osagoDoc.id,
-                      osagoValidUntil: e.target.value || null,
-                    });
+                    patchMut.mutate({ id: osagoDoc.id, osagoValidUntil: v || null });
                   }}
-                  className="h-9 rounded-[8px] border border-border bg-surface px-2.5 text-[13px] text-ink outline-none focus:border-blue-600 disabled:opacity-50"
+                  className="w-[170px]"
                 />
               </label>
               {osagoInfo && (

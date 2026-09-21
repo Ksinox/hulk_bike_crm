@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { scooterModelName } from "@/components/ScooterName";
-import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronDown, ChevronLeft, Pencil, CheckCircle2, Camera } from "lucide-react";
+import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronLeft, Pencil, CheckCircle2, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Picker } from "@/components/ui/picker";
 import { ReturnReasonPicker } from "@/components/ReturnReasonPicker";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileNumPad } from "@/mobile/MobileNumPad";
@@ -566,29 +567,24 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
           <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
             Что делать со скутером?
           </label>
-          <div className="relative mt-1">
-            <select
+          <div className="mt-1">
+            <Picker
               value={scooterNextStatus}
-              onChange={(e) => {
+              onChange={(v) => {
                 setScooterStatusTouched(true);
-                setScooterNextStatus(e.target.value as ScooterNextStatus);
+                setScooterNextStatus(v as ScooterNextStatus);
               }}
               className={cn(
-                "h-9 w-full cursor-pointer appearance-none rounded-[10px] border bg-surface pl-3 pr-9 text-[13px] font-medium text-ink outline-none focus:border-blue-600",
-                scooterNextStatus === "repair"
-                  ? "border-orange-300 bg-orange-soft/20 text-orange-ink"
-                  : "border-border",
+                scooterNextStatus === "repair" &&
+                  "border-orange-300 bg-orange-soft/20 text-orange-ink",
               )}
-            >
-              <option value="rental_pool">Готов к аренде (в парк)</option>
-              <option value="repair">В ремонт</option>
-              <option value="for_sale">Выставить на продажу</option>
-              <option value="disassembly">На разборку</option>
-              <option value="buyout">Передать клиенту в выкуп</option>
-            </select>
-            <ChevronDown
-              size={15}
-              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-2"
+              options={[
+                { value: "rental_pool", label: "Готов к аренде (в парк)" },
+                { value: "repair", label: "В ремонт" },
+                { value: "for_sale", label: "Выставить на продажу" },
+                { value: "disassembly", label: "На разборку" },
+                { value: "buyout", label: "Передать клиенту в выкуп" },
+              ]}
             />
           </div>
           <div className="mt-1 text-[10.5px] text-muted-2">

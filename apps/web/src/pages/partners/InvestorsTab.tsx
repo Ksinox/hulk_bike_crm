@@ -30,6 +30,7 @@ import { AddScooterModal, addScooterDraftKey, useAddScooterReopen } from "@/page
 import { ScooterName } from "@/components/ScooterName";
 import { PayoutsHistoryDialog } from "./PayoutsHistoryDialog";
 import { ElectricMark } from "@/components/PowerTypeBadge";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /**
  * Правки 2.0, п.6-8 + правки 27.08: инвесторы партнёрской техники.
@@ -582,23 +583,13 @@ function InvestorDetails({
                   <span className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
                     Период с
                   </span>
-                  <input
-                    type="date"
-                    value={from}
-                    onChange={(e) => setFrom(e.target.value)}
-                    className="h-9 rounded-[10px] border border-border bg-surface px-2.5 text-[13px] tabular-nums outline-none focus:border-violet-500"
-                  />
+                  <DatePicker value={from || null} onChange={(v) => setFrom(v ?? "")} />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
                     по
                   </span>
-                  <input
-                    type="date"
-                    value={to}
-                    onChange={(e) => setTo(e.target.value)}
-                    className="h-9 rounded-[10px] border border-border bg-surface px-2.5 text-[13px] tabular-nums outline-none focus:border-violet-500"
-                  />
+                  <DatePicker value={to || null} onChange={(v) => setTo(v ?? "")} />
                 </label>
                 {(from || to) && (
                   <button

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
+  Check,
   Crown,
   Eye,
   EyeOff,
@@ -210,15 +211,26 @@ export function Login({ notice = null }: { notice?: keyof typeof NOTICE_TEXT | n
               </button>
             </div>
 
-            <label className="mt-3 flex cursor-pointer items-center gap-2 text-[12px] text-white/70">
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-                className="h-3.5 w-3.5 accent-emerald-400"
-              />
+            {/* Своя галочка: системная на тёмном фоне выглядит чужой. */}
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={remember}
+              onClick={() => setRemember(!remember)}
+              className="mt-3 flex cursor-pointer items-center gap-2.5 text-[12px] text-white/70"
+            >
+              <span
+                className={cn(
+                  "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[7px] border-2 transition-colors",
+                  remember
+                    ? "border-emerald-400 bg-emerald-400 text-ink"
+                    : "border-white/30 bg-white/5",
+                )}
+              >
+                {remember && <Check size={15} strokeWidth={3} />}
+              </span>
               Запомнить на 30 дней
-            </label>
+            </button>
 
             {errorMsg && (
               <div className="mt-3 rounded-[10px] border border-red-400/30 bg-red-500/15 px-3 py-2 text-[12px] text-red-100">

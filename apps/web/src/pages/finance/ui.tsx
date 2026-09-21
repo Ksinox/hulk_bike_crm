@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /**
  * Общие кирпичики блока «Финансы».
@@ -84,8 +85,27 @@ export function MoneyInput({
   );
 }
 
-export function DateInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input type="date" {...props} className={cn(inputBase, props.className)} />;
+/**
+ * Дата — нашим календарём (правило 20.09: системных полей даты в CRM нет).
+ * Компонент больше не используется, оставлен как обёртка над общим
+ * DatePicker на случай, если понадобится в «Финансах».
+ */
+export function DateInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: string;
+  onChange: (iso: string) => void;
+  className?: string;
+}) {
+  return (
+    <DatePicker
+      value={value || null}
+      onChange={(v) => onChange(v ?? "")}
+      className={className}
+    />
+  );
 }
 
 /**

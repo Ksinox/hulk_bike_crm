@@ -23,6 +23,7 @@ import {
 } from "@/lib/api/repair-jobs";
 import { navigate } from "@/app/navigationStore";
 import { confirmDialog, toast } from "@/lib/toast";
+import { DatePicker } from "@/components/ui/date-picker";
 
 const KIND_LABEL: Record<MaintenanceKind, string> = {
   oil: "Замена масла",
@@ -465,11 +466,9 @@ function MaintenanceAddModal({
 
           <div className="grid grid-cols-2 gap-2">
             <Field label="Дата">
-              <input
-                type="date"
-                value={performedOn}
-                onChange={(e) => setPerformedOn(e.target.value)}
-                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+              <DatePicker
+                value={performedOn || null}
+                onChange={(v) => setPerformedOn(v ?? "")}
               />
             </Field>
             <Field label="Сумма, ₽">

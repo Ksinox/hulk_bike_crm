@@ -7,6 +7,7 @@ import { useCreateMaintenance } from "@/lib/api/scooter-maintenance";
 import { OIL_INTERVAL_DEFAULT_KM } from "@/lib/mock/fleet";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /** Сегодня в формате YYYY-MM-DD (локальное время). */
 function todayIso(): string {
@@ -174,12 +175,12 @@ export function OilChangeDialog({
             <label className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
               Дата замены
             </label>
-            <input
-              type="date"
-              value={performedOn}
-              onChange={(e) => setPerformedOn(e.target.value)}
-              className="mt-1.5 w-full rounded-[10px] border border-border bg-surface-soft px-3 py-2 text-[14px] font-semibold text-ink outline-none focus:ring-2 focus:ring-blue-100"
-            />
+            <div className="mt-1.5">
+              <DatePicker
+                value={performedOn || null}
+                onChange={(v) => setPerformedOn(v ?? "")}
+              />
+            </div>
           </div>
 
           <div>

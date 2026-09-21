@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { ArrowLeft, Plus, Phone, AlertTriangle } from "lucide-react";
 import { useDebtorsList } from "@/lib/api/debtors";
+import { CheckBox } from "@/components/ui/picker";
 import {
   TYPE_LABEL,
   STAGE_LABEL,
@@ -88,15 +89,13 @@ export function DebtorsList({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12.5px] font-medium text-muted">
-            <input
-              type="checkbox"
-              checked={includeClosed}
-              onChange={(e) => setIncludeClosed(e.target.checked)}
-              className="h-3.5 w-3.5 accent-blue-600"
-            />
-            показать закрытые
-          </label>
+          <CheckBox
+            compact
+            checked={includeClosed}
+            onChange={setIncludeClosed}
+            label="показать закрытые"
+            className="w-auto"
+          />
           <button
             type="button"
             onClick={onAddNew}

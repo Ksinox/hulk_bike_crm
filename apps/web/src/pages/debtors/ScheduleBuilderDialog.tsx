@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { CalendarRange, Check, X } from "lucide-react";
 import { useCreateSchedule } from "@/lib/api/debtors";
 import { toast } from "@/lib/toast";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /**
  * Диалог формирования графика платежей.
@@ -261,12 +262,9 @@ export function ScheduleBuilderDialog({
 
           {/* Дата первого платежа */}
           <Label>Первый платёж</Label>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="mb-5 h-11 w-full rounded-[12px] border border-border bg-white px-3.5 text-[14px] text-ink outline-none focus:border-ink"
-          />
+          <div className="mb-5">
+            <DatePicker value={startDate || null} onChange={(v) => setStartDate(v ?? "")} />
+          </div>
 
           {/* Превью */}
           {preview.length > 0 && (

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Bike, Check, FileText, Image as ImageIcon, UserRound, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Picker } from "@/components/ui/picker";
 import type { Rental } from "@/lib/mock/rentals";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
@@ -625,22 +626,22 @@ export function RentalActionDialog({
                 <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
                   Что делать со скутером?
                 </label>
-                <select
-                  value={scooterNextStatus}
-                  onChange={(e) => {
-                    setScooterStatusTouched(true);
-                    setScooterNextStatus(
-                      e.target.value as typeof scooterNextStatus,
-                    );
-                  }}
-                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
-                >
-                  <option value="rental_pool">Готов к аренде (в парк)</option>
-                  <option value="repair">В ремонт</option>
-                  <option value="for_sale">Выставить на продажу</option>
-                  <option value="disassembly">На разборку</option>
-                  <option value="buyout">Передать клиенту в выкуп</option>
-                </select>
+                <div className="mt-1">
+                  <Picker
+                    value={scooterNextStatus}
+                    onChange={(v) => {
+                      setScooterStatusTouched(true);
+                      setScooterNextStatus(v as typeof scooterNextStatus);
+                    }}
+                    options={[
+                      { value: "rental_pool", label: "Готов к аренде (в парк)" },
+                      { value: "repair", label: "В ремонт" },
+                      { value: "for_sale", label: "Выставить на продажу" },
+                      { value: "disassembly", label: "На разборку" },
+                      { value: "buyout", label: "Передать клиенту в выкуп" },
+                    ]}
+                  />
+                </div>
                 <div className="mt-1 text-[10.5px] text-muted-2">
                   По умолчанию — назад в парк. При ущербе обычно выбирают «В ремонт».
                 </div>

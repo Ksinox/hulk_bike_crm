@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Check, Loader2, Package, Pencil, Plus, Star, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
 import {
   useApiEquipment,
   useCreateEquipment,
@@ -227,18 +228,15 @@ function EquipmentFormModal({
               onChange={(e) => setName(e.target.value)}
               maxLength={100}
               placeholder="Шлем, цепь, термокороб…"
-              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+              className="h-12 w-full rounded-[10px] border border-border bg-white px-3 text-[15px] outline-none focus:border-blue"
             />
           </div>
 
-          <label className="flex cursor-pointer items-center gap-2 text-[13px]">
-            <input
-              type="checkbox"
-              checked={isFree}
-              onChange={(e) => setIsFree(e.target.checked)}
-              className="h-4 w-4 accent-blue-600"
-            />
-            Бесплатно (не добавляется к стоимости аренды)
+          {/* Свой тумблер вместо системной галочки: она мелкая для пальца и
+              выбивается из оформления (правило 20.09). */}
+          <label className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-[12px] border border-border px-3 text-[13.5px]">
+            <Switch checked={isFree} onChange={setIsFree} label="Бесплатно" />
+            <span className="min-w-0 flex-1">Бесплатно (не добавляется к стоимости аренды)</span>
           </label>
 
           {!isFree && (
@@ -250,19 +248,14 @@ function EquipmentFormModal({
                 type="number"
                 value={price}
                 onChange={(e) => setPrice(Math.max(0, Number(e.target.value) || 0))}
-                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+                className="h-12 w-full rounded-[10px] border border-border bg-white px-3 text-[15px] outline-none focus:border-blue"
               />
             </div>
           )}
 
-          <label className="flex cursor-pointer items-center gap-2 text-[13px]">
-            <input
-              type="checkbox"
-              checked={quickPick}
-              onChange={(e) => setQuickPick(e.target.checked)}
-              className="h-4 w-4 accent-blue-600"
-            />
-            Отображать в быстром выборе при создании аренды
+          <label className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-[12px] border border-border px-3 text-[13.5px]">
+            <Switch checked={quickPick} onChange={setQuickPick} label="Быстрый выбор" />
+            <span className="min-w-0 flex-1">Отображать в быстром выборе при создании аренды</span>
           </label>
 
           <div>

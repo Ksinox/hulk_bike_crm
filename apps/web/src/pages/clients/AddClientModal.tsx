@@ -3,6 +3,8 @@ import { usePersistedFormState } from "@/lib/usePersistedState";
 import { X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { CheckBox, Picker } from "@/components/ui/picker";
+import { Switch } from "@/components/ui/switch";
 import {
   getClientDetails,
   SOURCE_LABEL,
@@ -740,24 +742,17 @@ export function AddClientModal({
                 error={showErr("source")}
                 htmlFor="f-source"
               >
-                <select
+                <Picker
                   id="f-source"
-                  value={f.source}
-                  onChange={(e) =>
-                    set("source", e.target.value as SourceChoice)
-                  }
-                  className={inputClass(showErr("source"))}
-                >
-                  <option value="" disabled>
-                    Выберите источник…
-                  </option>
-                  {SOURCE_OPTIONS.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))}
-                  <option value="custom">Свой вариант…</option>
-                </select>
+                  value={f.source === "" ? null : (f.source as SourceChoice)}
+                  onChange={(v) => set("source", v)}
+                  invalid={!!showErr("source")}
+                  placeholder="Выберите источник…"
+                  options={[
+                    ...SOURCE_OPTIONS.map((s) => ({ value: s.id as SourceChoice, label: s.label })),
+                    { value: "custom" as SourceChoice, label: "Свой вариант…" },
+                  ]}
+                />
                 {f.source === "custom" && (
                   <input
                     type="text"
@@ -964,15 +959,11 @@ export function AddClientModal({
                 className={cn(inputClass(showErr("regAddr")), "min-h-[56px] resize-y")}
               />
             </Field>
-            <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">
-              <input
-                type="checkbox"
-                checked={f.sameAddr}
-                onChange={(e) => set("sameAddr", e.target.checked)}
-                className="h-4 w-4 accent-blue-600"
-              />
-              Фактический адрес совпадает с регистрацией
-            </label>
+            <CheckBox
+              checked={f.sameAddr}
+              onChange={(v) => set("sameAddr", v)}
+              label="Фактический адрес совпадает с регистрацией"
+            />
             {!f.sameAddr && (
               <Field label="Фактический адрес" htmlFor="f-liveaddr">
                 <textarea
@@ -1022,11 +1013,10 @@ export function AddClientModal({
                   Клиенту будет запрещена аренда
                 </div>
               </div>
-              <input
-                type="checkbox"
+              <Switch
                 checked={f.blacklisted}
-                onChange={(e) => set("blacklisted", e.target.checked)}
-                className="h-4 w-4 accent-red"
+                onChange={(v) => set("blacklisted", v)}
+                label="Чёрный список"
               />
             </label>
             {f.blacklisted && (

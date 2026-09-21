@@ -15,6 +15,7 @@ import {
   Camera,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CheckBox } from "@/components/ui/picker";
 import { type Rental } from "@/lib/mock/rentals";
 import { toast } from "@/lib/toast";
 import { deleteFileWithUndo } from "@/lib/deleteFileWithUndo";
@@ -1610,15 +1611,16 @@ export function DamageReportDialog({
                 />
               </div>
               {!isEdit && (
-                <label className="inline-flex items-center gap-2 text-[12px] text-ink-2">
-                  <input
-                    type="checkbox"
-                    checked={sendToRepair}
-                    onChange={(e) => setSendToRepair(e.target.checked)}
-                  />
-                  <Wrench size={12} className="text-muted-2" />
-                  Отправить скутер в ремонт после сохранения
-                </label>
+                <CheckBox
+                  checked={sendToRepair}
+                  onChange={setSendToRepair}
+                  label={
+                    <span className="inline-flex items-center gap-1.5">
+                      <Wrench size={13} className="text-muted-2" />
+                      Отправить скутер в ремонт после сохранения
+                    </span>
+                  }
+                />
               )}
               {/* F2: если скутер уходит в ремонт, аренда остаётся без скутера —
                   подсказываем заменить его, чтобы клиент продолжил кататься. */}

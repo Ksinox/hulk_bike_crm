@@ -30,6 +30,7 @@ import {
 } from "@/lib/api/buyout";
 import { fmt, ruDate } from "@/pages/sales/salesUtils";
 import { BuyoutContractPreview } from "./BuyoutContractPreview";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /**
  * Карточка сделки выкупа (01.09).
@@ -561,13 +562,13 @@ function PaymentDialog({
 
         <label className="mt-3 flex items-center gap-2 text-[12px] text-muted">
           <span className="shrink-0">Дата платежа</span>
-          <input
-            type="date"
-            value={paidAt}
-            max={todayIso}
-            onChange={(e) => setPaidAt(e.target.value)}
-            className="h-9 flex-1 rounded-[10px] border border-border bg-surface px-2 text-[13px] tabular-nums text-ink outline-none focus:border-blue-600"
-          />
+          <span className="min-w-0 flex-1">
+            <DatePicker
+              value={paidAt || null}
+              maxDate={todayIso}
+              onChange={(v) => setPaidAt(v ?? "")}
+            />
+          </span>
           {paidAt !== todayIso && (
             <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10.5px] font-bold text-amber-800">
               задним числом
