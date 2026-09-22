@@ -17,7 +17,9 @@ export async function run(page, ctx) {
       ? { width: 820, height: 1180, deviceScaleFactor: 1, isMobile: true, hasTouch: true }
       : { width: 1180, height: 820, deviceScaleFactor: 1, isMobile: true, hasTouch: true },
   );
-  await page.goto(ctx.base + "/", { waitUntil: "domcontentloaded" });
+  // ?dash=dense — проба плотной раскладки дашборда
+  const dash = process.env.DASH ? `?dash=${process.env.DASH}` : "";
+  await page.goto(ctx.base + "/" + dash, { waitUntil: "domcontentloaded" });
   await ctx.sleep(6500);
   await page.evaluate(() => {
     [...document.querySelectorAll("button")].find((b) => /Посмотрю позже|^Позже$/.test(b.textContent || ""))?.click();
