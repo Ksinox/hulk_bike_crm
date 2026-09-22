@@ -36,7 +36,6 @@ import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useTabletLayout } from "@/lib/useIsMobile";
 import { TABLET_MASONRY_2 } from "../tablet";
-import { MobileDashboardDense, isDenseDashboard } from "./MobileDashboardDense";
 import {
   formatRub,
   greetingByHour,
@@ -62,11 +61,6 @@ export function MobileDashboard({
   const { data: me } = useMe();
   /** Планшет: верхние плашки — одним рядом, а не колонкой во всю ширину. */
   const tabletLayout = useTabletLayout();
-  /**
-   * Проба «спокойнее и плотнее» (22.09): включается ссылкой ?dash=dense,
-   * выключается ?dash=normal. Данные те же, отличается только раскладка.
-   */
-  const dense = tabletLayout && isDenseDashboard();
   const m = useDashboardMetrics();
   // Есть ли электротранспорт — от этого зависит раскладка верхних плиток.
   const hasElectro = m.rentableElectro > 0 || m.activeElectroCount > 0;
@@ -100,15 +94,6 @@ export function MobileDashboard({
     openRentalId != null
       ? rentals.find((r) => r.id === openRentalId) ?? null
       : null;
-
-  // Проба плотной раскладки: то же содержимое, другая подача. Карточка
-  // аренды и листы остаются общими — открываются тем же состоянием.
-  if (dense && !openRental) {
-    return (
-      <MobileDashboardDense onSelect={onSelect} onOpenRental={setOpenRentalId} />
-    );
-  }
-
   return (
     <div className="flex flex-col gap-4">
       {/* Приветствие */}
@@ -676,7 +661,7 @@ type ParkTile =
   | "sold"
   | "disassembly";
 
-export const PARK_TILE_CLS: Record<ParkTile, string> = {
+const PARK_TILE_CLS: Record<ParkTile, string> = {
   rented: "bg-blue",
   overdue: "bg-red",
   late_today: "bg-blue ring-2 ring-red/50",
@@ -688,7 +673,7 @@ export const PARK_TILE_CLS: Record<ParkTile, string> = {
   disassembly: "bg-ink",
 };
 
-export const PARK_LEGEND: { id: ParkTile; label: string }[] = [
+const PARK_LEGEND: { id: ParkTile; label: string }[] = [
   { id: "rented", label: "в аренде" },
   { id: "overdue", label: "просрочка / ущерб" },
   { id: "late_today", label: "опаздывает" },
@@ -698,7 +683,7 @@ export const PARK_LEGEND: { id: ParkTile; label: string }[] = [
   { id: "for_sale", label: "продажа" },
 ];
 
-export function parkTileOf(s: ApiScooter, m: DashboardMetrics): ParkTile {
+function parkTileOf(s: ApiScooter, m: DashboardMetrics): ParkTile {
   if (s.baseStatus === "sold") return "sold";
   if (s.baseStatus === "disassembly") return "disassembly";
   if (s.baseStatus === "for_sale" || s.baseStatus === "buyout") return "for_sale";
