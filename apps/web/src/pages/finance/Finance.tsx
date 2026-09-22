@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { usePageFab } from "@/mobile/fab";
+import { TABLET_BOTTOM_BAND } from "@/mobile/tablet";
 import { useTabletLayout } from "@/lib/useIsMobile";
 import {
   ArrowDownRight,
@@ -311,7 +312,7 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
       {/* Планшет: переключатель разделов прилипает к низу экрана — прямо над
           нижней панелью, под большим пальцем. */}
       {tabletLayout && (
-        <div className="sticky bottom-[-1.5rem] z-20 -mx-4 -mb-6 mt-1 bg-bg px-4 pb-6 pt-2">
+        <div className={TABLET_BOTTOM_BAND}>
           {tabsStrip}
         </div>
       )}

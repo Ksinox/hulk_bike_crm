@@ -113,8 +113,12 @@ export function MobileDashboard({
       <div
         className={cn(
           "flex flex-col gap-4",
+          // Планшет: кругам нужно место — в них видно и заливку, и подписи
+          // рядом (как на компьютере), поэтому они шире остальных плашек.
+          // Стоя: сверху выручка и «поступит», под ними два круга во всю
+          // половину — иначе круг сжимается и подписи уезжают вниз.
           tabletLayout &&
-            "grid items-stretch gap-3 landscape:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)] portrait:grid-cols-3",
+            "grid items-stretch gap-3 landscape:grid-cols-[minmax(0,1.15fr)_minmax(0,1.35fr)_minmax(0,1.35fr)_minmax(0,0.8fr)] portrait:grid-cols-2",
         )}
       >
       {/* Выручка — тап открывает банковскую сводку (графики/показатели). */}
@@ -124,7 +128,7 @@ export function MobileDashboard({
         className={cn(
           "relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-4 text-left text-white shadow-card active:scale-[0.99]",
           // Планшет стоя: выручка во всю ширину ряда, под ней три плашки.
-          tabletLayout && "portrait:col-span-3",
+          tabletLayout && "portrait:order-1",
         )}
       >
         <div className="flex items-center justify-between">
@@ -162,9 +166,9 @@ export function MobileDashboard({
           active={m.activePetrolCount}
           rentable={m.rentableFleet}
           onClick={() => onSelect("fleet")}
-          size={92}
-          layout="stack"
-          className="rounded-2xl p-3.5"
+          size={tabletLayout ? 118 : 92}
+          layout={tabletLayout ? "row" : "stack"}
+          className={cn("rounded-2xl p-3.5", tabletLayout && "portrait:order-3 p-4")}
         />
         {hasElectro ? (
           <ParkLoadGauge
@@ -174,9 +178,9 @@ export function MobileDashboard({
             active={m.activeElectroCount}
             rentable={m.rentableElectro}
             onClick={() => onSelect("partners")}
-            size={92}
-            layout="stack"
-            className="rounded-2xl p-3.5"
+            size={tabletLayout ? 118 : 92}
+            layout={tabletLayout ? "row" : "stack"}
+            className={cn("rounded-2xl p-3.5", tabletLayout && "portrait:order-4 p-4")}
           />
         ) : (
           <KpiTile
@@ -196,7 +200,8 @@ export function MobileDashboard({
 
       {hasElectro && (
         <KpiTile
-          wide
+          wide={!tabletLayout}
+          className={tabletLayout ? "portrait:order-2" : undefined}
           icon={<Wallet size={18} />}
           tone="green"
           label="Поступит сегодня"
@@ -539,6 +544,7 @@ function KpiTile({
   foot,
   onClick,
   wide,
+  className,
 }: {
   icon: React.ReactNode;
   tone: Tone;
@@ -549,6 +555,7 @@ function KpiTile({
   onClick?: () => void;
   /** Плитка во всю ширину: раскладка в строку, иначе справа пустует место. */
   wide?: boolean;
+  className?: string;
 }) {
   const s = toneStyles[tone];
   if (wide) {
@@ -560,6 +567,7 @@ function KpiTile({
         className={cn(
           "flex items-center gap-3 rounded-2xl bg-surface p-3.5 text-left shadow-card",
           onClick && "active:scale-[0.98]",
+          className,
         )}
       >
         <span
@@ -603,6 +611,7 @@ function KpiTile({
       className={cn(
         "flex flex-col gap-2 rounded-2xl bg-surface p-3.5 text-left shadow-card",
         onClick && "active:scale-[0.98]",
+        className,
       )}
     >
       <div className="flex items-center justify-between">
