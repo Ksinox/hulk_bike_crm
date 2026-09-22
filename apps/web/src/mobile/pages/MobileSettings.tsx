@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { TABLET_MASONRY_2 } from "../tablet";
+import { BottomTabs } from "../BottomTabs";
 import { LogOut, Save, Pencil, HardDrive, SlidersHorizontal } from "lucide-react";
 import { SectionTabs } from "@/components/SectionTabs";
 import { useSettingsTab, type SettingsTab } from "@/app/sectionTabs";
@@ -136,7 +137,7 @@ export function MobileSettings() {
   if (canStorage && tab === "storage") {
     return (
       <div className="flex flex-col gap-4 pb-4">
-        {tabs}
+        <BottomTabs>{tabs}</BottomTabs>
         <StoragePage embedded />
       </div>
     );

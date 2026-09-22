@@ -8,6 +8,7 @@ import { useMe, useLogout } from "@/lib/api/auth";
 import { usePerms } from "@/lib/permissions";
 import { openCalculator } from "@/lib/calc/calcStore";
 import { FabProvider, usePageFab, type PageFab } from "./fab";
+import { BottomTabsSlotProvider } from "./BottomTabs";
 import { openDeal } from "@/pages/clients/CreateDealMenu";
 import { useSheetDrag, SheetHandle } from "./ui";
 import {
@@ -61,6 +62,8 @@ export function MobileApp({
   const moreItems = buildMoreItems(canManageStaff, perms["data.finance"]);
   const [moreOpen, setMoreOpen] = useState(false);
   const [fab, setFab] = useState<PageFab | null>(null);
+  /** Полоса над нижней панелью, куда раздел кладёт свой ряд разделов. */
+  const [tabsSlot, setTabsSlot] = useState<HTMLElement | null>(null);
   /** Планшет: действие экрана переезжает в шапку (парящая кнопка накрывала список). */
   const tabletLayout = useTabletLayout();
   // 16.09 (заказчик): кнопка «Сделка» оставалась поверх открытого окна.
@@ -126,6 +129,7 @@ export function MobileApp({
     //  • скроллится только <main>;
     //  • FAB — absolute внутри relative-корня (не fixed) по той же причине.
     <FabProvider set={setFab}>
+      <BottomTabsSlotProvider slot={tabsSlot}>
       <div className="relative flex h-[100dvh] flex-col overflow-hidden bg-bg">
         <MobileTopBar title={routeTitle(route)} />
 
@@ -141,6 +145,14 @@ export function MobileApp({
             <MobilePage route={route} onSelect={go} />
           </div>
         </main>
+
+        {/* Полоса для ряда разделов планшета: сюда «телепортируется»
+            переключатель разделов страницы (см. mobile/BottomTabs). Пока
+            раздел ничего не положил — полоса пустая и места не занимает. */}
+        <div
+          ref={setTabsSlot}
+          className="shrink-0 empty:hidden [&:not(:empty)]:border-t [&:not(:empty)]:border-border [&:not(:empty)]:bg-bg [&:not(:empty)]:px-4 [&:not(:empty)]:py-2"
+        />
 
         <MobileTabBar
           route={route}
@@ -173,6 +185,7 @@ export function MobileApp({
           />
         )}
       </div>
+      </BottomTabsSlotProvider>
     </FabProvider>
   );
 }

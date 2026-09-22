@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BottomTabs } from "@/mobile/BottomTabs";
 import {
   Download,
   FileSignature,
@@ -67,28 +68,30 @@ export function Documents({ embedded = false }: { embedded?: boolean } = {}) {
         </>
       )}
 
-      <div className="inline-flex w-fit rounded-2xl border border-slate-200/60 bg-white/70 p-1 shadow-sm backdrop-blur">
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[13px] font-semibold transition",
-                TAP,
-                tab === t.id
-                  ? "bg-gradient-to-br from-slate-900 to-slate-700 text-white shadow-sm"
-                  : "text-muted-2 hover:bg-slate-100 hover:text-ink",
-              )}
-            >
-              <Icon size={13} />
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <BottomTabs>
+        <div className="inline-flex w-fit rounded-2xl border border-slate-200/60 bg-white/70 p-1 shadow-sm backdrop-blur">
+          {TABS.map((t) => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[13px] font-semibold transition",
+                  TAP,
+                  tab === t.id
+                    ? "bg-gradient-to-br from-slate-900 to-slate-700 text-white shadow-sm"
+                    : "text-muted-2 hover:bg-slate-100 hover:text-ink",
+                )}
+              >
+                <Icon size={13} />
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </BottomTabs>
 
       <section className={cn("flex min-h-0 flex-1 flex-col rounded-2xl bg-surface shadow-card-sm", embedded ? "p-3" : "p-5")}>
         {tab === "templates" && <TemplatesGallery />}

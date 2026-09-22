@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { BottomTabs } from "@/mobile/BottomTabs";
 import {
   AlertTriangle,
   BarChart3,
@@ -181,37 +182,39 @@ export function Buyout() {
               скрываются, остаются иконки — и это плавно, а не «сжатием»
               текста. На телефоне те же подписи прячутся у неактивных, чтобы
               все четыре вкладки помещались без прокрутки (правка 01.09). */}
-          <div className="flex w-fit max-w-full gap-1 rounded-full bg-surface p-1 shadow-card-sm">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTab(t.id)}
-                title={t.label}
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-full py-2 text-[13px] font-semibold transition-all duration-300",
-                  tab === t.id ? "bg-ink px-4 text-white" : "px-3 text-muted hover:text-ink",
-                )}
-              >
-                <t.icon size={14} className="shrink-0" />
-                <span
+          <BottomTabs>
+            <div className="flex w-fit max-w-full gap-1 rounded-full bg-surface p-1 shadow-card-sm">
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTab(t.id)}
+                  title={t.label}
                   className={cn(
-                    "overflow-hidden whitespace-nowrap transition-all duration-300",
-                    (drawer || isMobile) && tab !== t.id
-                      ? "max-w-0 opacity-0"
-                      : "max-w-[120px] opacity-100",
+                    "inline-flex shrink-0 items-center gap-1.5 rounded-full py-2 text-[13px] font-semibold transition-all duration-300",
+                    tab === t.id ? "bg-ink px-4 text-white" : "px-3 text-muted hover:text-ink",
                   )}
                 >
-                  {t.label}
-                </span>
-                {t.id === "overdue" && overdue.length > 0 && (
-                  <span className="shrink-0 rounded-full bg-red px-1.5 text-[10px] font-bold text-white">
-                    {overdue.length}
+                  <t.icon size={14} className="shrink-0" />
+                  <span
+                    className={cn(
+                      "overflow-hidden whitespace-nowrap transition-all duration-300",
+                      (drawer || isMobile) && tab !== t.id
+                        ? "max-w-0 opacity-0"
+                        : "max-w-[120px] opacity-100",
+                    )}
+                  >
+                    {t.label}
                   </span>
-                )}
-              </button>
-            ))}
-          </div>
+                  {t.id === "overdue" && overdue.length > 0 && (
+                    <span className="shrink-0 rounded-full bg-red px-1.5 text-[10px] font-bold text-white">
+                      {overdue.length}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </BottomTabs>
 
           {tab === "overview" && <Overview deals={deals} onOpen={setOpenDealId} />}
           {tab === "deals" && (

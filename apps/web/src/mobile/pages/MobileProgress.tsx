@@ -1,4 +1,5 @@
 import { ProgressBoard } from "@/pages/progress/ProgressBoard";
+import { BottomTabs } from "../BottomTabs";
 import { DevTabs } from "@/pages/progress/DevTabs";
 import { useDevTab } from "@/app/sectionTabs";
 import { MobileWhatsNew } from "./MobileWhatsNew";
@@ -11,7 +12,9 @@ export function MobileProgress() {
   const [tab, setTab] = useDevTab();
   return (
     <div className="flex flex-col gap-4 pb-6">
-      <DevTabs tab={tab} onTab={setTab} touch />
+      <BottomTabs>
+        <DevTabs tab={tab} onTab={setTab} touch />
+      </BottomTabs>
       {tab === "now" ? <ProgressBoard /> : <MobileWhatsNew />}
     </div>
   );

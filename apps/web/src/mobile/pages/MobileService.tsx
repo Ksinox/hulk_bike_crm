@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { BottomTabs } from "../BottomTabs";
 import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { Camera, Check, CheckCircle2, ChevronRight, Loader2, Plus, Trash2, Wrench, X } from "lucide-react";
 import {
@@ -89,7 +90,9 @@ export function MobileService() {
 
   return (
     <div className="flex flex-col gap-3">
-      <MobileChips options={scopeChips} value={scope} onChange={setScope} />
+      <BottomTabs>
+        <MobileChips options={scopeChips} value={scope} onChange={setScope} />
+      </BottomTabs>
 
       {scope === "outside" && <ServiceOrders />}
 

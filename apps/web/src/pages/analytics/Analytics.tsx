@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BottomTabs } from "@/mobile/BottomTabs";
 import {
   Check,
   Eye,
@@ -225,16 +226,18 @@ export function Analytics() {
             Аналитика
           </h1>
         )}
-        <div className="flex shrink-0 gap-1 rounded-full bg-surface p-1 shadow-card-sm">
-          <SectionTab active={section === "overview"} onClick={() => setSection("overview")} icon={<Eye size={14} />}>
-            Обзор
-          </SectionTab>
-          {canEdit && (
-            <SectionTab active={section === "setup"} onClick={() => setSection("setup")} icon={<Settings2 size={14} />}>
-              Настройка стены
+        <BottomTabs>
+          <div className="flex shrink-0 gap-1 rounded-full bg-surface p-1 shadow-card-sm">
+            <SectionTab active={section === "overview"} onClick={() => setSection("overview")} icon={<Eye size={14} />}>
+              Обзор
             </SectionTab>
-          )}
-        </div>
+            {canEdit && (
+              <SectionTab active={section === "setup"} onClick={() => setSection("setup")} icon={<Settings2 size={14} />}>
+                Настройка стены
+              </SectionTab>
+            )}
+          </div>
+        </BottomTabs>
         <SensitiveToggle className="shrink-0" />
         <div
           className={cn(

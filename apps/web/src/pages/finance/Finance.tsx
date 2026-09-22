@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { usePageFab } from "@/mobile/fab";
-import { TABLET_BOTTOM_BAND } from "@/mobile/tablet";
+import { BottomTabs } from "@/mobile/BottomTabs";
 import { useTabletLayout } from "@/lib/useIsMobile";
 import {
   ArrowDownRight,
@@ -265,7 +265,7 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
           не прячется за край. На компьютере — одной строкой. На планшете
           этот же ряд переезжает ВНИЗ экрана (правка заказчика 21.09):
           планшет держат в руках, и переключаются разделы большим пальцем. */}
-      {!tabletLayout && tabsStrip}
+      <BottomTabs>{tabsStrip}</BottomTabs>
 
       {tab === "overview" && (
         <FinanceOverview
@@ -309,13 +309,6 @@ export function Finance({ embedded = false }: { embedded?: boolean } = {}) {
       )}
       {tab === "categories" && <FinanceCategories categories={categories} entries={entries} />}
 
-      {/* Планшет: переключатель разделов прилипает к низу экрана — прямо над
-          нижней панелью, под большим пальцем. */}
-      {tabletLayout && (
-        <div className={TABLET_BOTTOM_BAND}>
-          {tabsStrip}
-        </div>
-      )}
     </main>
   );
 }
