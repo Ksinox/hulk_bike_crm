@@ -34,6 +34,7 @@ import {
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { compareByRentalNumber } from "@/lib/scooterOrder";
 import { useTabletLayout } from "@/lib/useIsMobile";
 import { TABLET_MASONRY_2 } from "../tablet";
 import {
@@ -699,9 +700,9 @@ function parkTileOf(s: ApiScooter, m: DashboardMetrics): ParkTile {
 function MobileParkGrid({ metrics }: { metrics: DashboardMetrics }) {
   const { data: scooters = [] } = useApiScooters();
   const live = scooters.filter((s) => !s.archivedAt && !s.deletedAt);
-  const tiles = live
-    .map((s) => ({ id: s.id, name: s.name, status: parkTileOf(s, metrics) }))
-    .sort((a, b) => parkNum(a.name) - parkNum(b.name));
+  const tiles = [...live]
+    .sort((a, b) => compareByRentalNumber(a, b))
+    .map((s) => ({ id: s.id, name: s.name, status: parkTileOf(s, metrics) }));
 
   const counts = tiles.reduce<Record<string, number>>((acc, t) => {
     acc[t.status] = (acc[t.status] ?? 0) + 1;
@@ -734,11 +735,6 @@ function MobileParkGrid({ metrics }: { metrics: DashboardMetrics }) {
       </div>
     </div>
   );
-}
-
-function parkNum(name: string): number {
-  const m = name.match(/#\s*(\d+)/);
-  return m ? parseInt(m[1], 10) : Number.POSITIVE_INFINITY;
 }
 
 /* ───────────────────────── секции-списки ───────────────────────── */

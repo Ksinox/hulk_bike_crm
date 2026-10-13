@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Bike, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { compareByRentalNumber } from "@/lib/scooterOrder";
 import { Card } from "./KpiCard";
 import { useApiRentals } from "@/lib/api/rentals";
 import { useApiScooters, usePatchScooter } from "@/lib/api/scooters";
@@ -17,15 +18,6 @@ import {
 import { ParkRadialFilters, type ParkStatusId } from "./ParkRadialFilters";
 import { ScooterName } from "@/components/ScooterName";
 import { useModelName } from "@/lib/useModelName";
-
-/** Извлечь номер из имени скутера ("Jog #07" → 7). Используется для
- * сортировки плиток парка по возрастанию номера, без блочной разбивки
- * по моделям. Если номера нет (имя без "#NN") — отправляем такие
- * скутеры в конец, чтобы не ломали порядок. */
-function parkNumber(name: string): number {
-  const m = name.match(/#\s*(\d+)/);
-  return m ? parseInt(m[1], 10) : Number.POSITIVE_INFINITY;
-}
 
 /** Статус плитки — производный от baseStatus скутера + активной аренды. */
 type TileStatus =
@@ -107,7 +99,7 @@ export function ParkPanel({
   const hover = useTileHoverPreview();
 
   const tiles = useMemo(() => {
-    // Сортируем плитки по номеру скутера: #1 → #2 → … → #55. Заказчик
+    // Сортируем плитки по арендному номеру: 1 → 2 → … → 67. Заказчик
     // хочет видеть единый поток без группировки Jog/Gear блоками —
     // оператор быстрее находит конкретный номер.
     // Правка 25.08: из парка убираем только ПРОДАННУЮ технику — права
@@ -115,7 +107,7 @@ export function ParkPanel({
     // графику), поэтому в панели парка он виден.
     const scooters = [...(scootersQ.data ?? [])]
       .filter((s) => s.baseStatus !== "sold")
-      .sort((a, b) => parkNumber(a.name) - parkNumber(b.name));
+      .sort((a, b) => compareByRentalNumber(a, b));
     const rentals = rentalsQ.data ?? [];
 
     // Скутер «занят» (числится в аренде на дашборде) пока существует

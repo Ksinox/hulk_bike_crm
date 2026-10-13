@@ -32,6 +32,7 @@ import {
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { cn } from "@/lib/utils";
+import { compareByRentalNumber } from "@/lib/scooterOrder";
 import {
   oilFlag,
   SCOOTER_STATUS_LABEL,
@@ -165,13 +166,14 @@ export function Fleet({
   const [modelIdsFilter, setModelIdsFilter] = useState<Set<number>>(new Set());
   /**
    * Сортировка списка скутеров.
-   *  - by: "number" — по номеру в серии (Jog #14 → #02 → #01)
+   *  - by: "number" — по арендному номеру: 1 → 2 → 3… (13.10, раньше шли
+   *    по старой «решётке» в имени и сверху вниз)
    *  - by: "mileage" — по пробегу (км)
    * Кликом на заголовок «Пробег» переключаем by и направление.
-   * Переключателем рядом с фильтром моделей — только направление.
+   * Переключателем рядом с фильтром моделей — направление по номеру.
    */
   const [sortBy, setSortBy] = useState<"number" | "mileage">("number");
-  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("asc");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -387,14 +389,10 @@ export function Fleet({
               ? b.scooter.mileage - a.scooter.mileage
               : a.scooter.mileage - b.scooter.mileage;
           if (diff !== 0) return diff;
-          return a.scooter.name.localeCompare(b.scooter.name, "ru");
+          return compareByRentalNumber(a.scooter, b.scooter);
         }
-        // by: number
-        const numA = parseScooterNumber(a.scooter.name);
-        const numB = parseScooterNumber(b.scooter.name);
-        const diff = sortDir === "desc" ? numB - numA : numA - numB;
-        if (diff !== 0) return diff;
-        return a.scooter.name.localeCompare(b.scooter.name, "ru");
+        // by: number — арендный номер (бензин, потом электро, потом без номера)
+        return compareByRentalNumber(a.scooter, b.scooter, sortDir);
       });
   }, [
     rows,
@@ -1623,16 +1621,7 @@ function ModelFilterDropdown({
 }
 
 /**
- * Извлекает порядковый номер из имени скутера: «Jog #14» → 14, «Gear #02» → 2.
- * Если номера нет — возвращает 0 (для стабильной сортировки).
- */
-function parseScooterNumber(name: string): number {
-  const m = name.match(/#(\d+)/);
-  return m ? Number(m[1]) : 0;
-}
-
-/**
- * Простой переключатель направления сортировки по номеру.
+ * Простой переключатель направления сортировки по арендному номеру.
  * Один клик меняет ↓ на ↑ и наоборот. Иконка показывает текущее направление.
  */
 function SortToggle({
@@ -1645,8 +1634,8 @@ function SortToggle({
   const Icon = value === "desc" ? ArrowDownNarrowWide : ArrowUpNarrowWide;
   const label =
     value === "desc"
-      ? "По номеру: от большего к меньшему. Клик — переключить."
-      : "По номеру: от меньшего к большему. Клик — переключить.";
+      ? "По номеру: от большего к меньшему. Нажмите — с первого номера."
+      : "По номеру: с первого номера. Нажмите — от большего к меньшему.";
   return (
     <button
       type="button"
