@@ -69,10 +69,20 @@ export async function run(page, ctx) {
     await ctx.sleep(2500);
     // ── 3. Панель парка на главной: номера на плитках ──
     const tiles = await page.evaluate(() => {
-      const head = [...document.querySelectorAll("h2, h3, div, span")].find((d) => /^Парк скутеров|^Парк$/.test((d.textContent || "").trim()));
-      return head ? "есть" : "нет";
+      const head = [...document.querySelectorAll("h2")].find((d) => /^Парк ·/.test((d.textContent || "").trim()));
+      if (!head) return "нет";
+      const card = head.parentElement.parentElement;
+      card.scrollIntoView({ block: "start" });
+      window.scrollBy(0, -16);
+      return [...card.querySelectorAll("button, a, div")]
+        .filter((el) => el.children.length <= 2 && /^\d{1,3}$/.test((el.textContent || "").trim()) && el.getBoundingClientRect().width < 80)
+        .map((el) => el.textContent.trim())
+        .filter((t, i, arr) => arr.indexOf(t) === i)
+        .slice(0, 40)
+        .join(" ");
     });
     console.log("панель парка:", tiles);
+    await ctx.sleep(600);
     await ctx.shot(`sort-park-${phase}-${tag}`, { jpeg: true });
     await click(/^Новая сделка/);
     await ctx.sleep(900);
@@ -84,13 +94,17 @@ export async function run(page, ctx) {
   }
   await ctx.sleep(2500);
   // На телефоне скутер выбирают на своём шаге — листаем мастер до него.
+  // Выбираем тестового клиента (ничего не создаём) и идём на шаг «Скутер».
   if (phase === "phone") {
-    for (let i = 0; i < 3; i++) {
-      const has = await page.evaluate(() => document.querySelectorAll("[data-slot-pool]").length);
-      if (has > 0) break;
-      await click(/^(Скутер|Выбрать скутер|Далее)$/);
-      await ctx.sleep(1200);
-    }
+    await page.evaluate(() => {
+      const el = [...document.querySelectorAll("button, [role=button], li, div")]
+        .filter((x) => /^ПТПокупкин Тест/.test((x.textContent || "").replace(/\s+/g, "")) || /Покупкин Тест Анкетович/.test(x.textContent || ""))
+        .sort((a, b) => a.textContent.length - b.textContent.length)[0];
+      el?.click();
+    });
+    await ctx.sleep(800);
+    await click(/^Далее/);
+    await ctx.sleep(1500);
   }
   console.log("выбор в аренде:", await numbers());
   await ctx.shot(`sort-rental-${phase}-${tag}`, { jpeg: true });
