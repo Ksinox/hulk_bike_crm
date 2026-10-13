@@ -8,6 +8,7 @@ import {
 import { ArrowLeftRight, Banknote, Check, CreditCard, Lock, Search, UserPlus, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { compareByRentalNumber } from "@/lib/scooterOrder";
 import { initialsOf, type Client } from "@/lib/mock/clients";
 import {
   MIN_RENTAL_DAYS,
@@ -464,6 +465,8 @@ export function NewRentalModal({
               (powerFilter === "electric") === isElectricScooter(s)) &&
             matchesModel(s),
         )
+        // 13.10: по арендному номеру — 1, 2, 3… (раньше — как пришли с сервера)
+        .sort((a, b) => compareByRentalNumber(a, b))
         .map((s) => ({
           name: s.name,
           model: s.model,

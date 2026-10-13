@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { compareByRentalNumber } from "@/lib/scooterOrder";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { toast } from "@/lib/toast";
 import { toastRentalDone } from "./rentalUndo";
@@ -187,7 +188,8 @@ export function SwapScooterDialog({
       map.set(s.model, arr);
     }
     for (const arr of map.values()) {
-      arr.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+      // 13.10: внутри модели — по арендному номеру.
+      arr.sort((a, b) => compareByRentalNumber(a, b));
     }
     return Array.from(map.entries())
       .map(([modelEnum, items]) => {
