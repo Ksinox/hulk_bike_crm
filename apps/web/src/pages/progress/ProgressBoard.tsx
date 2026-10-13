@@ -4,10 +4,13 @@ import { Check, ChevronDown, Download, Loader2, Maximize2, X } from "lucide-reac
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import {
-  PROGRESS_PERIOD,
+  PROGRESS_STAGES,
   progressGroups,
   progressItems,
   progressSummary,
+  stageItems,
+  stageOf,
+  type ProgressStage,
   type ProgressItem,
   type ProgressStatus,
   type ProgressStep,
@@ -43,6 +46,10 @@ const MONTHS_RU = [
 function fmtDate(iso: string, withYear = false): string {
   const [y, m, d] = iso.split("-").map(Number);
   return `${d} ${MONTHS_RU[(m ?? 1) - 1]}${withYear ? ` ${y}` : ""}`;
+}
+/** «24 августа — 24 сентября 2026» или «с 13 октября 2026» у открытого этапа. */
+function stagePeriod(st: ProgressStage): string {
+  return st.to ? `${fmtDate(st.from)} — ${fmtDate(st.to, true)}` : `с ${fmtDate(st.from, true)}`;
 }
 function pluralRu(n: number, one: string, few: string, many: string): string {
   const m10 = n % 10;
@@ -96,7 +103,16 @@ const DOT_TEXTURE = {
 };
 
 export function ProgressBoard() {
-  const s = useMemo(() => progressSummary(), []);
+  /**
+   * 13.10: страница делится на этапы. Открытый (сейчас — «Исправление
+   * багов») — вверху со своей статистикой; закрытые («Порядок улучшений»,
+   * 24.08–24.09) свёрнуты в карточку и раскрываются по нажатию.
+   */
+  const current = PROGRESS_STAGES.find((st) => !st.closed) ?? PROGRESS_STAGES[0]!;
+  const archive = PROGRESS_STAGES.filter((st) => st !== current);
+  const curItems = useMemo(() => stageItems(current), [current]);
+  const s = useMemo(() => progressSummary(curItems), [curItems]);
+  const [archiveOpen, setArchiveOpen] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<Set<string>>(new Set());
   // Лайтбокс: клик по скриншоту → полный экран.
   const [zoom, setZoom] = useState<StoryImage | null>(null);
@@ -115,6 +131,8 @@ export function ProgressBoard() {
   const goToFresh = () => {
     setNewsOpen(false);
     if (!firstFresh) return;
+    const st = stageOf(firstFresh);
+    if (st?.closed) setArchiveOpen((prev) => new Set(prev).add(st.key));
     setOpen((prev) => new Set(prev).add(firstFresh.id));
     markSeen(firstFresh.id, firstFresh.updatedAt);
     window.setTimeout(() => {
@@ -130,6 +148,19 @@ export function ProgressBoard() {
       else next.add(id);
       return next;
     });
+  const renderItem = (it: ProgressItem) => (
+    <ItemCard
+      key={it.id}
+      item={it}
+      expanded={open.has(it.id)}
+      fresh={isFresh(it.id, it.updatedAt)}
+      onToggle={() => {
+        toggle(it.id);
+        markSeen(it.id, it.updatedAt);
+      }}
+      onZoom={setZoom}
+    />
+  );
 
   return (
     <div className="flex flex-col">
@@ -149,16 +180,16 @@ export function ProgressBoard() {
             <div className="flex items-center gap-2.5">
               <span className="h-px w-8 bg-blue-400/70" />
               <span className="text-[10px] font-bold uppercase tracking-[0.28em] text-blue-300">
-                План работ
+                {current.eyebrow}
               </span>
             </div>
             <h1 className="mt-4 font-display text-[34px] font-extrabold leading-[1.05] tracking-tight sm:text-[48px] lg:text-[56px]">
-              Порядок
+              {current.title[0]}
               <br />
-              улучшений
+              {current.title[1]}
             </h1>
             <p className="mt-5 text-[15px] font-semibold text-white/80 sm:text-[17px]">
-              {fmtDate(PROGRESS_PERIOD.from)} — {fmtDate(PROGRESS_PERIOD.to, true)}
+              {stagePeriod(current)}
             </p>
             <p className="mt-2 max-w-md text-[13px] leading-relaxed text-white/50">
               {s.done > 0 ? (
@@ -247,7 +278,9 @@ export function ProgressBoard() {
 
       {/* ─────────────── ГЛАВЫ ─────────────── */}
       <div className="mt-12 flex flex-col gap-14">
-        {progressGroups.map((g, gi) => {
+        {progressGroups
+          .filter((g) => current.groups.includes(g.key))
+          .map((g, gi) => {
           const items = progressItems.filter((i) => i.group === g.key);
           if (items.length === 0) return null;
           const acc = items.filter((i) => i.status === "accepted" || i.status === "live").length;
@@ -282,26 +315,101 @@ export function ProgressBoard() {
               {/* Трек: линия времени + пункты */}
               <div className="relative mt-5 pl-7 sm:pl-9">
                 <span className="absolute bottom-3 left-[9px] top-3 w-px bg-border sm:left-[11px]" />
-                <div className="flex flex-col gap-2">
-                  {items.map((it) => (
-                    <ItemCard
-                      key={it.id}
-                      item={it}
-                      expanded={open.has(it.id)}
-                      fresh={isFresh(it.id, it.updatedAt)}
-                      onToggle={() => {
-                        toggle(it.id);
-                        markSeen(it.id, it.updatedAt);
-                      }}
-                      onZoom={setZoom}
-                    />
-                  ))}
-                </div>
+                <div className="flex flex-col gap-2">{items.map(renderItem)}</div>
               </div>
             </section>
           );
         })}
       </div>
+
+      {/* ─────────────── ЗАКРЫТЫЕ ЭТАПЫ ─────────────── */}
+      {archive.map((st) => {
+        const items = stageItems(st);
+        const sum = progressSummary(items);
+        const opened = archiveOpen.has(st.key);
+        return (
+          <section key={st.key} className="mt-14">
+            <button
+              type="button"
+              onClick={() =>
+                setArchiveOpen((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(st.key)) next.delete(st.key);
+                  else next.add(st.key);
+                  return next;
+                })
+              }
+              aria-expanded={opened}
+              className="flex w-full items-center gap-4 rounded-2xl border border-border bg-surface px-5 py-4 text-left shadow-card-sm transition-colors hover:border-border-strong sm:px-6 sm:py-5"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-green-soft text-green-ink">
+                <Check size={20} strokeWidth={2.6} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[10.5px] font-bold uppercase tracking-[0.22em] text-muted-2">
+                  {st.eyebrow} · завершён
+                </span>
+                <span className="mt-0.5 block font-display text-[19px] font-extrabold leading-tight text-ink sm:text-[22px]">
+                  {st.title[0]} {st.title[1].toLowerCase()}
+                </span>
+                <span className="mt-0.5 block text-[13px] text-muted">
+                  {stagePeriod(st)} · {items.length}{" "}
+                  {pluralRu(items.length, "пункт", "пункта", "пунктов")}
+                  {sum.live + sum.accepted === items.length
+                    ? " — всё в работе"
+                    : ` — в работе ${sum.live + sum.accepted}`}
+                </span>
+              </span>
+              <span className="hidden shrink-0 text-[13px] font-semibold text-blue-600 sm:inline">
+                {opened ? "Свернуть" : "Развернуть"}
+              </span>
+              <ChevronDown
+                size={20}
+                className={cn("shrink-0 text-muted-2 transition-transform", opened && "rotate-180")}
+              />
+            </button>
+
+            {opened && (
+              <div className="mt-10 flex flex-col gap-14">
+                {progressGroups
+                  .filter((g) => st.groups.includes(g.key))
+                  .map((g, gi) => {
+                    const gItems = items.filter((i) => i.group === g.key);
+                    if (gItems.length === 0) return null;
+                    const acc = gItems.filter(
+                      (i) => i.status === "accepted" || i.status === "live",
+                    ).length;
+                    return (
+                      <section key={g.key}>
+                        <div className="flex items-start gap-4 sm:gap-6">
+                          <span className="select-none font-display text-[40px] font-extrabold leading-none text-border-strong sm:text-[54px]">
+                            {String(gi + 1).padStart(2, "0")}
+                          </span>
+                          <div className="min-w-0 flex-1 pt-1">
+                            <h2 className="font-display text-[19px] font-extrabold leading-tight text-ink sm:text-[23px]">
+                              {g.title}
+                            </h2>
+                            {g.hint && (
+                              <p className="mt-1 text-[13px] leading-snug text-muted">{g.hint}</p>
+                            )}
+                          </div>
+                          <span className="shrink-0 rounded-full bg-surface-soft px-3 py-1 text-[12px] font-bold tabular-nums text-muted">
+                            {acc}
+                            <span className="text-muted-2">/{gItems.length}</span>
+                          </span>
+                        </div>
+                        <div className="relative mt-5 pl-7 sm:pl-9">
+                          <span className="absolute bottom-3 left-[9px] top-3 w-px bg-border sm:left-[11px]" />
+                          <div className="flex flex-col gap-2">{gItems.map(renderItem)}</div>
+                        </div>
+                      </section>
+                    );
+                  })}
+              </div>
+            )}
+          </section>
+        );
+      })}
 
       {newsOpen && freshCount > 0 && (
         <div
@@ -553,7 +661,7 @@ function ItemCard({
           className="flex w-full items-center gap-3 px-3.5 py-3.5 text-left sm:gap-4 sm:px-5"
         >
           <span className="w-7 shrink-0 font-display text-[13px] font-extrabold tabular-nums text-muted-2 sm:w-8 sm:text-[14px]">
-            {item.id}
+            {item.num ?? item.id}
           </span>
 
           <span className="min-w-0 flex-1 text-[13.5px] font-bold leading-snug text-ink sm:text-[14.5px]">
@@ -666,7 +774,7 @@ function ItemCard({
                 <p className="text-[12.5px] leading-relaxed text-ink-2">
                   <b>Готово к вашей проверке.</b> Повторите шаги на тестовой
                   версии CRM — и, если всё устраивает, напишите в чат:{" "}
-                  <b>«пункт {item.id} принял»</b>. После этого изменение
+                  <b>«пункт {item.num ?? item.id} принял»</b>. После этого изменение
                   переедет в рабочую систему.
                 </p>
               </div>
