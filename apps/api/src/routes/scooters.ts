@@ -31,7 +31,13 @@ const CreateScooterBody = z
     frameNumber: z.string().max(50).optional().nullable(),
     year: z.number().int().min(1980).max(2100).optional().nullable(),
     color: z.string().max(50).optional().nullable(),
-    mileage: z.number().int().min(0).optional(),
+    /** 13.10: тот же потолок, что при возврате и в партии — лишние цифры не пропускаем. */
+    mileage: z
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000, "Пробег больше 1 000 000 км — проверьте, нет ли лишних цифр")
+      .optional(),
     baseStatus: ScooterBaseStatusEnum.optional(),
     purchaseDate: z.string().optional().nullable(),
     purchasePrice: z.number().int().min(0).optional().nullable(),

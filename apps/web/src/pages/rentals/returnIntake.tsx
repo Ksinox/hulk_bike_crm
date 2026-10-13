@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { scooterModelName } from "@/components/ScooterName";
 import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronLeft, Pencil, CheckCircle2, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Picker } from "@/components/ui/picker";
+import { CheckBox, Picker } from "@/components/ui/picker";
 import { ReturnReasonPicker } from "@/components/ReturnReasonPicker";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileNumPad } from "@/mobile/MobileNumPad";
@@ -89,6 +89,11 @@ export type ReturnIntake = ReturnType<typeof useReturnIntake>;
  * не завершение) — хук не делает запрос к скутеру и отдаёт «пустую»
  * приёмку, чтобы PaymentAcceptDialog мог вызывать хук безусловно.
  */
+/** Потолок пробега: больше — это лишние цифры, а не мопед (как в карточке скутера). */
+export const MAX_MILEAGE = 1_000_000;
+/** Рост за одну аренду больше этого — повод перепроверить цифры. */
+const BIG_JUMP_KM = 30_000;
+
 export function useReturnIntake(rental: Rental, enabled: boolean) {
   const [cardStates, setCardStates] = useState<Record<string, CardState>>({});
   // На каждую позицию (скутер / экипировка) — список строк ущерба.
@@ -99,6 +104,14 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
   const [pickerTarget, setPickerTarget] = useState<PickerTarget>(null);
   const [returnDate, setReturnDate] = useState<string>(() => isoToday());
   const [mileageAtReturn, setMileageAtReturn] = useState<string>("");
+  /**
+   * Баг 13.10: пробег меньше записанного раньше молча отбрасывался сервером
+   * («пробег должен только расти»). Если в системе сидела опечатка (у Gear №4
+   * — 45 674 567 км), любой честный пробег при возврате терялся, а оператор
+   * видел «принято». Теперь меньший пробег записывается только явным
+   * решением оператора — галочкой «это исправление», с записью в хронологии.
+   */
+  const [mileageCorrection, setMileageCorrection] = useState(false);
   const [scooterNextStatus, setScooterNextStatus] =
     useState<ScooterNextStatus>("rental_pool");
   const [scooterStatusTouched, setScooterStatusTouched] = useState(false);
@@ -203,9 +216,27 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
   // Правка 2.3 (26.08): пробег при возврате обязателен — без него
   // не бьётся статистика износа и интервалы замены масла.
   const mileageMissing = !mileageAtReturn.trim();
+  const mileageNum = Number(mileageAtReturn);
+  /** Больше миллиона км у мопеда не бывает — это лишние цифры. */
+  const mileageTooBig = !mileageMissing && mileageNum > MAX_MILEAGE;
+  /** Введено меньше записанного: либо опечатка сейчас, либо ошибка в системе. */
+  const mileageLower =
+    !mileageMissing && currentMileage != null && mileageNum < currentMileage;
+  /** Меньший пробег без решения оператора не пропускаем — иначе он тихо пропадёт. */
+  const mileageNeedsDecision = mileageLower && !mileageCorrection;
+  /** В системе явная опечатка — подскажем, что исправление тут уместно. */
+  const storedMileageAbsurd = currentMileage != null && currentMileage > MAX_MILEAGE;
+  /** Резкий рост за одну аренду — мягкое предупреждение, не блок. */
+  const mileageBigJump =
+    !mileageMissing &&
+    !storedMileageAbsurd &&
+    currentMileage != null &&
+    mileageNum - currentMileage > BIG_JUMP_KM;
   const blocked =
     !allDecided ||
     mileageMissing ||
+    mileageTooBig ||
+    mileageNeedsDecision ||
     (cardStates[scooterCard] === "problem" && !linesFilled(scooterDamages)) ||
     !allEquipmentProblemsFilled;
 
@@ -220,6 +251,8 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     returnDate ? isoDateToRu(returnDate) : todayStr();
   const mileageForApi = () =>
     mileageAtReturn ? Number(mileageAtReturn) : undefined;
+  /** Оператор осознанно записывает пробег меньше прежнего. */
+  const mileageCorrectionForApi = () => mileageLower && mileageCorrection;
 
   // Позиции для создания акта ущерба (POST /damage-reports).
   const buildDamageSeedItems = (): DamageSeedItem[] => {
@@ -285,6 +318,8 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     setReturnDate,
     mileageAtReturn,
     setMileageAtReturn,
+    mileageCorrection,
+    setMileageCorrection,
     scooterNextStatus,
     setScooterNextStatus,
     scooterStatusTouched,
@@ -314,10 +349,16 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     hasDamage,
     blocked,
     mileageMissing,
+    mileageTooBig,
+    mileageLower,
+    mileageNeedsDecision,
+    storedMileageAbsurd,
+    mileageBigJump,
     damageLines,
     // helpers
     dateActualForApi,
     mileageForApi,
+    mileageCorrectionForApi,
     buildDamageSeedItems,
   };
 }
@@ -350,6 +391,12 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
     setReturnDate,
     mileageAtReturn,
     setMileageAtReturn,
+    mileageCorrection,
+    setMileageCorrection,
+    mileageTooBig,
+    mileageLower,
+    storedMileageAbsurd,
+    mileageBigJump,
     scooterNextStatus,
     setScooterNextStatus,
     setScooterStatusTouched,
@@ -524,7 +571,7 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
           </label>
           <input
             type="number"
-            min={currentMileage ?? 0}
+            min={0}
             value={mileageAtReturn}
             onChange={(e) => setMileageAtReturn(e.target.value)}
             placeholder={
@@ -539,21 +586,51 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
                 : "border-red-ink/40 bg-red-soft/30",
             )}
           />
-          {currentMileage != null &&
+          {mileageTooBig ? (
+            <div className="mt-1 text-[11px] font-semibold text-red-ink">
+              Больше {MAX_MILEAGE.toLocaleString("ru-RU")} км — проверьте, нет ли
+              лишних цифр
+            </div>
+          ) : currentMileage != null &&
             mileageAtReturn &&
-            (Number(mileageAtReturn) > currentMileage ? (
-              <div className="mt-1 text-[10.5px] font-semibold text-green-ink">
-                + {(Number(mileageAtReturn) - currentMileage).toLocaleString("ru-RU")} км
-                за аренду
-              </div>
-            ) : Number(mileageAtReturn) > 0 &&
-              Number(mileageAtReturn) < currentMileage ? (
-              <div className="mt-1 text-[10.5px] text-orange-ink">
-                меньше текущего — изменение игнорируется
-              </div>
-            ) : null)}
+            Number(mileageAtReturn) > currentMileage ? (
+            <div
+              className={cn(
+                "mt-1 text-[11px] font-semibold",
+                mileageBigJump ? "text-orange-ink" : "text-green-ink",
+              )}
+            >
+              + {(Number(mileageAtReturn) - currentMileage).toLocaleString("ru-RU")} км
+              за аренду
+              {mileageBigJump && " — много для одной аренды, проверьте цифры"}
+            </div>
+          ) : null}
         </div>
       </div>
+
+      {/* Баг 13.10: раньше меньший пробег молча отбрасывался («изменение
+          игнорируется» мелким шрифтом) — оператор думал, что записал, а в
+          системе оставалась старая цифра. Теперь это явный выбор: либо
+          поправить ввод, либо отметить, что прежний пробег был ошибкой. */}
+      {mileageLower && currentMileage != null && (
+        <div className="rounded-[12px] border border-orange-300 bg-orange-soft/30 px-3 py-2.5">
+          <div className="text-[12.5px] font-semibold text-orange-ink">
+            В системе записано {currentMileage.toLocaleString("ru-RU")} км — больше, чем
+            вы ввели.
+          </div>
+          <div className="mt-0.5 text-[12px] leading-snug text-ink-2">
+            {storedMileageAbsurd
+              ? "Похоже, прежнее значение — опечатка (лишние цифры). Если на одометре правда столько, сколько вы ввели, — отметьте исправление."
+              : "Проверьте одометр. Если в системе была ошибка, отметьте исправление — пробег перезапишется, в хронологии останется запись было → стало."}
+          </div>
+          <CheckBox
+            className="mt-1.5"
+            checked={mileageCorrection}
+            onChange={setMileageCorrection}
+            label={`Это исправление — записать ${Number(mileageAtReturn).toLocaleString("ru-RU")} км`}
+          />
+        </div>
+      )}
 
       {/* Пункт 4: обязательная причина возврата. */}
       <ReturnReasonPicker

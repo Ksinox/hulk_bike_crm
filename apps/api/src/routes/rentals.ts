@@ -160,7 +160,16 @@ const CompleteBody = z
     depositReturned: z.boolean(),
     damageAmount: z.number().int().min(0).optional(),
     damageNotes: z.string().optional().nullable(),
-    mileageAtReturn: z.number().int().min(0).optional(),
+    /** Баг 13.10: без потолка опечатка «45674567» навсегда ломала учёт
+     *  пробега скутера (дальше любой честный пробег был «меньше текущего»). */
+    mileageAtReturn: z
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000, "Пробег больше 1 000 000 км — проверьте, нет ли лишних цифр")
+      .optional(),
+    /** Оператор осознанно записывает пробег МЕНЬШЕ прежнего: прежний был ошибкой. */
+    mileageCorrection: z.boolean().optional(),
     scooterNextStatus: z.enum(SCOOTER_NEXT_STATUSES).optional(),
     /** Пункт 4: причина возврата (обязательность обеспечивает UI). */
     returnReason: z.string().max(200).optional().nullable(),
@@ -1612,9 +1621,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
               .from(scooters)
               .where(eq(scooters.id, r.scooterId));
             mileageBefore = s?.mileage ?? 0;
-            // Защита от опечатки: пробег должен только расти. Если ввели
-            // меньше текущего — игнорируем (но логируем warn).
-            if (d.mileageAtReturn >= mileageBefore) {
+            // Защита от опечатки: пробег должен только расти. Меньшее
+            // значение записываем лишь когда оператор явно отметил, что
+            // прежнее было ошибкой (13.10) — иначе не трогаем и логируем.
+            if (d.mileageAtReturn >= mileageBefore || d.mileageCorrection) {
               setVals.mileage = d.mileageAtReturn;
               mileageAfter = d.mileageAtReturn;
             } else {
@@ -1799,6 +1809,20 @@ export async function rentalsRoutes(app: FastifyInstance) {
               after: result.mileageAfter,
               delta: result.mileageAfter - result.mileageBefore,
               rentalId: id,
+            },
+          });
+        } else if (result.mileageAfter < result.mileageBefore) {
+          // 13.10: оператор отметил, что прежний пробег был ошибкой.
+          await logActivity(req, {
+            entity: "scooter",
+            entityId: result.scooterId,
+            action: "mileage_corrected",
+            summary: `Пробег исправлен при возврате аренды #${id}: ${result.mileageBefore.toLocaleString("ru-RU")} → ${result.mileageAfter.toLocaleString("ru-RU")} км (прежнее значение — ошибка)`,
+            meta: {
+              before: result.mileageBefore,
+              after: result.mileageAfter,
+              rentalId: id,
+              diff: { mileage: { from: result.mileageBefore, to: result.mileageAfter } },
             },
           });
         } else if (

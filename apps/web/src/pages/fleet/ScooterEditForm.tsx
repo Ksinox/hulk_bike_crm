@@ -73,6 +73,8 @@ export function ScooterEditForm({
   const [number, setNumber] = useState(initialNumber);
 
   const [mileage, setMileage] = useState(String(scooter.mileage));
+  /** 13.10: потолок пробега — как на сервере. */
+  const mileageTooBig = Number(mileage) > 1_000_000;
   const [engineNo, setEngineNo] = useState(scooter.engineNo ?? "");
   // Номер рамы / шасси — он же VIN. Если в БД лежит legacy-VIN без
   // frameNumber, инициализируем им (одно физическое значение, разные
@@ -281,8 +283,19 @@ export function ScooterEditForm({
                 type="number"
                 value={mileage}
                 onChange={(e) => setMileage(e.target.value)}
-                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[14px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
+                className={cn(
+                  "h-10 w-full rounded-[10px] border bg-surface px-3 text-[14px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600",
+                  mileageTooBig ? "border-red-ink/50 bg-red-soft/30" : "border-border",
+                )}
               />
+              {/* 13.10: у Gear №4 сидело 45 674 567 км — с такой цифрой учёт
+                  пробега ломается навсегда (дальше всё «меньше текущего»). */}
+              {mileageTooBig && (
+                <div className="mt-1 text-[11px] font-semibold text-red-ink">
+                  Больше 1 000 000 км — похоже на лишние цифры. Посмотрите одометр
+                  и впишите верный пробег.
+                </div>
+              )}
             </Field>
 
             <Field label="Номер двигателя">
@@ -430,7 +443,8 @@ export function ScooterEditForm({
           <button
             type="button"
             onClick={handleSave}
-            className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-4 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-blue-700"
+            disabled={mileageTooBig}
+            className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-4 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Check size={13} /> Сохранить
           </button>

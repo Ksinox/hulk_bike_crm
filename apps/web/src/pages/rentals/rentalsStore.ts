@@ -66,6 +66,11 @@ export type ReturnInspection = {
   depositReturned: boolean;
   /** Пункт 4: причина возврата (обязательна в UI закрытия). */
   returnReason?: string | null;
+  /**
+   * Баг 13.10: оператор осознанно записывает пробег МЕНЬШЕ прежнего —
+   * прежний был ошибкой. Без флага сервер меньший пробег не принимает.
+   */
+  mileageCorrection?: boolean;
 };
 
 type State = {
@@ -122,6 +127,9 @@ function invAll() {
   // агрегат по всем арендам (дашборд, список, должники).
   queryClient.invalidateQueries({ queryKey: ["rental-debt"] });
   queryClient.invalidateQueries({ queryKey: ["debt-aggregate"] });
+  // 13.10: завершение/замена меняют у техники статус и пробег — перечитываем
+  // список сразу, а не через 30 секунд фонового обновления.
+  queryClient.invalidateQueries({ queryKey: ["scooters"] });
 }
 function logErr(op: string) {
   return (e: unknown) => console.error(`[${op}]`, e);
@@ -286,6 +294,7 @@ export function completeRentalNoDamage(
       equipmentOk: inspection.equipmentOk,
       depositReturned: inspection.depositReturned,
       mileageAtReturn: inspection.mileage,
+      ...(inspection.mileageCorrection ? { mileageCorrection: true } : {}),
       ...(inspection.returnReason ? { returnReason: inspection.returnReason } : {}),
       ...(scooterNextStatus ? { scooterNextStatus } : {}),
     })
@@ -314,6 +323,7 @@ export function completeRentalWithDamage(
       damageAmount,
       damageNotes: note ?? inspection.damageNotes ?? null,
       mileageAtReturn: inspection.mileage,
+      ...(inspection.mileageCorrection ? { mileageCorrection: true } : {}),
       ...(inspection.returnReason ? { returnReason: inspection.returnReason } : {}),
       ...(scooterNextStatus ? { scooterNextStatus } : {}),
     })

@@ -1584,6 +1584,7 @@ export function PaymentAcceptDialog({
               depositReturned: depositZachet === 0,
               damageNotes: "",
               mileage,
+              mileageCorrection: intake.mileageCorrectionForApi(),
             },
             0,
             "",
@@ -1599,6 +1600,7 @@ export function PaymentAcceptDialog({
               returnReason: intake.returnReason,
               depositReturned: true,
               mileage,
+              mileageCorrection: intake.mileageCorrectionForApi(),
             },
             scooterNext,
           );

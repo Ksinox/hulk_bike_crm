@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Bike, Check, FileText, Image as ImageIcon, UserRound, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Picker } from "@/components/ui/picker";
+import { CheckBox, Picker } from "@/components/ui/picker";
+import { MAX_MILEAGE } from "./returnIntake";
 import type { Rental } from "@/lib/mock/rentals";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
@@ -175,6 +176,8 @@ export function RentalActionDialog({
   // бизнесы ведут учёт пробега (для ТО / страховки). Пустое значение
   // не передаётся в API.
   const [mileageAtReturn, setMileageAtReturn] = useState<string>("");
+  /** Баг 13.10: меньший пробег записываем только явным «это исправление». */
+  const [mileageCorrection, setMileageCorrection] = useState(false);
   // v0.6.1: статус скутера после завершения аренды. По умолчанию
   // «обратно в парк». При наличии ущерба меняется на «в ремонт» автоматически
   // в effect-е ниже (до явного выбора оператора).
@@ -205,6 +208,11 @@ export function RentalActionDialog({
   // значение и оно молча отбросится бэком.
   const scooterQ = useApiScooter(rental.scooterId ?? null);
   const currentMileage = scooterQ.data?.mileage ?? null;
+  const mileageEntered = mileageAtReturn.trim() !== "";
+  const mileageTooBig = mileageEntered && Number(mileageAtReturn) > MAX_MILEAGE;
+  const mileageLower =
+    mileageEntered && currentMileage != null && Number(mileageAtReturn) < currentMileage;
+  const mileageNeedsDecision = mileageLower && !mileageCorrection;
   // v0.4.63: данные для аватарок и шапки.
   const modelsQ = useApiScooterModels();
   const equipmentQ = useApiEquipment();
@@ -259,6 +267,7 @@ export function RentalActionDialog({
     returnDate ? isoDateToRu(returnDate) : todayStr();
   const mileageForApi = () =>
     mileageAtReturn ? Number(mileageAtReturn) : undefined;
+  const mileageCorrectionForApi = () => mileageLower && mileageCorrection;
 
   // По-братски: manual_charge per item, без акта. Аренда → completed.
   const finalizeBrotherly = async () => {
@@ -302,6 +311,7 @@ export function RentalActionDialog({
           equipmentOk: true,
           depositReturned: true,
           mileage: mileageForApi(),
+          mileageCorrection: mileageCorrectionForApi(),
         },
         scooterNextStatus,
       );
@@ -378,6 +388,7 @@ export function RentalActionDialog({
           depositReturned: false,
           damageNotes: "",
           mileage: mileageForApi(),
+          mileageCorrection: mileageCorrectionForApi(),
         },
         0,
         "",
@@ -584,7 +595,7 @@ export function RentalActionDialog({
                 </label>
                 <input
                   type="number"
-                  min={currentMileage ?? 0}
+                  min={0}
                   value={mileageAtReturn}
                   onChange={(e) => setMileageAtReturn(e.target.value)}
                   placeholder={
@@ -596,27 +607,44 @@ export function RentalActionDialog({
                 />
               </div>
             </div>
-            {currentMileage != null && mileageAtReturn && (
-              <div className="-mt-2 text-[11px] text-muted-2">
-                {Number(mileageAtReturn) > currentMileage && (
-                  <>
-                    Пробег скутера обновится:{" "}
-                    <b className="text-ink tabular-nums">
-                      {currentMileage.toLocaleString("ru-RU")}
-                    </b>{" "}
-                    →{" "}
-                    <b className="text-ink tabular-nums">
-                      {Number(mileageAtReturn).toLocaleString("ru-RU")}
-                    </b>{" "}
-                    км (+{(Number(mileageAtReturn) - currentMileage).toLocaleString("ru-RU")}).
-                  </>
-                )}
-                {Number(mileageAtReturn) > 0 &&
-                  Number(mileageAtReturn) < currentMileage && (
-                    <span className="text-orange-ink">
-                      ⚠ Введённое значение меньше текущего ({currentMileage.toLocaleString("ru-RU")} км) — изменение игнорируется.
-                    </span>
-                  )}
+            {mileageTooBig && (
+              <div className="-mt-2 text-[11px] font-semibold text-red-ink">
+                Больше {MAX_MILEAGE.toLocaleString("ru-RU")} км — проверьте, нет ли лишних цифр.
+              </div>
+            )}
+            {currentMileage != null &&
+              mileageAtReturn &&
+              !mileageTooBig &&
+              Number(mileageAtReturn) > currentMileage && (
+                <div className="-mt-2 text-[11px] text-muted-2">
+                  Пробег скутера обновится:{" "}
+                  <b className="text-ink tabular-nums">
+                    {currentMileage.toLocaleString("ru-RU")}
+                  </b>{" "}
+                  →{" "}
+                  <b className="text-ink tabular-nums">
+                    {Number(mileageAtReturn).toLocaleString("ru-RU")}
+                  </b>{" "}
+                  км (+{(Number(mileageAtReturn) - currentMileage).toLocaleString("ru-RU")}).
+                </div>
+              )}
+            {/* Баг 13.10: меньший пробег больше не отбрасывается молча. */}
+            {mileageLower && currentMileage != null && (
+              <div className="rounded-[12px] border border-orange-300 bg-orange-soft/30 px-3 py-2.5">
+                <div className="text-[12.5px] font-semibold text-orange-ink">
+                  В системе записано {currentMileage.toLocaleString("ru-RU")} км — больше,
+                  чем вы ввели.
+                </div>
+                <div className="mt-0.5 text-[12px] leading-snug text-ink-2">
+                  Проверьте одометр. Если в системе была ошибка, отметьте исправление —
+                  пробег перезапишется, в хронологии останется запись было → стало.
+                </div>
+                <CheckBox
+                  className="mt-1.5"
+                  checked={mileageCorrection}
+                  onChange={setMileageCorrection}
+                  label={`Это исправление — записать ${Number(mileageAtReturn).toLocaleString("ru-RU")} км`}
+                />
               </div>
             )}
 
@@ -759,6 +787,8 @@ export function RentalActionDialog({
         blocked: (() => {
           if (hasOpenDebt) return false; // кнопка активна — открываем PaymentAcceptDialog
           if (!allDecided) return true;
+          // 13.10: дикий пробег или меньший без решения — не завершаем.
+          if (mileageTooBig || mileageNeedsDecision) return true;
           if (cardStates[scooterCard] === "problem" && scooterDamages.length === 0)
             return true;
           if (!allEquipmentProblemsFilled) return true;
@@ -822,6 +852,7 @@ export function RentalActionDialog({
               equipmentOk: true,
               depositReturned: true,
               mileage: mileageAtReturn ? Number(mileageAtReturn) : undefined,
+              mileageCorrection: mileageCorrectionForApi(),
             },
             scooterNextStatus,
           );
