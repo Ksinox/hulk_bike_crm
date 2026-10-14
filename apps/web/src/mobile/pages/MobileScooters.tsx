@@ -33,6 +33,7 @@ import {
   parseScooterNumberQuery,
 } from "@/lib/search";
 import { cn } from "@/lib/utils";
+import { compareByRentalNumber } from "@/lib/scooterOrder";
 import {
   MobileChips,
   MobileSheet,
@@ -209,7 +210,9 @@ export function MobileScooters() {
           const d = rank(a) - rank(b);
           if (d !== 0) return d;
         }
-        return a.name.localeCompare(b.name, "ru", { numeric: true });
+        // 13.10: по арендному номеру — раньше шли по алфавиту модели (все
+        // Gear, потом все Jog), и Gear №24 «терялся» между Jog 20 и 27.
+        return compareByRentalNumber(a, b);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, goneList, filter, search, rentedSet, modelFilter]);
