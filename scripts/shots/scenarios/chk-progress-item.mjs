@@ -36,13 +36,14 @@ export async function run(page, ctx) {
     return true;
   }, item);
   await ctx.sleep(2500);
-  const info = await page.evaluate((title) => {
+  const imgRx = process.env.IMG ?? "v207-sort";
+  const info = await page.evaluate((title, rx) => {
     const btn = [...document.querySelectorAll("button")].find((b) => (b.textContent || "").includes(title));
     btn?.scrollIntoView({ block: "start" });
     window.scrollBy(0, -80);
-    const imgs = [...document.querySelectorAll("img")].filter((i) => /v207-sort/.test(i.src));
+    const imgs = [...document.querySelectorAll("img")].filter((i) => new RegExp(rx).test(i.src));
     return { картинок: imgs.length, загружены: imgs.filter((i) => i.complete && i.naturalWidth > 0).length };
-  }, item);
+  }, item, imgRx);
   console.log("пункт:", found, JSON.stringify(info));
   await ctx.sleep(800);
   await ctx.shot(`item-${phase}`, { jpeg: true });
