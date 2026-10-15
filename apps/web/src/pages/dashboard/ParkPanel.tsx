@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
-import { Bike, Minus, Plus } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { Bike, Minus, Plus, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { compareByRentalNumber } from "@/lib/scooterOrder";
+import { NUMBER_ROWS, compareByRentalNumber, numberRow } from "@/lib/scooterOrder";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { ElectricMark, NoNumberMark, PetrolMark } from "@/components/PowerTypeBadge";
 import { Card } from "./KpiCard";
 import { useApiRentals } from "@/lib/api/rentals";
 import { useApiScooters, usePatchScooter } from "@/lib/api/scooters";
@@ -75,6 +77,12 @@ export function ParkPanel({
   // поле model, где SEM и AIMA числились «Jog»).
   const [models, setModels] = useState<Set<string>>(() => new Set());
   const modelName = useModelName();
+  /** Электро-модели каталога — молния у техники без номера (15.10). */
+  const { data: modelsCatalog = [] } = useApiScooterModels();
+  const electricModelIds = useMemo(
+    () => new Set(modelsCatalog.filter((m) => m.isElectric).map((m) => m.id)),
+    [modelsCatalog],
+  );
   const [statuses, setStatuses] = useState<Set<ParkStatusId>>(() => new Set());
   const toggleModel = (id: string) =>
     setModels((prev) => {
@@ -168,6 +176,17 @@ export function ParkPanel({
         // Правка 24.08: на плитке показываем АРЕНДНЫЙ номер, а не «#NN»
         // из имени (историческая нумерация заведения).
         rentalSlot: s.rentalSlot ?? null,
+        /**
+         * 15.10 (заказчик): «после 70 снова 1, 2, 3 — непонятно». Плитки
+         * делятся на ряды: бензин, электро (своя нумерация, молния на
+         * плитке) и техника без номера.
+         */
+        row: numberRow(s),
+        electric:
+          s.rentalSlot != null
+            ? s.slotPool === "electric"
+            : s.modelId != null && electricModelIds.has(s.modelId),
+        exSlot: s.exRentalSlot ?? null,
         status: computeTileStatus(s, activeByScooter.get(s.id), {
           isOverdue,
           hasDamage,
@@ -188,6 +207,7 @@ export function ParkPanel({
     metrics.damageDebtRentalByScooter,
     metrics.returnsTodayRentalByScooter,
     metrics.anyActiveRentalByScooter,
+    electricModelIds,
   ]);
 
   const modelCounts = useMemo(() => {
@@ -223,6 +243,24 @@ export function ParkPanel({
   }, [tiles]);
 
   const total = tiles.length;
+
+  /**
+   * Плитки по рядам с подписью в начале каждого ряда. Подписи — только
+   * когда рядов больше одного: в чисто бензиновом парке они лишние.
+   */
+  const gridItems = useMemo(() => {
+    const shown = tiles.filter((t) => models.size === 0 || models.has(t.modelKey));
+    const present = NUMBER_ROWS.filter((r) => shown.some((t) => t.row === r.key));
+    const withHeads = present.length > 1;
+    return present.flatMap((r, ri) => {
+      const list = shown.filter((t) => t.row === r.key);
+      return list.map((t, i) => ({
+        t,
+        head:
+          withHeads && i === 0 ? { row: r, count: list.length, first: ri === 0 } : null,
+      }));
+    });
+  }, [tiles, models]);
 
   if (total === 0) {
     return (
@@ -284,9 +322,7 @@ export function ParkPanel({
         className="grid gap-1.5"
         style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
       >
-        {tiles.map((s) => {
-          const modelMatch = models.size === 0 || models.has(s.modelKey);
-          if (!modelMatch) return null;
+        {gridItems.map(({ t: s, head }) => {
           // v0.4.59: фильтр «активная аренда» — все скутеры у которых
           // есть аренда в работе (rented + overdue + late_today +
           // returning), а не строго status==='rented'. Логика как в
@@ -311,10 +347,7 @@ export function ParkPanel({
                 : s.status === st;
           const statusMatch =
             statuses.size === 0 || [...statuses].some(matchOneStatus);
-          const num =
-            s.rentalSlot != null
-              ? String(s.rentalSlot)
-              : (s.name.split("#")[1] ?? s.name);
+          const num = String(s.rentalSlot ?? "");
           const handleClick = () => {
             // Клик в зависимости от статуса — разные операционные действия.
             // v0.3.1: late_today тоже открывает аренду (это активная аренда
@@ -350,9 +383,31 @@ export function ParkPanel({
           // перекрывал стилизованную hover-карточку. Все подсказки
           // рендерим через ParkTileHoverCard.
           return (
+            <Fragment key={s.id}>
+            {head && (
+              <div
+                style={{ gridColumn: "1 / -1" }}
+                className={cn(
+                  "flex min-w-0 items-center gap-2 pb-0.5 text-[12.5px] font-semibold text-ink",
+                  !head.first && "mt-2.5",
+                )}
+              >
+                {head.row.key === "electric" ? (
+                  <ElectricMark size="sm" />
+                ) : head.row.key === "petrol" ? (
+                  <PetrolMark size="sm" />
+                ) : (
+                  <NoNumberMark />
+                )}
+                <span>{head.row.label}</span>
+                <span className="tabular-nums text-muted-2">· {head.count}</span>
+                {head.row.hint && (
+                  <span className="truncate font-normal text-muted-2">— {head.row.hint}</span>
+                )}
+              </div>
+            )}
             <button
               type="button"
-              key={s.id}
               onClick={handleClick}
               onMouseEnter={(e) => hover.onEnter(e, s.id)}
               onMouseLeave={hover.onLeave}
@@ -377,7 +432,33 @@ export function ParkPanel({
                   aria-hidden
                 />
               )}
-              <span className="relative z-[1]">{num}</span>
+              {s.row === "none" ? (
+                // Без номера: «решётка» из имени (1001, 1002…) путала с
+                // номерами — показываем модель, ниже бывший номер, если был.
+                <span className="relative z-[1] flex min-w-0 max-w-full flex-col items-center px-1 leading-tight">
+                  <span className="inline-flex max-w-full items-center gap-0.5 text-[10px]">
+                    {s.electric && (
+                      <Zap size={9} strokeWidth={2.6} className="shrink-0 fill-current" />
+                    )}
+                    <span className="truncate">{s.modelLabel}</span>
+                  </span>
+                  {s.exSlot != null && (
+                    <span className="text-[9px] font-medium opacity-70">был {s.exSlot}</span>
+                  )}
+                </span>
+              ) : (
+                <span className="relative z-[1] inline-flex items-center gap-0.5 tabular-nums">
+                  {s.electric && (
+                    <Zap
+                      size={10}
+                      strokeWidth={2.6}
+                      className="shrink-0 fill-current"
+                      aria-label="электро"
+                    />
+                  )}
+                  {num}
+                </span>
+              )}
               {/* Мигающий индикатор «возврат сегодня» — маленький кружок
                   в правом верхнем углу. На красных/синих плитках работает
                   с белой обводкой для контраста. */}
@@ -388,6 +469,7 @@ export function ParkPanel({
                 />
               )}
             </button>
+            </Fragment>
           );
         })}
       </div>
