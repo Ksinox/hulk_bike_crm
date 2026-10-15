@@ -17,11 +17,26 @@ export type RentalNumbered = {
   exRentalSlot?: number | null;
 };
 
-/** Ряд: 0 — бензин с номером, 1 — электро с номером, 2 — без номера. */
-function row(s: RentalNumbered): number {
-  if (s.rentalSlot == null) return 2;
-  return s.slotPool === "electric" ? 1 : 0;
+/** Ряд номера: бензин и электро нумеруются раздельно, третий — без номера. */
+export type NumberRow = "petrol" | "electric" | "none";
+
+export function numberRow(s: RentalNumbered): NumberRow {
+  if (s.rentalSlot == null) return "none";
+  return s.slotPool === "electric" ? "electric" : "petrol";
 }
+
+/**
+ * Ряды с подписями — для плиток парка (15.10, заказчик: «после 70 снова
+ * 1, 2, 3 — непонятно»). Порядок рядов = порядок сортировки.
+ */
+export const NUMBER_ROWS: { key: NumberRow; label: string; hint?: string }[] = [
+  { key: "petrol", label: "Бензин" },
+  { key: "electric", label: "Электро" },
+  { key: "none", label: "Без номера", hint: "вне арендного парка" },
+];
+
+const ROW_ORDER: Record<NumberRow, number> = { petrol: 0, electric: 1, none: 2 };
+const row = (s: RentalNumbered) => ROW_ORDER[numberRow(s)];
 
 export function compareByRentalNumber(
   a: RentalNumbered,
