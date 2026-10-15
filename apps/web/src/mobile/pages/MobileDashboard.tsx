@@ -8,6 +8,7 @@ import {
   Maximize2,
   Phone,
   Wallet,
+  Zap,
 } from "lucide-react";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { useScooterNaming } from "@/lib/scooterNaming";
@@ -34,7 +35,9 @@ import {
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import { compareByRentalNumber } from "@/lib/scooterOrder";
+import { NUMBER_ROWS, compareByRentalNumber, numberRow } from "@/lib/scooterOrder";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { ElectricMark, NoNumberMark, PetrolMark } from "@/components/PowerTypeBadge";
 import { useTabletLayout } from "@/lib/useIsMobile";
 import { TABLET_MASONRY_2 } from "../tablet";
 import {
@@ -699,10 +702,27 @@ function parkTileOf(s: ApiScooter, m: DashboardMetrics): ParkTile {
 
 function MobileParkGrid({ metrics }: { metrics: DashboardMetrics }) {
   const { data: scooters = [] } = useApiScooters();
+  const { data: modelsCatalog = [] } = useApiScooterModels();
+  const electricModels = new Set(modelsCatalog.filter((m) => m.isElectric).map((m) => m.id));
   const live = scooters.filter((s) => !s.archivedAt && !s.deletedAt);
+  // 15.10: ряды как на компьютере — бензин, электро (молния на квадрате),
+  // без номера; у бензина и электро своя нумерация.
   const tiles = [...live]
     .sort((a, b) => compareByRentalNumber(a, b))
-    .map((s) => ({ id: s.id, name: s.name, status: parkTileOf(s, metrics) }));
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      status: parkTileOf(s, metrics),
+      row: numberRow(s),
+      electric:
+        s.rentalSlot != null
+          ? s.slotPool === "electric"
+          : s.modelId != null && electricModels.has(s.modelId),
+    }));
+  const rows = NUMBER_ROWS.map((r) => ({ ...r, list: tiles.filter((t) => t.row === r.key) })).filter(
+    (r) => r.list.length > 0,
+  );
+  const withHeads = rows.length > 1;
 
   const counts = tiles.reduce<Record<string, number>>((acc, t) => {
     acc[t.status] = (acc[t.status] ?? 0) + 1;
@@ -715,13 +735,41 @@ function MobileParkGrid({ metrics }: { metrics: DashboardMetrics }) {
         Парк · {live.length} скутеров
       </div>
       {/* Сетка цветных квадратов — по одному на скутер, цвет = состояние. */}
-      <div className="flex flex-wrap gap-1.5">
-        {tiles.map((t) => (
-          <span
-            key={t.id}
-            title={t.name}
-            className={cn("h-7 w-7 rounded-[7px]", PARK_TILE_CLS[t.status])}
-          />
+      <div className="flex flex-col gap-2.5">
+        {rows.map((r) => (
+          <div key={r.key}>
+            {withHeads && (
+              <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[12px] font-semibold text-ink">
+                {r.key === "electric" ? (
+                  <ElectricMark size="sm" />
+                ) : r.key === "petrol" ? (
+                  <PetrolMark size="sm" />
+                ) : (
+                  <NoNumberMark />
+                )}
+                <span>{r.label}</span>
+                <span className="tabular-nums text-muted-2">· {r.list.length}</span>
+                {r.hint && (
+                  <span className="truncate font-normal text-muted-2">— {r.hint}</span>
+                )}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-1.5">
+              {r.list.map((t) => (
+                <span
+                  key={t.id}
+                  title={t.name}
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-[7px]",
+                    PARK_TILE_CLS[t.status],
+                    t.status === "ready" || t.status === "sold" ? "text-muted-2" : "text-white",
+                  )}
+                >
+                  {t.electric && <Zap size={12} strokeWidth={2.6} className="fill-current" />}
+                </span>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
       {/* Легенда со счётчиками — только присутствующие статусы. */}

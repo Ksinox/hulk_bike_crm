@@ -1,4 +1,4 @@
-import { Bike, Fuel, Zap } from "lucide-react";
+import { Bike, CircleDashed, Fuel, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -78,6 +78,18 @@ export function PetrolMark({
           бензин
         </span>
       )}
+    </span>
+  );
+}
+
+/** Отметка ряда «без номера» (плитки парка) — в пару к канистре и молнии. */
+export function NoNumberMark() {
+  return (
+    <span
+      title="Без арендного номера"
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-soft text-muted-2"
+    >
+      <CircleDashed size={11} strokeWidth={2.2} />
     </span>
   );
 }
