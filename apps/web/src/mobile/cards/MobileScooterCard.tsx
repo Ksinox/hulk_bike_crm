@@ -28,7 +28,10 @@ import { ExNumberTag, ScooterName, scooterModelName } from "@/components/Scooter
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { STATUS_LABEL as RENTAL_STATUS_LABEL } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
-import { useRentals } from "@/pages/rentals/rentalsStore";
+import {
+  useScooterRentalHistory,
+  type ScooterHistoryRental,
+} from "@/pages/rentals/rentalsStore";
 import { navigate } from "@/app/navigationStore";
 import { ScooterEditForm } from "@/pages/fleet/ScooterEditForm";
 import { ScooterDocumentsTab } from "@/pages/fleet/ScooterDocumentsTab";
@@ -48,7 +51,6 @@ import { EntityNotes } from "@/components/EntityNotes";
 import { useCallClient } from "../call";
 import { toast } from "@/lib/toast";
 import { askArchiveReason } from "@/pages/fleet/archiveReason";
-import type { Rental } from "@/lib/mock/rentals";
 import type { ApiClient } from "@/lib/api/types";
 import { TABLET_CARD_COLUMNS, TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
 import { useModelName } from "@/lib/useModelName";
@@ -134,7 +136,6 @@ export function MobileScooterCard({
   onBack: () => void;
 }) {
   const modelName = useModelName();
-  const rentals = useRentals();
   const { data: apiClients } = useApiClients();
   const role = useRole();
   // 14.09: «Экономика» — закуп и окупаемость; без права на прибыль вкладки нет.
@@ -166,13 +167,15 @@ export function MobileScooterCard({
     }
   };
 
-  const scooterRentals = useMemo(
-    () => rentals.filter((r) => r.scooter === scooter.name),
-    [rentals, scooter.name],
+  // Все аренды скутера — с архивом и заменами (баг 17.10, как на компьютере).
+  const scooterRentals = useScooterRentalHistory(scooter);
+  const ownRentals = useMemo(
+    () => scooterRentals.filter((r) => !r.swappedOutAt),
+    [scooterRentals],
   );
   const activeRental = useMemo(
     () =>
-      scooterRentals.find(
+      ownRentals.find(
         (r) => r.status === "active" || r.status === "overdue" || r.status === "returning",
       ) ?? null,
     [scooterRentals],
@@ -200,7 +203,7 @@ export function MobileScooterCard({
   const lastOilChange = oilChanges[0] ?? null;
 
   // Экономика (как на десктопе)
-  const lifetimeRevenue = scooterRentals.reduce((s, r) => s + (r.sum || 0), 0);
+  const lifetimeRevenue = ownRentals.reduce((s, r) => s + (r.sum || 0), 0);
   const maintTotal = maintenanceList.reduce((s, m) => s + (m.amount || 0), 0);
   const purchase = scooter.purchasePrice || 0;
   const hasPurchasePrice = purchase > 0;
@@ -812,7 +815,7 @@ function ScooterHistoryList({
   clients,
   currentId,
 }: {
-  rentals: Rental[];
+  rentals: ScooterHistoryRental[];
   clients: ApiClient[];
   currentId?: number;
 }) {
@@ -851,7 +854,7 @@ function ScooterHistoryRow({
   client,
   isCurrent,
 }: {
-  r: Rental;
+  r: ScooterHistoryRental;
   client: ApiClient | null;
   isCurrent: boolean;
 }) {
@@ -868,19 +871,32 @@ function ScooterHistoryRow({
       <div className="min-w-0 flex-1">
         <div className="truncate text-[14px] font-bold text-ink">{client?.name ?? "—"}</div>
         <div className="mt-0.5 text-[12px] text-muted tabular-nums">
-          {r.start.slice(0, 5)} — {isCurrent ? "сейчас" : r.endPlanned.slice(0, 5)} · {r.days}{" "}
-          {daysWord(r.days)}
+          {r.swappedOutAt ? (
+            <>
+              {r.start.slice(0, 5)} — {new Date(r.swappedOutAt).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })} · заменён
+              {r.swappedToName ? ` на ${scooterModelName(r.swappedToName)}` : ""}
+            </>
+          ) : (
+            <>
+              {r.start.slice(0, 5)} — {isCurrent ? "сейчас" : r.endPlanned.slice(0, 5)} · {r.days}{" "}
+              {daysWord(r.days)}
+            </>
+          )}
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
-        <span className="font-bold tabular-nums text-ink">{fmt(r.sum)} ₽</span>
+        <span className="font-bold tabular-nums text-ink">
+          {r.swappedOutAt ? <span className="text-muted-2">—</span> : `${fmt(r.sum)} ₽`}
+        </span>
         <span
           className={cn(
             "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold",
-            STATUS_PILL_RENTAL[eff] ?? "bg-surface-soft text-muted",
+            r.swappedOutAt
+              ? "bg-orange-soft text-orange-ink"
+              : (STATUS_PILL_RENTAL[eff] ?? "bg-surface-soft text-muted"),
           )}
         >
-          {RENTAL_STATUS_LABEL[eff] ?? RENTAL_STATUS_LABEL[r.status]}
+          {r.swappedOutAt ? "Снят при замене" : (RENTAL_STATUS_LABEL[eff] ?? RENTAL_STATUS_LABEL[r.status])}
         </span>
       </div>
     </button>

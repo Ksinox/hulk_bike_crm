@@ -34,7 +34,10 @@ import { useCan } from "@/lib/permissions";
 import { type ScooterModel } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useApiClients } from "@/lib/api/clients";
-import { useRentals } from "@/pages/rentals/rentalsStore";
+import {
+  useScooterRentalHistory,
+  type ScooterHistoryRental,
+} from "@/pages/rentals/rentalsStore";
 import { navigate } from "@/app/navigationStore";
 import { ScooterEditForm } from "./ScooterEditForm";
 import { ScooterDocumentsTab } from "./ScooterDocumentsTab";
@@ -191,7 +194,6 @@ export function ScooterCard({
   drawerChrome?: boolean;
 }) {
   const modelName = useModelName();
-  const rentals = useRentals();
   const { data: apiClients } = useApiClients();
   const { data: cardModels = [] } = useApiScooterModels();
   const role = useRole();
@@ -232,10 +234,12 @@ export function ScooterCard({
     }
   };
 
-  // Все аренды по этому скутеру (включая историю)
-  const scooterRentals = useMemo(
-    () => rentals.filter((r) => r.scooter === scooter.name),
-    [rentals, scooter.name],
+  // Все аренды по этому скутеру — с архивом и заменами (баг 17.10).
+  const scooterRentals = useScooterRentalHistory(scooter);
+  /** Аренды, где скутер ездит до конца, — для дохода и дней (без снятых при замене). */
+  const ownRentals = useMemo(
+    () => scooterRentals.filter((r) => !r.swappedOutAt),
+    [scooterRentals],
   );
 
   /**
@@ -245,8 +249,8 @@ export function ScooterCard({
   const slotTimelineQ = useActivityTimeline("scooter", scooter.id, 200);
   const slotTimeline = slotTimelineQ.data?.items ?? [];
   const rentalSummary = useMemo(() => {
-    const daysTotal = scooterRentals.reduce((acc, r) => acc + (r.days ?? 0), 0);
-    const sumTotal = scooterRentals.reduce((acc, r) => acc + (r.sum ?? 0), 0);
+    const daysTotal = ownRentals.reduce((acc, r) => acc + (r.days ?? 0), 0);
+    const sumTotal = ownRentals.reduce((acc, r) => acc + (r.sum ?? 0), 0);
     const numbers = new Set<number>();
     if (scooter.rentalSlot != null) numbers.add(scooter.rentalSlot);
     if (scooter.exRentalSlot != null) numbers.add(scooter.exRentalSlot);
@@ -265,11 +269,11 @@ export function ScooterCard({
       sumTotal,
       numbers: [...numbers].filter((n) => Number.isFinite(n)).sort((a, b) => a - b),
     };
-  }, [scooterRentals, scooter.rentalSlot, scooter.exRentalSlot, slotTimeline]);
+  }, [scooterRentals, ownRentals, scooter.rentalSlot, scooter.exRentalSlot, slotTimeline]);
 
   const activeRental = useMemo(
     () =>
-      scooterRentals.find(
+      ownRentals.find(
         (r) =>
           r.status === "active" ||
           r.status === "overdue" ||
@@ -310,7 +314,7 @@ export function ScooterCard({
   const lastOilChange = oilChanges[0] ?? null;
 
   // Экономика — считается по реальным данным: сумма аренд + записи обслуживания из API.
-  const lifetimeRevenue = scooterRentals.reduce((s, r) => s + (r.sum || 0), 0);
+  const lifetimeRevenue = ownRentals.reduce((s, r) => s + (r.sum || 0), 0);
   const { data: maintenanceRows = [] } = useScooterMaintenance(scooter.id);
   const maintTotal = maintenanceRows.reduce((s, m) => s + (m.amount || 0), 0);
 
@@ -1990,7 +1994,7 @@ function HistoryTab({
   rentals,
   currentId,
 }: {
-  rentals: ReturnType<typeof useRentals>;
+  rentals: ScooterHistoryRental[];
   currentId?: number;
 }) {
   const { data: apiClients } = useApiClients();
@@ -2048,10 +2052,16 @@ function HistoryTab({
             <div>
               <div className="text-[13px] font-semibold text-ink tabular-nums">
                 {r.start.slice(0, 5)} —{" "}
-                {isCurrent ? "сейчас" : r.endPlanned.slice(0, 5)}
+                {r.swappedOutAt
+                  ? ruDayMonth(r.swappedOutAt)
+                  : isCurrent
+                    ? "сейчас"
+                    : r.endPlanned.slice(0, 5)}
               </div>
               <div className="text-[11px] text-muted-2">
-                {r.days} {daysWord(r.days)}
+                {r.swappedOutAt
+                  ? `заменён${r.swappedToName ? ` на ${scooterModelName(r.swappedToName)}` : ""}`
+                  : `${r.days} ${daysWord(r.days)}`}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -2062,17 +2072,20 @@ function HistoryTab({
                 {client?.name ?? "—"}
               </span>
             </div>
-            <div className="text-right text-[13px] font-bold tabular-nums text-ink">
-              {fmt(r.sum)} ₽
+            <div
+              className="text-right text-[13px] font-bold tabular-nums text-ink"
+              title={r.swappedOutAt ? "Аренда доезжала на другом скутере — сумма у него" : undefined}
+            >
+              {r.swappedOutAt ? <span className="text-muted-2">—</span> : `${fmt(r.sum)} ₽`}
             </div>
             <div>
               <span
                 className={cn(
                   "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold",
-                  s.tone,
+                  r.swappedOutAt ? "bg-orange-soft text-orange-ink" : s.tone,
                 )}
               >
-                {s.label}
+                {r.swappedOutAt ? "Снят при замене" : s.label}
               </span>
             </div>
             <ArrowRight size={14} className="text-muted-2" />
@@ -2089,6 +2102,12 @@ function Empty({ text }: { text: string }) {
       <div className="text-[13px] font-semibold text-ink-2">{text}</div>
     </div>
   );
+}
+
+/** «2026-10-17T…» → «17.10». */
+function ruDayMonth(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function daysWord(n: number): string {
