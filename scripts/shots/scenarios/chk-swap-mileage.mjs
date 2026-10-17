@@ -97,7 +97,7 @@ export async function run(page, ctx) {
 
   // Меньше записанного — предупреждение и «Это исправление».
   const stored0 = await page.evaluate(() => {
-    const m = document.body.innerText.match(/было ([\d\s ]+)/);
+    const m = document.body.innerText.match(/(?:было|записано) ([\d\s ]+)/);
     return m ? Number(m[1].replace(/\D/g, "")) : 0;
   });
   console.log("было:", stored0, "ввод меньше:", await typeMileage(String(Math.max(0, stored0 - 1000) || 5)));
@@ -114,7 +114,11 @@ export async function run(page, ctx) {
   await ctx.shot(`swap-${phase}-${tag}-4-ok`, { jpeg: true });
 
   if (phase === "desk") {
-    // Причина и новый скутер — кнопка становится активной (не нажимаем).
+    // Шаг 2: «Далее: новый скутер», причина и новый скутер — кнопка
+    // становится активной (не нажимаем).
+    await click(/^Далее: новый скутер/);
+    await ctx.sleep(900);
+    await ctx.shot(`swap-${phase}-${tag}-5-step2`, { jpeg: true });
     await click(/^Поломка$/);
     await ctx.sleep(400);
     console.log("плитка:", await pickTile());

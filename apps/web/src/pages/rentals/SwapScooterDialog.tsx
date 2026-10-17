@@ -26,7 +26,12 @@ import { ScooterPosterAvatar } from "./ScooterPosterAvatar";
 import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 import { useTabletLayout } from "@/lib/useIsMobile";
-import { MileageCorrectionBox, MileageField, useMileageCheck } from "./mileageCheck";
+import {
+  MileageCorrectionBox,
+  MileageField,
+  MileageHeroInput,
+  useMileageCheck,
+} from "./mileageCheck";
 
 type OldStatus = ScooterBaseStatus;
 
@@ -161,6 +166,12 @@ export function SwapScooterDialog({
    * пробег. Правила — как при приёмке (лишние цифры, меньше записанного).
    */
   const mileage = useMileageCheck(currentScooter?.mileage ?? null);
+  /**
+   * Компьютер: пробег — отдельный первый шаг (окно по центру), потом уже
+   * выбор нового скутера. Заказчик 17.10: поле в карточке терялось, а это
+   * главное действие — его нельзя не заметить.
+   */
+  const [mileageConfirmed, setMileageConfirmed] = useState(false);
   const mileageProblem = (): [string, string] | null =>
     mileage.missing
       ? ["Укажите пробег снятого скутера", "Он возвращается в парк — посмотрите одометр"]
@@ -670,6 +681,93 @@ export function SwapScooterDialog({
     );
   }
 
+  const km = (n: number) => n.toLocaleString("ru-RU");
+  const confirmMileage = () => {
+    const mp = mileageProblem();
+    if (mp) {
+      toast.error(mp[0], mp[1]);
+      return;
+    }
+    setMileageConfirmed(true);
+  };
+
+  // ============ КОМПЬЮТЕР, ШАГ 1: ПРОБЕГ СНЯТОГО СКУТЕРА ============
+  if (!mileageConfirmed) {
+    return (
+      <div
+        className={cn(
+          "fixed inset-0 z-[120] flex items-center justify-center bg-ink/55 p-4 backdrop-blur-sm",
+          closing ? "animate-backdrop-out" : "animate-backdrop-in",
+        )}
+      >
+        <div
+          className={cn(
+            "flex w-full max-w-[540px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+            closing ? "animate-modal-out" : "animate-modal-in",
+          )}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-[15px] font-semibold text-ink">
+                Замена скутера — аренда #{String(rental.id).padStart(4, "0")}
+              </div>
+              <div className="text-[12px] text-muted-2">Шаг 1 из 2 · пробег снятого скутера</div>
+            </div>
+            <button
+              type="button"
+              onClick={requestClose}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-border hover:text-ink"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-4 bg-white px-6 pb-5 pt-7">
+            <div className="flex items-center gap-4">
+              <ScooterPosterAvatar scooter={currentScooter} size="md" />
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                  Снимаем с аренды
+                </div>
+                <div className="mt-0.5 font-display text-[20px] font-extrabold leading-tight text-ink">
+                  <ScooterName
+                    name={rental.scooter}
+                    number={currentScooter?.rentalSlot ?? undefined}
+                    size="lg"
+                  />
+                </div>
+                <div className="mt-1 text-[13px] leading-snug text-muted">
+                  Скутер возвращается в парк — посмотрите одометр и запишите пробег.
+                </div>
+              </div>
+            </div>
+            <MileageHeroInput m={mileage} onEnter={confirmMileage} />
+            <MileageCorrectionBox m={mileage} />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-border bg-white px-5 py-3">
+            <button
+              type="button"
+              onClick={requestClose}
+              className="rounded-[10px] bg-surface-soft px-4 py-2.5 text-[13px] font-semibold text-ink-2 hover:bg-surface"
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              disabled={mileage.blocked}
+              onClick={confirmMileage}
+              className="inline-flex items-center gap-1.5 rounded-[10px] bg-blue-600 px-5 py-2.5 text-[13.5px] font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              Далее: новый скутер <ArrowRight size={15} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -692,7 +790,7 @@ export function SwapScooterDialog({
               {String(rental.id).padStart(4, "0")}
             </div>
             <div className="text-[12px] text-muted-2">
-              Подберите новый скутер из парка и обязательно укажите причину.
+              Шаг 2 из 2 · подберите новый скутер из парка и укажите причину.
             </div>
           </div>
           <button
@@ -731,8 +829,27 @@ export function SwapScooterDialog({
                   );
                 })()}
               </div>
-              <MileageField m={mileage} className="mt-2 w-[320px] max-w-full" />
-              <MileageCorrectionBox m={mileage} className="mt-2 max-w-[360px]" />
+              {mileage.forApi != null && (
+                <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-surface-soft px-3 py-1 text-[12px]">
+                  <span className="text-muted-2">Пробег при снятии</span>
+                  <span className="font-bold tabular-nums text-ink">{km(mileage.forApi)} км</span>
+                  {mileage.stored != null && mileage.forApi > mileage.stored && (
+                    <span className="font-semibold text-green-ink">
+                      +{km(mileage.forApi - mileage.stored)}
+                    </span>
+                  )}
+                  {mileage.correctionForApi && (
+                    <span className="font-semibold text-orange-ink">исправление</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setMileageConfirmed(false)}
+                    className="font-semibold text-blue-600 hover:underline"
+                  >
+                    Изменить
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
