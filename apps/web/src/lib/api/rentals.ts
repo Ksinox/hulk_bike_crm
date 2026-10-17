@@ -153,12 +153,21 @@ export function useSwapScooter() {
       oldScooterStatus?: ScooterBaseStatus;
       reason?: string;
       reasonCategory?: "breakdown" | "client_request" | "maintenance" | "other";
+      /** 17.10: пробег снятого скутера (он возвращается в парк). */
+      prevScooterMileage?: number;
+      prevScooterMileageCorrection?: boolean;
     }) =>
       api.post<ApiRental>(`/api/rentals/${args.rentalId}/swap-scooter`, {
         newScooterId: args.newScooterId,
         oldScooterStatus: args.oldScooterStatus ?? "repair",
         ...(args.reason ? { reason: args.reason } : {}),
         ...(args.reasonCategory ? { reasonCategory: args.reasonCategory } : {}),
+        ...(args.prevScooterMileage != null
+          ? { prevScooterMileage: args.prevScooterMileage }
+          : {}),
+        ...(args.prevScooterMileageCorrection
+          ? { prevScooterMileageCorrection: true }
+          : {}),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: rentalsKeys.all });
