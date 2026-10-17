@@ -26,6 +26,7 @@ import { ScooterPosterAvatar } from "./ScooterPosterAvatar";
 import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 import { useTabletLayout } from "@/lib/useIsMobile";
+import { MileageCorrectionBox, MileageField, useMileageCheck } from "./mileageCheck";
 
 type OldStatus = ScooterBaseStatus;
 
@@ -155,6 +156,19 @@ export function SwapScooterDialog({
         : null,
     [scooters, rental.scooterId],
   );
+  /**
+   * 17.10 (заказчик): снятый скутер возвращается в парк — спрашиваем его
+   * пробег. Правила — как при приёмке (лишние цифры, меньше записанного).
+   */
+  const mileage = useMileageCheck(currentScooter?.mileage ?? null);
+  const mileageProblem = (): [string, string] | null =>
+    mileage.missing
+      ? ["Укажите пробег снятого скутера", "Он возвращается в парк — посмотрите одометр"]
+      : mileage.tooBig
+        ? ["Проверьте пробег", "Больше 1 000 000 км — похоже на лишние цифры"]
+        : mileage.needsDecision
+          ? ["Пробег меньше записанного", "Поправьте цифры или отметьте, что это исправление"]
+          : null;
 
   // Доступные скутеры — только из парка аренды, исключая текущий
   // И исключая фактически занятые (есть открытая аренда). См. busyScooterIds.
@@ -235,6 +249,11 @@ export function SwapScooterDialog({
       );
       return;
     }
+    const mp = mileageProblem();
+    if (mp) {
+      toast.error(mp[0], mp[1]);
+      return;
+    }
     try {
       const updated = await swap.mutateAsync({
         rentalId: rental.id,
@@ -242,6 +261,8 @@ export function SwapScooterDialog({
         oldScooterStatus: oldStatus,
         reasonCategory,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
+        prevScooterMileage: mileage.forApi,
+        ...(mileage.correctionForApi ? { prevScooterMileageCorrection: true } : {}),
       });
       // Замена теперь in-place: API меняет scooterId в текущей аренде,
       // новой связки не создаётся. Возвращается обновлённый rental
@@ -254,7 +275,7 @@ export function SwapScooterDialog({
       toastRentalDone(
         rental,
         "Скутер заменён",
-        `Старый → «${statusLabel}». Печатайте акт приёма-передачи.`,
+        `Старый → «${statusLabel}»${mileage.forApi != null ? `, пробег ${mileage.forApi.toLocaleString("ru-RU")} км` : ""}. Печатайте акт приёма-передачи.`,
       );
       const previewId = updated?.id ?? rental.id;
       requestClose();
@@ -271,10 +292,10 @@ export function SwapScooterDialog({
   if (isMobile) {
     const STEP_TITLES = ["Старый скутер", "Причина", "Новый скутер", "Проверка"];
     const stepValid = [
-      true,
+      !mileage.blocked,
       !!reasonCategory,
       !!selectedId,
-      !!selectedId && !!reasonCategory,
+      !!selectedId && !!reasonCategory && !mileage.blocked,
     ];
     const modelNameOf = (sc: ApiScooter | null) => {
       if (!sc) return "—";
@@ -285,7 +306,10 @@ export function SwapScooterDialog({
       step === 0 ? requestClose() : setStep((s) => Math.max(0, s - 1));
     const goNext = () => {
       if (!stepValid[step]) {
-        if (step === 1) {
+        const mp = step === 0 ? mileageProblem() : null;
+        if (mp) {
+          toast.error(mp[0], mp[1]);
+        } else if (step === 1) {
           setCategoryError(true);
           toast.error("Укажите причину замены", "Выберите вариант ниже");
         } else if (step === 2) {
@@ -376,7 +400,8 @@ export function SwapScooterDialog({
         <div className="flex-1 overflow-y-auto p-4">
           {step === 0 && (
             <div>
-              <div className="mb-4 flex items-center gap-3 rounded-2xl border border-border bg-white p-3">
+              <div className={cn("mb-4", tabletLayout ? "grid grid-cols-2 items-stretch gap-3" : "flex flex-col gap-3")}>
+              <div className="flex items-center gap-3 rounded-2xl border border-border bg-white p-3">
                 <ScooterPosterAvatar scooter={currentScooter} size="md" />
                 <div className="min-w-0">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
@@ -392,12 +417,12 @@ export function SwapScooterDialog({
                   <div className="text-[12px] text-muted-2">
                     {modelNameOf(currentScooter)}
                   </div>
-                  {currentScooter?.mileage != null && (
-                    <div className="text-[11px] text-muted-2">
-                      Пробег: {currentScooter.mileage.toLocaleString("ru-RU")} км
-                    </div>
-                  )}
                 </div>
+              </div>
+              <div className="flex flex-col justify-center gap-2 rounded-2xl border border-border bg-white p-3">
+                <MileageField m={mileage} touch />
+                <MileageCorrectionBox m={mileage} />
+              </div>
               </div>
               <div className="mb-2 text-[13px] font-bold text-ink">
                 Что делаем со старым скутером?
@@ -575,6 +600,12 @@ export function SwapScooterDialog({
                 </div>
                 <dl className="border-t border-border">
                   <SwapSummaryRow label="Старый скутер →" value={statusLabel} />
+                  {mileage.forApi != null && (
+                    <SwapSummaryRow
+                      label="Пробег снятого"
+                      value={`${mileage.forApi.toLocaleString("ru-RU")} км${mileage.correctionForApi ? " (исправление)" : ""}`}
+                    />
+                  )}
                   <SwapSummaryRow label="Причина" value={reasonLabel} />
                   {reason.trim() && (
                     <SwapSummaryRow label="Комментарий" value={reason.trim()} />
@@ -623,7 +654,7 @@ export function SwapScooterDialog({
             <button
               type="button"
               onClick={submit}
-              disabled={!selectedId || swap.isPending}
+              disabled={!selectedId || mileage.blocked || swap.isPending}
               className={cn(
                 "flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-[14px] font-bold text-white active:bg-blue-700 disabled:opacity-50",
                 tabletLayout && "h-14 flex-none min-w-[340px] text-[16px]",
@@ -700,11 +731,8 @@ export function SwapScooterDialog({
                   );
                 })()}
               </div>
-              {currentScooter?.mileage != null && (
-                <div className="mt-1 text-[11px] text-muted-2">
-                  Пробег: {currentScooter.mileage.toLocaleString("ru-RU")} км
-                </div>
-              )}
+              <MileageField m={mileage} className="mt-2 w-[320px] max-w-full" />
+              <MileageCorrectionBox m={mileage} className="mt-2 max-w-[360px]" />
             </div>
           </div>
 
@@ -908,7 +936,7 @@ export function SwapScooterDialog({
             </button>
             <button
               type="button"
-              disabled={!selectedId || swap.isPending}
+              disabled={!selectedId || mileage.blocked || swap.isPending}
               onClick={submit}
               className="inline-flex items-center gap-1.5 rounded-[10px] bg-blue-600 px-4 py-2 text-[13px] font-bold text-white hover:bg-blue-700 disabled:opacity-50"
             >
