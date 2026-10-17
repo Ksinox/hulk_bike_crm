@@ -2026,14 +2026,26 @@ function HistoryTab({
     return <Empty text="По этому скутеру ещё не было аренд" />;
   }
 
+  // Итог над списком — по арендам, где скутер ездил до конца (снятые при
+  // замене доезжали на другом скутере и в доход/дни не идут).
+  const own = sorted.filter((r) => !r.swappedOutAt);
+  const daysTotal = own.reduce((a, r) => a + (r.days ?? 0), 0);
+  const sumTotal = own.reduce((a, r) => a + (r.sum ?? 0), 0);
+
   return (
-    <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-      <div className="grid grid-cols-[1.4fr_1.6fr_1fr_1fr_auto] gap-4 border-b border-border bg-surface-soft/60 px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-        <span>Период</span>
-        <span>Клиент</span>
-        <span className="text-right">Сумма</span>
-        <span>Статус</span>
-        <span />
+    <div className="flex flex-col gap-2">
+      {/* 17.10: строки-карточки вместо таблицы на пять колонок — в узкой
+          карточке-дровере таблица ломала даты в столбик. */}
+      <div className="flex flex-wrap items-baseline gap-x-2 px-1 text-[12.5px] text-muted">
+        <span className="font-semibold text-ink">
+          {sorted.length} {plural(sorted.length, ["аренда", "аренды", "аренд"])}
+        </span>
+        <span>·</span>
+        <span className="tabular-nums">
+          {daysTotal} {daysWord(daysTotal)}
+        </span>
+        <span>·</span>
+        <span className="tabular-nums">доход {fmt(sumTotal)} ₽</span>
       </div>
       {sorted.map((r) => {
         const client = apiClients?.find((c) => c.id === r.clientId);
@@ -2042,58 +2054,64 @@ function HistoryTab({
         const eff = effectiveRentalStatus(r.status, r.endPlanned);
         const s = STATUS_LABEL[eff] ?? STATUS_LABEL[r.status] ?? STATUS_LABEL.completed;
         const isCurrent = r.id === currentId;
+        const swapped = !!r.swappedOutAt;
         return (
           <button
             key={r.id}
             type="button"
             onClick={() => navigate({ route: "rentals", rentalId: r.id })}
-            className="grid w-full grid-cols-[1.4fr_1.6fr_1fr_1fr_auto] items-center gap-4 border-b border-border/60 px-5 py-3.5 text-left transition-colors last:border-b-0 hover:bg-surface-soft/50"
+            className={cn(
+              "group flex w-full items-center gap-3 rounded-2xl border bg-surface px-4 py-3 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/30",
+              isCurrent ? "border-blue-300 bg-blue-50/40" : "border-border",
+            )}
           >
-            <div>
-              <div className="text-[13px] font-semibold text-ink tabular-nums">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-soft text-[12px] font-bold text-ink-2">
+              {client ? initials(client.name) : "?"}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[14px] font-semibold text-ink">
+                {client?.name ?? "—"}
+              </div>
+              <div className="mt-0.5 truncate text-[12px] tabular-nums text-muted">
+                <span className="text-muted-2">#{String(r.id).padStart(4, "0")}</span>
+                {" · "}
                 {r.start.slice(0, 5)} —{" "}
-                {r.swappedOutAt
-                  ? ruDayMonth(r.swappedOutAt)
+                {swapped
+                  ? ruDayMonth(r.swappedOutAt!)
                   : isCurrent
                     ? "сейчас"
                     : r.endPlanned.slice(0, 5)}
-              </div>
-              <div className="text-[11px] text-muted-2">
-                {r.swappedOutAt
+                {" · "}
+                {swapped
                   ? `снят${r.swappedToName ? ` → ${scooterModelName(r.swappedToName)}` : ""}`
                   : `${r.days} ${daysWord(r.days)}`}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-soft text-[11px] font-bold text-ink-2">
-                {client ? initials(client.name) : "?"}
-              </div>
-              <span className="truncate text-[13px] font-semibold text-ink">
-                {client?.name ?? "—"}
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <span
+                className="text-[14px] font-bold tabular-nums text-ink"
+                title={swapped ? "Аренда доезжала на другом скутере — сумма у него" : undefined}
+              >
+                {swapped ? <span className="text-muted-2">—</span> : `${fmt(r.sum)} ₽`}
               </span>
-            </div>
-            <div
-              className="text-right text-[13px] font-bold tabular-nums text-ink"
-              title={r.swappedOutAt ? "Аренда доезжала на другом скутере — сумма у него" : undefined}
-            >
-              {r.swappedOutAt ? <span className="text-muted-2">—</span> : `${fmt(r.sum)} ₽`}
-            </div>
-            <div>
               <span
                 className={cn(
                   "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold",
-                  r.swappedOutAt ? "bg-orange-soft text-orange-ink" : s.tone,
+                  swapped ? "bg-orange-soft text-orange-ink" : s.tone,
                 )}
                 title={
-                  r.swappedOutAt
+                  swapped
                     ? `Скутер сняли при замене${r.swappedToName ? ` на ${scooterModelName(r.swappedToName)}` : ""} — аренда доезжала на другом скутере`
                     : undefined
                 }
               >
-                {r.swappedOutAt ? "Заменён" : s.label}
+                {swapped ? "Заменён" : s.label}
               </span>
             </div>
-            <ArrowRight size={14} className="text-muted-2" />
+            <ArrowRight
+              size={15}
+              className="shrink-0 text-muted-2 transition-transform group-hover:translate-x-0.5"
+            />
           </button>
         );
       })}

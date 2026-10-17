@@ -71,3 +71,9 @@ square("swap-desk-was-1", (180, 27, 1260, 873), "d-swap-was")
 square("swap-desk-now-4-ok", (180, 27, 1260, 873), "d-swap-now")
 phone_crop("swap-phone-was-1", (0, 250, 780, 1150), "m-swap-was")
 phone_crop("swap-phone-now-4-ok", (0, 250, 780, 1150), "m-swap-now")
+
+# ── 5. История аренд в карточке скутера (дополнение к показу, 17.10) ──
+square("hist-desk-was", (862, 320, 1422, 900), "d-history-was")
+square("hist-desk-now", (862, 320, 1422, 900), "d-history-now")
+phone_crop("hist-phone-was", (0, 100, 780, 1000), "m-history-was")
+phone_crop("hist-phone-now", (0, 100, 780, 1000), "m-history-now")
