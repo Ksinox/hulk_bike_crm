@@ -39,12 +39,13 @@ export async function run(page, ctx) {
   // Открыть первую найденную строку/плитку.
   const opened = await page.evaluate((val) => {
     const r = new RegExp(val, "i");
+    // CLICK — что нажать в результатах (по умолчанию тот же текст, что в поиске).
     const el = [...document.querySelectorAll("button, [role=button], div[class*=cursor-pointer]")]
       .filter((x) => x.getBoundingClientRect().width > 0 && r.test(x.textContent || "") && /км|Открыть/.test(x.textContent || "") && !/Номер|VIN/.test(x.textContent || ""))
       .sort((a, b) => a.textContent.length - b.textContent.length)[0];
     el?.click();
     return el ? el.textContent.trim().slice(0, 60) : null;
-  }, q);
+  }, process.env.CLICK ?? q);
   console.log("скутер:", opened);
   await ctx.sleep(2500);
   // Вкладка «Аренды».
@@ -59,7 +60,7 @@ export async function run(page, ctx) {
   await ctx.sleep(2000);
   const text = await page.evaluate(() => {
     const t = document.body.innerText;
-    const i = t.search(/По этому скутеру ещё не было аренд|Период|Снят при замене/);
+    const i = t.search(/По этому скутеру ещё не было аренд|Период|Заменён/);
     return i < 0 ? "(не нашёл блок)" : t.slice(i, i + 400).replace(/\s+/g, " ");
   });
   console.log("история:", text);

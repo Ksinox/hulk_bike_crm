@@ -896,7 +896,7 @@ function ScooterHistoryRow({
               : (STATUS_PILL_RENTAL[eff] ?? "bg-surface-soft text-muted"),
           )}
         >
-          {r.swappedOutAt ? "Снят при замене" : (RENTAL_STATUS_LABEL[eff] ?? RENTAL_STATUS_LABEL[r.status])}
+          {r.swappedOutAt ? "Заменён" : (RENTAL_STATUS_LABEL[eff] ?? RENTAL_STATUS_LABEL[r.status])}
         </span>
       </div>
     </button>
