@@ -51,7 +51,7 @@ export async function run(page, ctx) {
     if (!st.карточка) break;
     await ctx.sleep(900);
     await ctx.shot(`tour209-${phase}-${i}`, { jpeg: true });
-    if (/^4 из|^(\d) из \1$/.test(st.счёт ?? "")) break;
+    if (/^(\d) из \1$/.test(st.счёт ?? "")) break;
     await click(/^Дальше/);
     await ctx.sleep(1100);
   }

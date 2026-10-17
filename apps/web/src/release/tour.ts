@@ -1067,6 +1067,25 @@ const RELEASE_2_0_9: ReleaseTourConfig = {
       },
       imgPos: { desktop: "center center", phone: "center top" },
     },
+    {
+      id: "scooter-history",
+      kind: "changed",
+      title: "История аренд скутера",
+      route: "fleet",
+      headline: "«Скутеры» → карточка → «Аренды»: все аренды этого скутера, включая прошлые периоды.",
+      why: "Вкладка была почти пустой: завершённые аренды раз в период уходят в архив, и история их не показывала. После замены аренда пропадала у снятого скутера.",
+      points: [
+        "Сверху итог: сколько аренд, дней и доход",
+        "Снятые при замене — с пометкой «Заменён» и в доход не идут",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R209}/d-history-was.jpg`, phone: `${R209}/m-history-was.jpg` },
+      img: { desktop: `${R209}/d-history-now.jpg`, phone: `${R209}/m-history-now.jpg` },
+      imgPos: { desktop: "center center", phone: "center top" },
+      // Слайд добавлен в уже вышедший показ: досмотревшие увидят только его.
+      addedAt: "2026-10-17T18:50:00+03:00",
+    },
   ],
 };
 
