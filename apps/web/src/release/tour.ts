@@ -979,6 +979,97 @@ const RELEASE_2_0_4: ReleaseTourConfig = {
   ],
 };
 
+const R209 = "/release/2.0.9";
+
+/**
+ * 2.0.9 (17.10): исправления по замечаниям заказчика из работы. Пробег при
+ * приёмке, порядок номеров и парк рядами выходили тихо (2.0.6–2.0.8) —
+ * заказчик попросил показать всё вместе, «чтобы точно увидели».
+ */
+const RELEASE_2_0_9: ReleaseTourConfig = {
+  version: "2.0.9",
+  label: "2.0.9",
+  major: false,
+  date: "2026-10-17",
+  subtitle: "Исправили то, что вы заметили в работе: пробег при приёмке и замене, порядок номеров, парк на главной.",
+  items: [
+    {
+      id: "intake-mileage",
+      kind: "changed",
+      title: "Пробег при приёмке",
+      route: "rentals",
+      headline: "Введённый при приёмке пробег больше не пропадает молча.",
+      why: "Пробег меньше записанного система тихо отбрасывала — «приняли», а у следующего клиента в карточке стояла старая цифра.",
+      points: [
+        "Меньше записанного — только с отметкой «Это исправление»",
+        "Больше 1 000 000 км не принимается — это лишние цифры",
+        "Исправление видно в хронологии скутера: было → стало",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R209}/d-intake-was.jpg`, phone: `${R209}/m-intake-was.jpg` },
+      img: { desktop: `${R209}/d-intake-now.jpg`, phone: `${R209}/m-intake-now.jpg` },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "sort-numbers",
+      kind: "changed",
+      title: "Скутеры по порядку номеров",
+      route: "fleet",
+      headline: "Списки техники идут по номеру: 1, 2, 3… — сначала бензиновые, потом электро.",
+      why: "На телефоне и планшете список шёл по названию модели: Gear отдельно, Jog отдельно — нужный номер «терялся» среди других (так было со скутером №24).",
+      points: [
+        "Так же — при выборе скутера в аренде и при замене",
+        "Техника без номера — в конце списка",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R209}/d-sort-was.jpg`, phone: `${R209}/m-sort-was.jpg` },
+      img: { desktop: `${R209}/d-sort-now.jpg`, phone: `${R209}/m-sort-now.jpg` },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "park-rows",
+      kind: "changed",
+      title: "Парк на главной рядами",
+      route: "dashboard",
+      headline: "Бензин, электро и техника без номера — отдельными рядами с подписью и количеством.",
+      why: "У бензина и электро своя нумерация с 1: в одном потоке после 70 снова шли 1, 2, 3, и было непонятно, где какая техника.",
+      points: [
+        "На каждой электро-плитке — молния",
+        "Без номера — модель вместо 1001, 1002…",
+        "Цвета и фильтры — как раньше",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R209}/d-park-was.jpg`, phone: `${R209}/m-park-was.jpg` },
+      img: { desktop: `${R209}/d-park-now.jpg`, phone: `${R209}/m-park-now.jpg` },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+    {
+      id: "swap-mileage",
+      kind: "changed",
+      title: "Пробег при замене скутера",
+      route: "rentals",
+      headline: "Снятый скутер возвращается в парк — при замене сначала записываем его пробег.",
+      why: "При замене пробег снятого скутера не спрашивали, и следующий клиент получал его со старой цифрой.",
+      points: [
+        "Компьютер: первый шаг окна замены — «Сколько на одометре?»",
+        "Телефон и планшет: на шаге «Старый скутер»",
+        "Правила те же, что при приёмке",
+      ],
+      audience: "all",
+      devices: ["desktop", "phone"],
+      before: { desktop: `${R209}/d-swap-was.jpg`, phone: `${R209}/m-swap-was.jpg` },
+      img: { desktop: `${R209}/d-swap-now.jpg`, phone: `${R209}/m-swap-now.jpg` },
+      zoom: {
+        desktop: { before: `${P}/v209-swap-desk-was.jpg`, after: `${P}/v209-swap-desk-ok-now.jpg` },
+      },
+      imgPos: { desktop: "center center", phone: "center top" },
+    },
+  ],
+};
+
 /** Все выпуски с показом — от старого к новому. */
 export const RELEASE_TOURS: ReleaseTourConfig[] = [
   RELEASE_2_0,
@@ -986,6 +1077,7 @@ export const RELEASE_TOURS: ReleaseTourConfig[] = [
   RELEASE_2_0_2,
   RELEASE_2_0_3,
   RELEASE_2_0_4,
+  RELEASE_2_0_9,
 ];
 
 /** Последний выпуск — для «кто посмотрел» и меток. */

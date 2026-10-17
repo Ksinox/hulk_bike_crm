@@ -92,7 +92,7 @@ export type ReturnIntake = ReturnType<typeof useReturnIntake>;
 /** Потолок пробега: больше — это лишние цифры, а не мопед (как в карточке скутера). */
 export const MAX_MILEAGE = 1_000_000;
 /** Рост за одну аренду больше этого — повод перепроверить цифры. */
-const BIG_JUMP_KM = 30_000;
+export const BIG_JUMP_KM = 30_000;
 
 export function useReturnIntake(rental: Rental, enabled: boolean) {
   const [cardStates, setCardStates] = useState<Record<string, CardState>>({});

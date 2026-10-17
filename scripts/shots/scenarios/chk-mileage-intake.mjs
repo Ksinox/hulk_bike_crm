@@ -7,14 +7,20 @@
 const IPAD_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
 
+const PHONE_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+
 export async function run(page, ctx) {
   const phase = process.env.PHASE ?? "desk";
   const client = process.env.CLIENT ?? "Алексей Смирнов";
   if (phase === "tablet") await page.setUserAgent(IPAD_UA);
+  if (phase === "phone") await page.setUserAgent(PHONE_UA);
   await page.setViewport(
     phase === "tablet"
       ? { width: 1180, height: 820, deviceScaleFactor: 1, isMobile: true, hasTouch: true }
-      : { width: 1440, height: 900, deviceScaleFactor: 1 },
+      : phase === "phone"
+        ? { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true }
+        : { width: 1440, height: 900, deviceScaleFactor: 1 },
   );
   await page.goto(ctx.base + "/", { waitUntil: "domcontentloaded" });
   await ctx.sleep(7000);
@@ -87,7 +93,7 @@ export async function run(page, ctx) {
   // если сначала спрашивают дату — подтверждаем
   await tap(/^Продолжить$/, 1500);
 
-  const tag = phase === "tablet" ? "t" : "d";
+  const tag = (phase === "tablet" ? "t" : phase === "phone" ? "m" : "d") + (process.env.TAG ? `-${process.env.TAG}` : "");
   console.log("ввод 45674567:", await typeMileage(45674567), JSON.stringify(await state()));
   await ctx.shot(`mil-${tag}-1-big`, { jpeg: true });
   console.log("ввод 5:", await typeMileage(5), JSON.stringify(await state()));

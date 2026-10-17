@@ -3282,6 +3282,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
           reasonCategory: z
             .enum(["breakdown", "client_request", "maintenance", "other"])
             .optional(),
+          /**
+           * 17.10 (заказчик): снятый скутер возвращается в парк — при замене
+           * спрашиваем его пробег. Правила те же, что при приёмке (13.10):
+           * лишние цифры не принимаем, меньше записанного — только с
+           * отметкой «исправление». Необязателен для старых клиентов.
+           */
+          prevScooterMileage: z
+            .number()
+            .int()
+            .min(0)
+            .max(1_000_000, "Пробег больше 1 000 000 км — проверьте, нет ли лишних цифр")
+            .optional(),
+          prevScooterMileageCorrection: z.boolean().optional(),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -3412,10 +3425,34 @@ export async function rentalsRoutes(app: FastifyInstance) {
         }
 
         // Старый скутер — в выбранный оператором статус (rental_pool/repair).
+        // 17.10: и пробег, который ввели при замене (правила — как при
+        // приёмке: меньшее значение только с отметкой «исправление»).
+        let prevMileageBefore: number | null = null;
+        let prevMileageAfter: number | null = null;
         if (prevScooterId) {
+          const setVals: Record<string, unknown> = {
+            baseStatus: d.oldScooterStatus,
+            updatedAt: sql`now()`,
+          };
+          if (d.prevScooterMileage != null) {
+            const [ps] = await tx
+              .select({ mileage: scooters.mileage })
+              .from(scooters)
+              .where(eq(scooters.id, prevScooterId));
+            prevMileageBefore = ps?.mileage ?? 0;
+            if (
+              d.prevScooterMileage >= prevMileageBefore ||
+              d.prevScooterMileageCorrection
+            ) {
+              setVals.mileage = d.prevScooterMileage;
+              prevMileageAfter = d.prevScooterMileage;
+            } else {
+              prevMileageAfter = prevMileageBefore; // не меняем
+            }
+          }
           await tx
             .update(scooters)
-            .set({ baseStatus: d.oldScooterStatus, updatedAt: sql`now()` })
+            .set(setVals)
             .where(eq(scooters.id, prevScooterId));
         }
 
@@ -3574,6 +3611,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
           mileageAtStartBefore,
           noteBefore,
           clientId: old.clientId,
+          prevMileageBefore,
+          prevMileageAfter,
         };
       });
 
@@ -3605,7 +3644,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
          * ремонт и выбыл из парка аренды. Именно так у заказчика «пропала»
          * единица из 62.
          */
-        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}: ${prevScooterName} → ${newScooterName}${catLabel ? ` · причина: ${catLabel}` : ""}${d.oldScooterStatus ? ` · снятый переведён в «${scooterStatusLabel(d.oldScooterStatus)}»` : ""}${result.feeAmount > 0 ? ` · доплата ${result.feeAmount} ₽` : ""}${result.canceledFee > 0 ? ` · погашен долг по замене ${result.canceledFee} ₽` : ""}${result.refundToDeposit > 0 ? ` · возврат ${result.refundToDeposit} ₽ в депозит` : ""}`,
+        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}: ${prevScooterName} → ${newScooterName}${catLabel ? ` · причина: ${catLabel}` : ""}${d.oldScooterStatus ? ` · снятый переведён в «${scooterStatusLabel(d.oldScooterStatus)}»` : ""}${result.prevMileageAfter != null ? ` · пробег снятого ${result.prevMileageAfter.toLocaleString("ru-RU")} км` : ""}${result.feeAmount > 0 ? ` · доплата ${result.feeAmount} ₽` : ""}${result.canceledFee > 0 ? ` · погашен долг по замене ${result.canceledFee} ₽` : ""}${result.refundToDeposit > 0 ? ` · возврат ${result.refundToDeposit} ₽ в депозит` : ""}`,
         // v0.8.14: «ревизорские» поля — кто на кого заменён, причина и куда
         // ушёл старый скутер (в ремонт / обратно в парк) на момент замены.
         meta: {
@@ -3628,6 +3667,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           mileageAtStartBefore: result.mileageAtStartBefore,
           noteBefore: result.noteBefore,
           clientId: result.clientId,
+          // 17.10: пробег снятого скутера — для хронологии и отката.
+          prevMileageBefore: result.prevMileageBefore,
+          prevMileageAfter: result.prevMileageAfter,
         },
         diff: {
           scooter: {
@@ -3636,6 +3678,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
             to: newScooterName,
             kind: "text",
           },
+          ...(result.prevMileageBefore != null && result.prevMileageAfter != null
+            ? {
+                prevMileage: {
+                  label: "Пробег снятого скутера",
+                  from: result.prevMileageBefore,
+                  to: result.prevMileageAfter,
+                  kind: "number",
+                  suffix: "км",
+                },
+              }
+            : {}),
           ...(result.feeAmount > 0
             ? {
                 fee: {
@@ -3668,6 +3721,57 @@ export async function rentalsRoutes(app: FastifyInstance) {
             : {}),
         },
       });
+
+      // 17.10: пробег снятого скутера — в его хронологию (как при возврате).
+      if (
+        result.prevScooterId &&
+        result.prevMileageBefore != null &&
+        result.prevMileageAfter != null
+      ) {
+        const rentalNo = String(id).padStart(4, "0");
+        if (result.prevMileageAfter > result.prevMileageBefore) {
+          await logActivity(req, {
+            entity: "scooter",
+            entityId: result.prevScooterId,
+            action: "mileage_updated",
+            summary: `Пробег: ${result.prevMileageBefore.toLocaleString("ru-RU")} → ${result.prevMileageAfter.toLocaleString("ru-RU")} км (+${(result.prevMileageAfter - result.prevMileageBefore).toLocaleString("ru-RU")}, снят при замене в аренде #${rentalNo})`,
+            meta: {
+              before: result.prevMileageBefore,
+              after: result.prevMileageAfter,
+              delta: result.prevMileageAfter - result.prevMileageBefore,
+              rentalId: id,
+            },
+          });
+        } else if (result.prevMileageAfter < result.prevMileageBefore) {
+          await logActivity(req, {
+            entity: "scooter",
+            entityId: result.prevScooterId,
+            action: "mileage_corrected",
+            summary: `Пробег исправлен при замене в аренде #${rentalNo}: ${result.prevMileageBefore.toLocaleString("ru-RU")} → ${result.prevMileageAfter.toLocaleString("ru-RU")} км (прежнее значение — ошибка)`,
+            meta: {
+              before: result.prevMileageBefore,
+              after: result.prevMileageAfter,
+              rentalId: id,
+              diff: { mileage: { from: result.prevMileageBefore, to: result.prevMileageAfter } },
+            },
+          });
+        } else if (
+          d.prevScooterMileage != null &&
+          d.prevScooterMileage < result.prevMileageBefore
+        ) {
+          await logActivity(req, {
+            entity: "scooter",
+            entityId: result.prevScooterId,
+            action: "mileage_skip",
+            summary: `Пробег при замене в аренде #${rentalNo} (${d.prevScooterMileage.toLocaleString("ru-RU")} км) меньше текущего (${result.prevMileageBefore.toLocaleString("ru-RU")} км) — не обновлён`,
+            meta: {
+              entered: d.prevScooterMileage,
+              current: result.prevMileageBefore,
+              rentalId: id,
+            },
+          });
+        }
+      }
 
       // Возвращаем актуальную аренду — фронту удобно показать обновлённый
       // scooterId без отдельного refetch.
@@ -5387,6 +5491,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
           noteBefore?: string | null;
           refundAmount?: number;
           clientId?: number | null;
+          prevMileageBefore?: number | null;
+          prevMileageAfter?: number | null;
           // parking
           sessionId?: number | null;
           before?: {
@@ -5450,6 +5556,23 @@ export async function rentalsRoutes(app: FastifyInstance) {
                 updatedAt: sql`now()`,
               })
               .where(eq(scooters.id, swapRow.prevScooterId));
+            // 17.10: пробег, введённый при замене, — обратно, если после
+            // замены его никто не менял.
+            if (
+              typeof meta.prevMileageBefore === "number" &&
+              typeof meta.prevMileageAfter === "number" &&
+              meta.prevMileageAfter !== meta.prevMileageBefore
+            ) {
+              await tx
+                .update(scooters)
+                .set({ mileage: meta.prevMileageBefore, updatedAt: sql`now()` })
+                .where(
+                  and(
+                    eq(scooters.id, swapRow.prevScooterId),
+                    eq(scooters.mileage, meta.prevMileageAfter),
+                  ),
+                );
+            }
           }
           // Возврат разницы (даунгрейд) уходил в депозит клиента — снимаем.
           if (
