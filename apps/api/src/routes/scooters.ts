@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, ilike, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { activityLog, appSettings, buyoutDeals, rentals, scooterModels, scooters, users } from "../db/schema.js";
+import { activityLog, appSettings, buyoutDeals, rentals, scooterModels, scooterSwaps, scooters, users } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
 import { requireDirectorApproval } from "./approvals.js";
@@ -508,6 +508,32 @@ export async function scootersRoutes(app: FastifyInstance) {
       .where(isNotNull(scooters.archivedAt))
       .orderBy(scooters.archivedAt);
     return { items: rows };
+  });
+
+  /**
+   * GET /api/scooters/:id/rental-history — на каких арендах ходил скутер
+   * (баг 17.10: вкладка «Аренды» в карточке скутера была пустой). Аренды,
+   * где он записан сейчас (в том числе ушедшие в архив), и замены, где его
+   * сняли или поставили. Сами аренды фронт берёт из общих списков.
+   */
+  app.get<{ Params: { id: string } }>("/:id/rental-history", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const own = await db
+      .select({ id: rentals.id })
+      .from(rentals)
+      .where(eq(rentals.scooterId, id));
+    const swaps = await db
+      .select({
+        rentalId: scooterSwaps.rentalId,
+        prevScooterId: scooterSwaps.prevScooterId,
+        newScooterId: scooterSwaps.newScooterId,
+        swapAt: scooterSwaps.swapAt,
+      })
+      .from(scooterSwaps)
+      .where(or(eq(scooterSwaps.prevScooterId, id), eq(scooterSwaps.newScooterId, id)))
+      .orderBy(asc(scooterSwaps.swapAt));
+    return { rentalIds: own.map((r) => r.id), swaps };
   });
 
   app.get<{ Params: { id: string } }>("/:id", async (req, reply) => {

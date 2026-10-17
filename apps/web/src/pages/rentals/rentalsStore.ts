@@ -772,6 +772,66 @@ export function useCurrentPeriodSums(rentalsForRows: Rental[]): Map<number, numb
   }, [rentalsForRows, paymentsQ.data, active, archived]);
 }
 
+/** Аренда в истории скутера; `swappedOutAt` — скутер сняли при замене. */
+export type ScooterHistoryRental = Rental & {
+  swappedOutAt?: string;
+  swappedToName?: string;
+};
+
+/**
+ * Все аренды скутера — для вкладки «Аренды» и итогов карточки (баг 17.10).
+ *
+ * Раньше брали только текущий список аренд и искали по имени: завершённые
+ * раз в период уходят в архив — история пустела (на проде 196 из 239 аренд
+ * в архиве); а после замены аренда «переезжала» на новый скутер и у
+ * снятого пропадала. Теперь — текущие и архивные по id скутера, плюс аренды,
+ * где его сняли при замене (с пометкой).
+ */
+export function useScooterRentalHistory(scooter: {
+  id: number;
+  name: string;
+}): ScooterHistoryRental[] {
+  const live = useRentals();
+  const archived = useArchivedRentals();
+  const { data: scooters } = useApiScooters();
+  const historyQ = useQuery({
+    queryKey: ["scooters", scooter.id, "rental-history"],
+    queryFn: () =>
+      api.get<{
+        rentalIds: number[];
+        swaps: {
+          rentalId: number;
+          prevScooterId: number | null;
+          newScooterId: number;
+          swapAt: string;
+        }[];
+      }>(`/api/scooters/${scooter.id}/rental-history`),
+  });
+  return useMemo(() => {
+    const all = new Map<number, Rental>();
+    for (const r of archived) all.set(r.id, r);
+    for (const r of live) all.set(r.id, r);
+    const ownIds = new Set(historyQ.data?.rentalIds ?? []);
+    const own: ScooterHistoryRental[] = [...all.values()].filter(
+      (r) => ownIds.has(r.id) || r.scooterId === scooter.id || r.scooter === scooter.name,
+    );
+    const ownSet = new Set(own.map((r) => r.id));
+    // Сняли при замене: последняя такая замена по аренде.
+    const out = new Map<number, ScooterHistoryRental>();
+    for (const s of historyQ.data?.swaps ?? []) {
+      if (s.prevScooterId !== scooter.id || ownSet.has(s.rentalId)) continue;
+      const r = all.get(s.rentalId);
+      if (!r) continue;
+      out.set(r.id, {
+        ...r,
+        swappedOutAt: s.swapAt,
+        swappedToName: scooters?.find((x) => x.id === s.newScooterId)?.name,
+      });
+    }
+    return [...own, ...out.values()];
+  }, [live, archived, scooters, historyQ.data, scooter.id, scooter.name]);
+}
+
 export function useRentalsByClient(clientId: number): Rental[] {
   const rentals = useRentals();
   return useMemo(
