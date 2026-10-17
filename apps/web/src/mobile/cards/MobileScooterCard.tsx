@@ -835,8 +835,23 @@ function ScooterHistoryList({
       </div>
     );
   }
+  // Итог — как на компьютере: снятые при замене в доход и дни не идут.
+  const own = sorted.filter((r) => !r.swappedOutAt);
+  const daysTotal = own.reduce((acc, r) => acc + (r.days ?? 0), 0);
+  const sumTotal = own.reduce((acc, r) => acc + (r.sum ?? 0), 0);
   return (
     <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-baseline gap-x-2 px-1 text-[13px] text-muted">
+        <span className="font-semibold text-ink">
+          {sorted.length} {sorted.length % 10 === 1 && sorted.length % 100 !== 11 ? "аренда" : sorted.length % 10 >= 2 && sorted.length % 10 <= 4 && (sorted.length % 100 < 10 || sorted.length % 100 >= 20) ? "аренды" : "аренд"}
+        </span>
+        <span>·</span>
+        <span className="tabular-nums">
+          {daysTotal} {daysWord(daysTotal)}
+        </span>
+        <span>·</span>
+        <span className="tabular-nums">доход {fmt(sumTotal)} ₽</span>
+      </div>
       {sorted.map((r) => (
         <ScooterHistoryRow
           key={r.id}
