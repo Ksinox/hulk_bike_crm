@@ -2060,7 +2060,7 @@ function HistoryTab({
               </div>
               <div className="text-[11px] text-muted-2">
                 {r.swappedOutAt
-                  ? `заменён${r.swappedToName ? ` на ${scooterModelName(r.swappedToName)}` : ""}`
+                  ? `снят${r.swappedToName ? ` → ${scooterModelName(r.swappedToName)}` : ""}`
                   : `${r.days} ${daysWord(r.days)}`}
               </div>
             </div>
@@ -2081,11 +2081,16 @@ function HistoryTab({
             <div>
               <span
                 className={cn(
-                  "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold",
+                  "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold",
                   r.swappedOutAt ? "bg-orange-soft text-orange-ink" : s.tone,
                 )}
+                title={
+                  r.swappedOutAt
+                    ? `Скутер сняли при замене${r.swappedToName ? ` на ${scooterModelName(r.swappedToName)}` : ""} — аренда доезжала на другом скутере`
+                    : undefined
+                }
               >
-                {r.swappedOutAt ? "Снят при замене" : s.label}
+                {r.swappedOutAt ? "Заменён" : s.label}
               </span>
             </div>
             <ArrowRight size={14} className="text-muted-2" />
