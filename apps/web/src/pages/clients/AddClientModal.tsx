@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePersistedFormState } from "@/lib/usePersistedState";
-import { X } from "lucide-react";
+import { ArrowRight, Check, ChevronLeft, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { CheckBox, Picker } from "@/components/ui/picker";
 import { Switch } from "@/components/ui/switch";
-import { useTabletLayout } from "@/lib/useIsMobile";
+import { useIsMobile, useTabletLayout } from "@/lib/useIsMobile";
 import { TABLET_DIALOG_OVERLAY, TABLET_DIALOG_PANEL } from "@/mobile/tablet";
 import {
   getClientDetails,
@@ -323,10 +323,13 @@ export function AddClientModal({
   onCreated,
   applicationId,
   initialData,
+  saveLabel,
 }: {
   editing?: Client | null;
   onClose: () => void;
   onCreated?: (client: Client) => void;
+  /** Своя подпись кнопки сохранения (из мастера аренды — «…к выбору скутера»). */
+  saveLabel?: string;
   /** Если задан — после save вызвать convert API и удалить заявку. */
   applicationId?: number;
   /** Предзаполненные поля из публичной заявки (мерджатся в EMPTY). */
@@ -565,12 +568,38 @@ export function AddClientModal({
   const markTouched = (key: string) =>
     setTouched((prev) => ({ ...prev, [key]: true }));
 
-  /** Планшет: окно во весь экран, анкета в две колонки. */
+  /**
+   * 22.10 (заказчик): на телефоне и планшете анкета — по шагам, как в
+   * приложениях («Кто клиент? → Паспорт → Адрес → Документы»), а не все
+   * поля разом. Компьютер не меняется. Шаги не размонтируются (hidden), так
+   * что введённое и прикреплённые сканы не теряются при «Назад».
+   */
   const tabletLayout = useTabletLayout();
-  /** `display:contents` — на компьютере и телефоне обёртки не видно. */
-  const colCls = tabletLayout
-    ? "scrollbar-thin flex h-full min-h-0 flex-col overflow-y-auto pr-1 [&>section]:shrink-0"
-    : "contents";
+  const stepMode = useIsMobile();
+  const colCls = "contents";
+  const [step, setStep] = useState(1);
+  const STEPS = [
+    { title: "Клиент", question: "Кто клиент?", ok: !errors.name && !errors.phone && !errors.birth && !errors.source && !errors.sourceCustom && !duplicate },
+    { title: "Паспорт", question: "Паспортные данные", ok: !errors.passSer && !errors.passNum && !errors.passCode && !errors.passportRaw },
+    { title: "Адрес", question: "Где живёт?", ok: !errors.regAddr },
+    { title: "Документы", question: "Документы и статус", ok: !errors.blReason },
+  ];
+  const stepCls = (n: number) => (!stepMode || step === n ? "contents" : "hidden");
+  const canOpenStep = (n: number) => STEPS.slice(0, n - 1).every((x) => x.ok);
+  // Проверка шага: показать ошибки полей текущего шага, если «Далее» рано.
+  const STEP_FIELDS: string[][] = [
+    ["name", "phone", "birth", "source", "sourceCustom"],
+    ["passSer", "passNum", "passCode", "passportRaw"],
+    ["regAddr"],
+    ["blReason"],
+  ];
+  const goNext = () => {
+    if (!STEPS[step - 1]!.ok) {
+      setTouched((prev) => ({ ...prev, ...Object.fromEntries(STEP_FIELDS[step - 1]!.map((k) => [k, true])) }));
+      return;
+    }
+    setStep((x) => Math.min(STEPS.length, x + 1));
+  };
 
   return (
     <div
@@ -583,12 +612,25 @@ export function AddClientModal({
       <div
         className={cn(
           "min-h-[100dvh] w-full overflow-hidden rounded-none bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[720px] sm:rounded-2xl",
+          // Мастер на телефоне: шапка и кнопки на месте, едет только шаг.
+          stepMode && !isEdit && "flex h-[100dvh] flex-col",
           tabletLayout && TABLET_DIALOG_PANEL,
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
+        {stepMode && !isEdit ? (
+          <ClientStepsHeader
+            title="Новый клиент"
+            step={step}
+            steps={STEPS}
+            tablet={tabletLayout}
+            canOpen={canOpenStep}
+            onStep={setStep}
+            onClose={requestClose}
+          />
+        ) : (
         <div className="relative border-b border-border bg-surface-soft px-6 py-4">
           <button
             type="button"
@@ -612,6 +654,7 @@ export function AddClientModal({
             )}
           </p>
         </div>
+        )}
 
         {/* Body */}
         <div
@@ -621,11 +664,16 @@ export function AddClientModal({
             // в одну строку, а форма уходит в долгую прокрутку.
             // Планшет: анкета в две колонки, каждая прокручивается сама —
             // окно целиком не едет, а поля не растягиваются на 1180px.
+            stepMode && !isEdit && "!max-h-none min-h-0 flex-1",
             tabletLayout &&
-              "!max-h-none grid min-h-0 flex-1 grid-cols-2 items-start gap-x-8 overflow-hidden px-7 py-5",
+              (stepMode && !isEdit
+                ? "tab-xl scrollbar-thin mx-auto w-full max-w-[860px] px-10 py-8"
+                : "!max-h-none grid min-h-0 flex-1 grid-cols-2 items-start gap-x-8 overflow-hidden px-7 py-5"),
           )}
         >
           <div className={colCls}>
+          <div className={stepCls(1)}>
+          {stepMode && !isEdit && <StepQuestion text={STEPS[0]!.question} tablet={tabletLayout} />}
           {/* Photo (optional) */}
           <div className="mb-6 flex items-center gap-4">
             <PhotoSlot
@@ -684,7 +732,7 @@ export function AddClientModal({
           )}
 
           {/* Section 1 — Основные */}
-          <Section num={1} title="Основные" badge="обязательно">
+          <Section bare={stepMode && !isEdit} num={1} title="Основные" badge="обязательно">
             <Field
               label="ФИО"
               required
@@ -790,9 +838,12 @@ export function AddClientModal({
               </Field>
             </Row>
           </Section>
+          </div>
 
           {/* Section 2 — Паспорт */}
-          <Section num={2} title="Паспортные данные" badge="для договора">
+          <div className={stepCls(2)}>
+          {stepMode && !isEdit && <StepQuestion text={STEPS[1]!.question} tablet={tabletLayout} />}
+          <Section bare={stepMode && !isEdit} num={2} title="Паспортные данные" badge="для договора">
             <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-border bg-surface-soft p-2">
               <button
                 type="button"
@@ -962,11 +1013,14 @@ export function AddClientModal({
             </>
             )}
           </Section>
+          </div>
 
           {/* Section 3 — Адрес */}
           </div>
           <div className={colCls}>
-          <Section num={3} title="Адрес" badge="регистрация и проживание">
+          <div className={stepCls(3)}>
+          {stepMode && !isEdit && <StepQuestion text={STEPS[2]!.question} tablet={tabletLayout} />}
+          <Section bare={stepMode && !isEdit} num={3} title="Адрес" badge="регистрация и проживание">
             <Field
               label="Адрес регистрации (по паспорту)"
               required={!f.isForeigner}
@@ -1000,8 +1054,11 @@ export function AddClientModal({
               </Field>
             )}
           </Section>
+          </div>
 
           {/* Section 4 — Водительское */}
+          <div className={stepCls(4)}>
+          {stepMode && !isEdit && <StepQuestion text={STEPS[3]!.question} tablet={tabletLayout} />}
           <Section num={4} title="Водительское" badge="если есть">
             <DocUpload
               label="Скан водительского"
@@ -1065,11 +1122,49 @@ export function AddClientModal({
             )}
           </Section>
           </div>
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="border-t border-border px-6 py-4">
-          <div className="mb-3 flex items-center gap-3">
+        {/* Footer: мастер — Назад / Далее, на последнем шаге — сохранить */}
+        {stepMode && !isEdit && step < STEPS.length ? (
+          <div
+            className={cn(
+              "flex items-center gap-2 border-t border-border bg-surface px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]",
+              tabletLayout && "justify-end gap-4 px-10 py-5",
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => (step === 1 ? requestClose() : setStep((x) => x - 1))}
+              className={cn(
+                "flex min-h-[48px] items-center justify-center gap-1 rounded-xl border border-border px-4 text-[14px] font-semibold text-muted active:bg-surface-soft",
+                tabletLayout && "h-16 min-w-[190px] rounded-2xl text-[18px]",
+              )}
+            >
+              <ChevronLeft size={tabletLayout ? 22 : 18} />
+              {step === 1 ? "Отмена" : "Назад"}
+            </button>
+            <button
+              type="button"
+              onClick={goNext}
+              className={cn(
+                "flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold transition-colors",
+                tabletLayout && "h-16 flex-none min-w-[320px] rounded-2xl text-[19px]",
+                STEPS[step - 1]!.ok ? "bg-blue-600 text-white active:bg-blue-700" : "bg-surface-soft text-muted-2",
+              )}
+            >
+              Далее <ArrowRight size={tabletLayout ? 22 : 16} />
+            </button>
+          </div>
+        ) : (
+        <div
+          className={cn(
+            "border-t border-border px-6 py-4",
+            stepMode && !isEdit && "px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]",
+            tabletLayout && stepMode && !isEdit && "px-10 py-5",
+          )}
+        >
+          <div className={cn("mb-3 flex items-center gap-3", stepMode && !isEdit && "hidden")}>
             <span className="text-[11px] font-semibold text-muted-2">
               {ok} / {total} обязательных
             </span>
@@ -1087,16 +1182,26 @@ export function AddClientModal({
             </span>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] text-muted-2">
+            <span className={cn("text-[11px] text-muted-2", stepMode && !isEdit && "hidden")}>
               Esc — закрыть · Ctrl+Enter — сохранить
             </span>
-            <div className="flex gap-2">
+            <div className={cn("flex gap-2", stepMode && !isEdit && "flex-1 justify-end", tabletLayout && stepMode && !isEdit && "gap-4")}>
               <button
                 type="button"
-                onClick={requestClose}
-                className="rounded-full border border-border px-4 py-1.5 text-[12px] font-semibold text-muted hover:bg-surface-soft"
+                onClick={stepMode && !isEdit ? () => setStep((x) => x - 1) : requestClose}
+                className={cn(
+                  "rounded-full border border-border px-4 py-1.5 text-[12px] font-semibold text-muted hover:bg-surface-soft",
+                  stepMode && !isEdit && "flex min-h-[48px] items-center gap-1 rounded-xl text-[14px]",
+                  tabletLayout && stepMode && !isEdit && "h-16 min-w-[190px] justify-center rounded-2xl text-[18px]",
+                )}
               >
-                Отмена
+                {stepMode && !isEdit ? (
+                  <>
+                    <ChevronLeft size={tabletLayout ? 22 : 18} /> Назад
+                  </>
+                ) : (
+                  "Отмена"
+                )}
               </button>
               <button
                 type="button"
@@ -1400,6 +1505,8 @@ export function AddClientModal({
                 }}
                 className={cn(
                   "rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",
+                  stepMode && !isEdit && "min-h-[48px] flex-1 rounded-xl text-[14px] font-bold",
+                  tabletLayout && stepMode && !isEdit && "h-16 flex-none min-w-[320px] rounded-2xl text-[19px]",
                   canSave
                     ? "bg-blue-600 text-white hover:bg-blue-700"
                     : "cursor-not-allowed bg-surface-soft text-muted-2",
@@ -1407,11 +1514,126 @@ export function AddClientModal({
               >
                 {isEdit
                   ? "Сохранить изменения"
-                  : "Сохранить и открыть карточку →"}
+                  : saveLabel ?? "Сохранить и открыть карточку →"}
               </button>
             </div>
           </div>
         </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ───────── Шаги анкеты на телефоне и планшете (22.10) ───────── */
+
+function StepQuestion({ text, tablet }: { text: string; tablet: boolean }) {
+  return (
+    <h2
+      className={cn(
+        "mb-4 font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink",
+        tablet && "mb-6 text-[30px]",
+      )}
+    >
+      {text}
+    </h2>
+  );
+}
+
+function ClientStepsHeader({
+  title,
+  step,
+  steps,
+  tablet,
+  canOpen,
+  onStep,
+  onClose,
+}: {
+  title: string;
+  step: number;
+  steps: { title: string; ok: boolean }[];
+  tablet: boolean;
+  canOpen: (n: number) => boolean;
+  onStep: (n: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className={cn("shrink-0 border-b border-border bg-surface px-4 pb-3 pt-3", tablet && "px-10 pb-5 pt-6")}>
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className={cn("text-[12px] font-semibold text-muted-2", tablet && "text-[14px]")}>
+            Шаг {step} из {steps.length}
+          </div>
+          <div className={cn("font-display text-[18px] font-extrabold leading-tight text-ink", tablet && "text-[26px]")}>
+            {title}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Закрыть"
+          className={cn(
+            "flex h-10 w-10 items-center justify-center rounded-full bg-surface-soft text-muted active:bg-border",
+            tablet && "h-12 w-12",
+          )}
+        >
+          <X size={tablet ? 22 : 18} />
+        </button>
+      </div>
+      <div
+        className={cn("mt-3 grid gap-1.5", tablet && "mt-5 gap-3")}
+        style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}
+      >
+        {steps.map((st, i) => {
+          const n = i + 1;
+          const cur = n === step;
+          const open = canOpen(n);
+          const done = !cur && st.ok && open;
+          return tablet ? (
+            <button
+              key={st.title}
+              type="button"
+              disabled={!open}
+              onClick={() => onStep(n)}
+              className={cn(
+                "flex min-w-0 items-center gap-3 rounded-2xl px-3.5 py-3 text-left transition-colors",
+                cur
+                  ? "bg-blue-600 text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]"
+                  : open
+                    ? "bg-surface-soft text-ink active:bg-border"
+                    : "bg-surface-soft/60 text-muted-2",
+              )}
+            >
+              <span
+                className={cn(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[16px] font-extrabold",
+                  cur ? "bg-white/20 text-white" : done ? "bg-green-ink text-white" : "bg-white text-muted",
+                )}
+              >
+                {done ? <Check size={18} strokeWidth={3} /> : n}
+              </span>
+              <span className="truncate text-[16px] font-bold">{st.title}</span>
+            </button>
+          ) : (
+            <button
+              key={st.title}
+              type="button"
+              disabled={!open}
+              onClick={() => onStep(n)}
+              className="flex min-w-0 flex-col items-center gap-1"
+            >
+              <span className={cn("h-1.5 w-full rounded-full", n <= step ? "bg-blue-600" : "bg-surface-soft")} />
+              <span
+                className={cn(
+                  "truncate text-[10.5px] font-semibold",
+                  cur ? "text-blue-600" : done ? "text-ink-2" : "text-muted-2",
+                )}
+              >
+                {n}. {st.title}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -1424,15 +1646,18 @@ function Section({
   title,
   badge,
   children,
+  bare,
 }: {
   num: number;
   title: string;
   badge?: string;
   children: React.ReactNode;
+  /** Мастер: шаг уже назван вопросом сверху — свой заголовок не нужен. */
+  bare?: boolean;
 }) {
   return (
     <section className="mb-6 last:mb-0">
-      <header className="mb-3 flex items-center gap-2">
+      <header className={cn("mb-3 flex items-center gap-2", bare && "hidden")}>
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-50 text-[11px] font-bold text-blue-700">
           {num}
         </span>

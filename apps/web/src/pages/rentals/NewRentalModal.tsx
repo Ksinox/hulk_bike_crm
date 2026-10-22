@@ -5,7 +5,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ArrowLeftRight, Banknote, Check, CreditCard, Lock, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeftRight, Banknote, Check, CreditCard, Lock, Package, Search, UserPlus, X } from "lucide-react";
+import { fileUrl } from "@/lib/files";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { compareByRentalNumber } from "@/lib/scooterOrder";
@@ -30,7 +31,7 @@ import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
-import { useApiEquipment } from "@/lib/api/equipment";
+import { useApiEquipment, type ApiEquipmentItem } from "@/lib/api/equipment";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useIsMobile, useTabletLayout } from "@/lib/useIsMobile";
 import { TABLET_DIALOG_OVERLAY, TABLET_DIALOG_PANEL } from "@/mobile/tablet";
@@ -1234,6 +1235,33 @@ export function NewRentalModal({
                 <div className="text-[12px] text-muted">
                   Каталог пуст — добавьте позиции в «Гараж → Экипировка».
                 </div>
+              ) : stepMode ? (
+                /* 22.10 (заказчик): экипировку выбирают глазами — плитки с
+                   фото, ценой и галочкой. Планшет — сетка квадратов, телефон —
+                   лента вбок (как фото в заявке). */
+                <div
+                  className={cn(
+                    tabletLayout
+                      ? "grid grid-cols-4 gap-3 portrait:grid-cols-4"
+                      : "no-scrollbar -mx-4 flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-4 pb-1",
+                  )}
+                >
+                  {equipmentCatalog
+                    .filter((e) => e.quickPick)
+                    .map((e) => (
+                      <EquipmentTile
+                        key={e.id}
+                        item={e}
+                        on={equipmentIds.includes(e.id)}
+                        tablet={tabletLayout}
+                        onToggle={() =>
+                          setEquipmentIds((prev) =>
+                            prev.includes(e.id) ? prev.filter((x) => x !== e.id) : [...prev, e.id],
+                          )
+                        }
+                      />
+                    ))}
+                </div>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {equipmentCatalog
@@ -1641,10 +1669,13 @@ export function NewRentalModal({
       {newClientOpen && (
         <AddClientModal
           onClose={() => setNewClientOpen(false)}
+          // 22.10: анкета по шагам, а после неё — сразу к выбору скутера.
+          saveLabel={stepMode ? "Сохранить и выбрать скутер →" : undefined}
           onCreated={(c) => {
             setClientId(c.id);
             setClientQuery("");
             setNewClientOpen(false);
+            if (stepMode && !c.blacklisted) setStep(2);
           }}
         />
       )}
@@ -1706,6 +1737,66 @@ export function NewRentalModal({
         </div>
       )}
     </div>
+  );
+}
+
+/* ───────── Экипировка плитками (телефон и планшет, 22.10) ───────── */
+
+function EquipmentTile({
+  item,
+  on,
+  tablet,
+  onToggle,
+}: {
+  item: ApiEquipmentItem;
+  on: boolean;
+  tablet: boolean;
+  onToggle: () => void;
+}) {
+  const src = fileUrl(item.avatarThumbKey ?? item.avatarKey ?? null, { variant: "view" });
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={on}
+      className={cn(
+        "relative flex shrink-0 snap-start flex-col overflow-hidden rounded-2xl border-2 text-left transition-colors active:scale-[0.98]",
+        tablet ? "w-auto" : "w-[132px]",
+        on ? "border-blue-600 bg-blue-50" : "border-border bg-surface",
+      )}
+    >
+      <span className="relative flex aspect-square w-full items-center justify-center bg-white p-2">
+        {src ? (
+          <img src={src} alt={item.name} className="h-full w-full object-contain" />
+        ) : (
+          <Package size={tablet ? 44 : 34} strokeWidth={1.4} className="text-muted-2" />
+        )}
+        <span
+          // размер — стилем: шкала .tab-xl поднимает h-8, и круг сплющивался
+          style={{ width: tablet ? 34 : 28, height: tablet ? 34 : 28 }}
+          className={cn(
+            "absolute right-2 top-2 flex items-center justify-center rounded-full border-2 transition-colors",
+            on ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-white/90 text-transparent",
+          )}
+        >
+          <Check size={tablet ? 18 : 15} strokeWidth={3} />
+        </span>
+      </span>
+      <span className={cn("flex flex-col gap-0.5 px-3 pb-3 pt-2", tablet && "px-3.5")}>
+        <span className={"line-clamp-2 text-[13.5px] font-bold leading-tight text-ink"}>
+          {item.name}
+        </span>
+        <span
+          className={cn(
+            // на планшете .tab-xl сам поднимет до 16.5 / 15.5px
+            "text-[12.5px] font-semibold tabular-nums",
+            item.isFree ? "text-green-ink" : "text-blue-700",
+          )}
+        >
+          {item.isFree ? "бесплатно" : `+${item.price} ₽/сут`}
+        </span>
+      </span>
+    </button>
   );
 }
 
