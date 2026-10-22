@@ -230,6 +230,7 @@ export function DirectorCodeSheet({ onClose }: { onClose: () => void }) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        data-director-code-sheet
         className="relative w-full max-w-[400px] overflow-hidden rounded-t-[28px] bg-[#0b1220] px-6 pb-[max(24px,env(safe-area-inset-bottom))] pt-5 text-white shadow-card-lg sm:rounded-[28px]"
       >
         <div className="pointer-events-none absolute -left-16 -top-20 h-48 w-48 rounded-full bg-blue-600/30 blur-[60px]" />

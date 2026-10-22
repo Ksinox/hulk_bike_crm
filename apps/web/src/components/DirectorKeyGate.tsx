@@ -183,7 +183,11 @@ function DirectorKeyDialog({
             </span>
             <div className="min-w-0 flex-1">
               <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">
-                Ключ директора
+                {isDirector
+                  ? "Подтверждение директора"
+                  : codeMode
+                    ? "Код директора"
+                    : "Ключ директора"}
               </div>
               <div className="font-display text-[16px] font-bold leading-tight">
                 {meta.title}
