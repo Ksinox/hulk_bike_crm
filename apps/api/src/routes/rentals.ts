@@ -3743,7 +3743,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
          * ремонт и выбыл из парка аренды. Именно так у заказчика «пропала»
          * единица из 62.
          */
-        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}: ${prevScooterName} → ${newScooterName}${catLabel ? ` · причина: ${catLabel}` : ""}${d.oldScooterStatus ? ` · снятый переведён в «${scooterStatusLabel(d.oldScooterStatus)}»` : ""}${result.prevMileageAfter != null ? ` · пробег снятого ${result.prevMileageAfter.toLocaleString("ru-RU")} км` : ""}${result.feeAmount > 0 ? ` · доплата ${result.feeAmount} ₽` : ""}${result.canceledFee > 0 ? ` · погашен долг по замене ${result.canceledFee} ₽` : ""}${result.refundToDeposit > 0 ? ` · возврат ${result.refundToDeposit} ₽ в депозит` : ""}`,
+        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}: ${prevScooterName} → ${newScooterName}${head ? ` · причина: ${head}` : ""}${d.oldScooterStatus ? ` · снятый переведён в «${scooterStatusLabel(d.oldScooterStatus)}»` : ""}${result.prevMileageAfter != null ? ` · пробег снятого ${result.prevMileageAfter.toLocaleString("ru-RU")} км` : ""}${result.feeAmount > 0 ? ` · доплата ${result.feeAmount} ₽` : ""}${result.canceledFee > 0 ? ` · погашен долг по замене ${result.canceledFee} ₽` : ""}${result.refundToDeposit > 0 ? ` · возврат ${result.refundToDeposit} ₽ в депозит` : ""}`,
         // v0.8.14: «ревизорские» поля — кто на кого заменён, причина и куда
         // ушёл старый скутер (в ремонт / обратно в парк) на момент замены.
         meta: {
@@ -3758,6 +3758,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           reason: comment,
           reasonCategory: d.reasonCategory ?? null,
           reasonLabel: catLabel,
+          breakdownReason: breakdown,
           oldScooterDestination: d.oldScooterStatus,
           // Снимок для отката свапа «в день совершения» (rollback-action).
           swapId: result.swapId,
