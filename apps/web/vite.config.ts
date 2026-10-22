@@ -95,6 +95,11 @@ export default defineConfig({
               target: shotProxyTarget()!,
               changeOrigin: true,
               secure: false,
+              // POST/PATCH из браузера несут Origin localhost — API его не
+              // знает и режет по CORS. Для прокси запрос same-origin.
+              configure: (proxy) => {
+                proxy.on("proxyReq", (req) => req.removeHeader("origin"));
+              },
             },
           },
         }
