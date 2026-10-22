@@ -13,11 +13,16 @@ const ROUTES = (process.env.ROUTES ?? "dashboard,rentals,clients,fleet,debtors,s
 export async function run(page, ctx) {
   const vp = process.env.VP ?? "land";
   await page.setUserAgent(IPAD_UA);
-  await page.setViewport(
-    vp === "port"
-      ? { width: 820, height: 1180, deviceScaleFactor: 1, isMobile: true, hasTouch: true }
-      : { width: 1180, height: 820, deviceScaleFactor: 1, isMobile: true, hasTouch: true },
-  );
+  // VP=pro-land|pro-port — iPad Pro 12.9" (1366×1024): заказчик 22.10
+  // прислал, как главная разваливается именно на нём.
+  const SIZES = {
+    land: [1180, 820],
+    port: [820, 1180],
+    "pro-land": [1366, 1024],
+    "pro-port": [1024, 1366],
+  };
+  const [w, h] = SIZES[vp] ?? SIZES.land;
+  await page.setViewport({ width: w, height: h, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
   await page.goto(ctx.base + "/", { waitUntil: "domcontentloaded" });
   await ctx.sleep(7000);
   await page.evaluate(() => {
@@ -42,7 +47,7 @@ export async function run(page, ctx) {
       return { done: el.scrollTop === before, top: el.scrollTop, h: el.scrollHeight };
     }, dy);
 
-  const H = vp === "port" ? 1180 : 820;
+  const H = h;
   for (const route of ROUTES) {
     await ctx.gotoRoute(route);
     await ctx.sleep(2800);
