@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { progressItems } from "@/data/progress";
+import { markChangelogSeen } from "@/pages/whats-new/useUnreadChangelog";
 
 /**
  * Отметки «здесь есть свежие изменения» на странице «Развитие» (31.08).
@@ -53,6 +54,8 @@ export function useProgressSeen() {
     const all: SeenMap = { ...load() };
     for (const i of progressItems) if (i.updatedAt) all[i.id] = i.updatedAt;
     save(all);
+    // и вкладка «Что уже сделано» — значок раздела складывается из обеих
+    markChangelogSeen();
     window.dispatchEvent(new Event(PROGRESS_SEEN_EVENT));
   }, []);
 
