@@ -3,18 +3,15 @@ import {
   Check,
   Copy,
   Download,
-  KeyRound,
   LifeBuoy,
   Loader2,
   Printer,
   ShieldCheck,
-  Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApprovalsStatus } from "@/lib/api/approvals";
 import { useCreateRecoveryCodes, useRecoveryCodesStatus } from "@/lib/api/auth";
 import { DirectorCodeRing } from "@/components/DirectorCode";
-import { toast } from "@/lib/toast";
 
 /**
  * Защита директора (настройки). Видна ТОЛЬКО директору — из его аккаунта.
