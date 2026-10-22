@@ -7061,6 +7061,10 @@ export const progressItems: ProgressItem[] = [
         tag: "fix",
         text: "Смена категории снятого скутера — с ключом директора, в окне видно, что происходит.",
         imgs: [{ src: "/progress/v2011-key-swap-now.jpg", label: "СТАЛО: окно ключа — какой скутер и куда переводится" }],
+      },
+    ],
+  },
+  {
     id: "bug-7",
     num: "7",
     updatedAt: "2026-10-22",
@@ -7104,6 +7108,10 @@ export const progressItems: ProgressItem[] = [
         tag: "fix",
         text: "При утрате — стоимость, указанная в п. 4.1.",
         imgs: [{ src: "/progress/v2011-contract-now.jpg", label: "СТАЛО: п. 5.4 со ссылкой на п. 4.1" }],
+      },
+    ],
+  },
+  {
     id: "bug-9",
     num: "9",
     updatedAt: "2026-10-22",
@@ -7118,6 +7126,10 @@ export const progressItems: ProgressItem[] = [
         tag: "fix",
         text: "«Сотрудники»: в колонке «Что не видит» у администратора «Финансов» больше нет.",
         imgs: [{ src: "/progress/v2011-finance-admin-now.jpg", label: "СТАЛО: администратору открыты «Финансы»" }],
+      },
+    ],
+  },
+  {
     id: "bug-10",
     num: "10",
     updatedAt: "2026-10-22",
