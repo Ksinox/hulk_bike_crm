@@ -200,8 +200,8 @@ function ApprovalCard({ r }: { r: ApprovalRequest }) {
           {who.trim()[0]?.toUpperCase() ?? "?"}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-bold text-ink">{who} просит подтвердить</div>
-          <div className="text-[13px] text-muted">{timeAgo(r.createdAt)}</div>
+          <div className="truncate text-[15px] font-bold text-ink">{who}</div>
+          <div className="text-[13px] text-muted">просит подтвердить · {timeAgo(r.createdAt)}</div>
         </div>
         <KeyRound size={18} className="shrink-0 text-amber-600" />
       </div>
