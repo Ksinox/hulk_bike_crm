@@ -1,7 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { usePersistedFormState } from "@/lib/usePersistedState";
-import { ArrowRight, Camera, ChevronLeft, Image as ImageIcon, X } from "lucide-react";
+import {
+  ArrowRight,
+  Camera,
+  Check,
+  ChevronLeft,
+  ClipboardCheck,
+  FileText,
+  House,
+  IdCard,
+  Image as ImageIcon,
+  Megaphone,
+  ScanLine,
+  Smartphone,
+  Stamp,
+  UserRound,
+  X,
+} from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { CheckBox, Picker } from "@/components/ui/picker";
@@ -579,15 +595,18 @@ export function AddClientModal({
   const stepMode = useIsMobile();
   const colCls = "contents";
   /**
-   * 22.10 (заказчик, ЖЕЛЕЗНО): «одно поле — один экран». Микрошаг: крупный
-   * вопрос, одно поле, клавиатура сразу открыта, Enter — дальше; у
+   * 22.10 (заказчик, ЖЕЛЕЗНО): «одна мысль — один экран». Экран — крупный
+   * вопрос и поля одной мысли (кто это / как связаться / паспорт…), первое
+   * поле сразу активно и клавиатура открыта, Enter — дальше; у
    * необязательного — «Пропустить»; в конце — экран проверки всех данных.
+   * На планшете рядом собирается живая карточка клиента.
    */
   const microMode = stepMode && !isEdit;
   const MICROS = microList(f.isForeigner);
   const [micro, setMicro] = useState<MicroId>("photo");
   const microIdx = Math.max(0, MICROS.indexOf(micro));
-  const M = (id: MicroId) => (!microMode || micro === id ? "contents" : "hidden");
+  /** Поле видно, если его экран — текущий. */
+  const M = (fid: FieldId) => (!microMode || FIELD_SCREEN[fid] === micro ? "contents" : "hidden");
   const microErrors = (id: MicroId): string[] =>
     (MICRO_META[id].keys as readonly string[]).filter(
       (k) => !!errors[k as keyof typeof errors],
@@ -595,13 +614,8 @@ export function AddClientModal({
   const microFilled = (id: MicroId): boolean => {
     switch (id) {
       case "photo": return !!f.photoFile;
-      case "phone2": return !!f.phone2.trim();
-      case "issuer": return !!f.passIssuer.trim();
-      case "pdate": return !!f.passDate.trim();
       case "scans": return !!(f.passportMainFile || f.passportRegFile);
-      case "live": return !f.sameAddr && !!f.liveAddr.trim();
-      case "license": return !!f.licenseFile;
-      case "other": return f.otherDocs.length > 0;
+      case "docs": return !!f.licenseFile || f.otherDocs.length > 0;
       default: return true;
     }
   };
@@ -622,7 +636,7 @@ export function AddClientModal({
   };
   const goNext = () => {
     const errs = microErrors(micro);
-    if (errs.length > 0 || (micro === "phone" && duplicate)) {
+    if (errs.length > 0 || (micro === "contact" && duplicate)) {
       setTouched((prev) => ({ ...prev, ...Object.fromEntries(errs.map((k) => [k, true])) }));
       return;
     }
@@ -659,6 +673,7 @@ export function AddClientModal({
             micros={MICROS}
             current={micro}
             tablet={tabletLayout}
+            foreigner={f.isForeigner}
             onGroup={(id) => goTo(id)}
             canOpen={(id) => MICROS.slice(0, MICROS.indexOf(id)).every((m) => microErrors(m).length === 0)}
             onClose={requestClose}
@@ -689,7 +704,8 @@ export function AddClientModal({
         </div>
         )}
 
-        {/* Body */}
+        {/* Body (+ на планшете справа живая карточка клиента) */}
+        <div className={microMode && tabletLayout ? "flex min-h-0 flex-1" : "contents"}>
         <div
           className={cn(
             "max-h-[calc(100vh-260px)] overflow-y-auto px-6 py-5",
@@ -700,7 +716,7 @@ export function AddClientModal({
             microMode && "micro-xl !max-h-none min-h-0 w-full flex-1 px-5 py-6",
             tabletLayout &&
               (microMode
-                ? "tab-xl mx-auto max-w-[760px] px-10 py-10"
+                ? "tab-xl flex flex-col px-12 py-8"
                 : "!max-h-none grid min-h-0 flex-1 grid-cols-2 items-start gap-x-8 overflow-hidden px-7 py-5"),
           )}
           onKeyDown={(e) => {
@@ -709,13 +725,19 @@ export function AddClientModal({
             if (micro !== "review") goNext();
           }}
         >
+          {/* Планшет: блок экрана — по оптическому центру (my-auto), при
+              нехватке места просто прокручивается. */}
+          <div className={microMode && tabletLayout ? "mx-auto my-auto w-full max-w-[640px]" : "contents"}>
+          {microMode && tabletLayout && (
+            <LiveClientStrip f={f} className="mb-6 landscape:hidden" />
+          )}
           {microMode && (
             <MicroQuestion id={micro} tablet={tabletLayout} />
           )}
           {microMode && micro === "review" && (
             <MicroReview
               f={f}
-              micros={MICROS}
+              foreigner={f.isForeigner}
               duplicateName={duplicate?.name ?? null}
               onEdit={(id) => goTo(id)}
             />
@@ -723,7 +745,7 @@ export function AddClientModal({
           <div className={colCls}>
           <div className="contents">
           {/* Photo (optional) */}
-          <div className={M("photo")} {...(micro === "photo" && microMode ? { "data-micro-active": "" } : {})}>
+          <div className={M("photo")} {...(FIELD_SCREEN.photo === micro && microMode ? { "data-micro-active": "" } : {})}>
           {microMode ? (
             <MicroCapture
               file={f.photoFile}
@@ -792,7 +814,7 @@ export function AddClientModal({
 
           {/* Section 1 — Основные */}
           <Section bare={stepMode && !isEdit} num={1} title="Основные" badge="обязательно">
-<div className={M("name")} data-micro-single {...(micro === "name" && microMode ? { "data-micro-active": "" } : {})}>
+<div className={M("name")} {...(FIELD_SCREEN.name === micro && microMode ? { "data-micro-active": "" } : {})}>
             <Field
               label="ФИО"
               required
@@ -811,7 +833,7 @@ export function AddClientModal({
             </Field>
 </div>
 
-<div className={M("phone")} data-micro-single {...(micro === "phone" && microMode ? { "data-micro-active": "" } : {})}>
+<div className={M("phone")} {...(FIELD_SCREEN.phone === micro && microMode ? { "data-micro-active": "" } : {})}>
             <Field
               label="Телефон"
               required
@@ -835,7 +857,7 @@ export function AddClientModal({
             </Field>
 </div>
 
-<div className={M("phone2")} data-micro-single {...(micro === "phone2" && microMode ? { "data-micro-active": "" } : {})}>
+<div className={M("phone2")} {...(FIELD_SCREEN.phone2 === micro && microMode ? { "data-micro-active": "" } : {})}>
             <Field
               label="Доп. контакт"
               hint="Родственник, жена, водитель — тот кто ответит если основной недоступен"
@@ -853,7 +875,7 @@ export function AddClientModal({
 </div>
 
             <Row micro={microMode}>
-<div className={M("birth")} data-micro-single {...(micro === "birth" && microMode ? { "data-micro-active": "" } : {})}>
+<div className={M("birth")} {...(FIELD_SCREEN.birth === micro && microMode ? { "data-micro-active": "" } : {})}>
               <Field
                 label="Дата рождения"
                 required
@@ -874,7 +896,7 @@ export function AddClientModal({
                 />
               </Field>
 </div>
-<div className={M("source")} data-micro-single {...(micro === "source" && microMode ? { "data-micro-active": "" } : {})}>
+<div className={M("source")} data-micro-single {...(FIELD_SCREEN.source === micro && microMode ? { "data-micro-active": "" } : {})}>
               <Field
                 label="Источник"
                 required
@@ -937,7 +959,7 @@ export function AddClientModal({
           {/* Section 2 — Паспорт */}
           <div className="contents">
           <Section bare={stepMode && !isEdit} num={2} title="Паспортные данные" badge="для договора">
-            <div className={M("doc")} {...(micro === "doc" && microMode ? { "data-micro-active": "" } : {})}>
+            <div className={M("doc")} {...(FIELD_SCREEN.doc === micro && microMode ? { "data-micro-active": "" } : {})}>
             <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-border bg-surface-soft p-2">
               <button
                 type="button"
@@ -989,7 +1011,7 @@ export function AddClientModal({
             </div>
             {!f.isForeigner && (
             <>
-            <div className={M("passSerNum")} {...(micro === "passSerNum" && microMode ? { "data-micro-active": "" } : {})}>
+            <div className={M("passSerNum")} {...(FIELD_SCREEN.passSerNum === micro && microMode ? { "data-micro-active": "" } : {})}>
             <Row>
               <Field
                 label="Серия"
@@ -1043,7 +1065,7 @@ export function AddClientModal({
               </Field>
             </Row>
             </div>
-<div className={M("issuer")} data-micro-single {...(micro === "issuer" && microMode ? { "data-micro-active": "" } : {})}>
+<div className={M("issuer")} {...(FIELD_SCREEN.issuer === micro && microMode ? { "data-micro-active": "" } : {})}>
             <Field label="Кем выдан" htmlFor="f-pissuer">
               <input
                 id="f-pissuer"
@@ -1055,8 +1077,8 @@ export function AddClientModal({
               />
             </Field>
 </div>
-            <Row micro={microMode}>
-<div className={M("pdate")} data-micro-single {...(micro === "pdate" && microMode ? { "data-micro-active": "" } : {})}>
+            <Row>
+<div className={M("pdate")} {...(FIELD_SCREEN.pdate === micro && microMode ? { "data-micro-active": "" } : {})}>
               <Field label="Дата выдачи" htmlFor="f-pdate">
                 <DatePicker
                   id="f-pdate"
@@ -1072,7 +1094,7 @@ export function AddClientModal({
                 />
               </Field>
 </div>
-<div className={M("pcode")} data-micro-single {...(micro === "pcode" && microMode ? { "data-micro-active": "" } : {})}>
+<div className={M("pcode")} {...(FIELD_SCREEN.pcode === micro && microMode ? { "data-micro-active": "" } : {})}>
               <Field
                 label="Код подразделения"
                 required
@@ -1101,7 +1123,7 @@ export function AddClientModal({
               </Field>
 </div>
             </Row>
-<div className={M("scans")} {...(micro === "scans" && microMode ? { "data-micro-active": "" } : {})}>
+<div className={M("scans")} {...(FIELD_SCREEN.scans === micro && microMode ? { "data-micro-active": "" } : {})}>
             {microMode ? (
               <div className="grid grid-cols-2 gap-3">
                 <MicroCapture label="Разворот с фото" file={f.passportMainFile} onChange={(v) => set("passportMainFile", v)} tablet={tabletLayout} />
@@ -1134,7 +1156,7 @@ export function AddClientModal({
           <div className={colCls}>
           <div className="contents">
           <Section bare={stepMode && !isEdit} num={3} title="Адрес" badge="регистрация и проживание">
-<div className={M("reg")} data-micro-single {...(micro === "reg" && microMode ? { "data-micro-active": "" } : {})}>
+<div className={M("reg")} {...(FIELD_SCREEN.reg === micro && microMode ? { "data-micro-active": "" } : {})}>
             <Field
               label="Адрес регистрации (по паспорту)"
               required={!f.isForeigner}
@@ -1152,7 +1174,7 @@ export function AddClientModal({
               />
             </Field>
 </div>
-<div className={M("live")} {...(micro === "live" && microMode ? { "data-micro-active": "" } : {})}>
+<div className={M("live")} {...(FIELD_SCREEN.live === micro && microMode ? { "data-micro-active": "" } : {})}>
             <CheckBox
               checked={f.sameAddr}
               onChange={(v) => set("sameAddr", v)}
@@ -1175,7 +1197,7 @@ export function AddClientModal({
 
           {/* Section 4 — Водительское */}
           <div className="contents">
-          <div className={M("license")} {...(micro === "license" && microMode ? { "data-micro-active": "" } : {})}>
+          <div className={M("license")} {...(FIELD_SCREEN.license === micro && microMode ? { "data-micro-active": "" } : {})}>
           <Section bare={microMode} num={4} title="Водительское" badge="если есть">
             {microMode ? (
               <MicroCapture label="Водительское (обе стороны)" file={f.licenseFile} onChange={(v) => set("licenseFile", v)} tablet={tabletLayout} wide />
@@ -1196,7 +1218,7 @@ export function AddClientModal({
               рассрочке/выкупе), там и видны. Раньше тут был «Скан
               подписанного договора» — убран, чтобы не возникало
               двух разных мест для одного и того же файла. */}
-          <div className={M("other")} {...(micro === "other" && microMode ? { "data-micro-active": "" } : {})}>
+          <div className={M("other")} {...(FIELD_SCREEN.other === micro && microMode ? { "data-micro-active": "" } : {})}>
           <Section bare={microMode} num={5} title="Прочие документы" badge="опционально">
             <DocUploadMulti
               label="Справки, расписки и прочее"
@@ -1251,6 +1273,11 @@ export function AddClientModal({
           </div>
           </div>
           </div>
+          </div>
+        </div>
+        {microMode && tabletLayout && (
+          <LiveClientCard f={f} current={micro} onEdit={(id) => goTo(id)} />
+        )}
         </div>
 
         {/* Footer: мастер — Назад / Далее, на последнем шаге — сохранить */}
@@ -1872,52 +1899,88 @@ function ApplicationMatchHint({
   );
 }
 
-/* ═══════════════ Микрошаги анкеты (телефон и планшет, 22.10) ═══════════════ */
+/* ═══════════════ Анкета по экранам «одна мысль» (телефон и планшет, 22.10) ═══════════════ */
 
-type MicroId =
+/** Поле анкеты (обёртка в разметке формы). */
+type FieldId =
   | "photo" | "name" | "phone" | "phone2" | "birth" | "source"
   | "doc" | "passSerNum" | "issuer" | "pdate" | "pcode" | "scans"
-  | "reg" | "live" | "license" | "other" | "review";
+  | "reg" | "live" | "license" | "other";
 
-type MicroGroup = "Клиент" | "Паспорт" | "Адрес" | "Документы" | "Проверка";
+/** Экран мастера — одна мысль. */
+type MicroId =
+  | "photo" | "who" | "contact" | "source" | "passport" | "issued"
+  | "scans" | "address" | "docs" | "review";
+
+/** На каком экране живёт поле. */
+const FIELD_SCREEN: Record<FieldId, MicroId> = {
+  photo: "photo",
+  name: "who",
+  birth: "who",
+  phone: "contact",
+  phone2: "contact",
+  source: "source",
+  doc: "passport",
+  passSerNum: "passport",
+  issuer: "issued",
+  pdate: "issued",
+  pcode: "issued",
+  scans: "scans",
+  reg: "address",
+  live: "address",
+  license: "docs",
+  other: "docs",
+};
 
 const MICRO_META: Record<
   MicroId,
-  { group: MicroGroup; q: string; hint?: string; optional?: boolean; keys: readonly string[]; label: string }
+  {
+    title: string;
+    q: string;
+    hint?: string;
+    optional?: boolean;
+    keys: readonly string[];
+    Icon: typeof Camera;
+    tone: string;
+  }
 > = {
-  photo: { group: "Клиент", q: "Сфотографируйте клиента", hint: "Так его проще узнать в лицо. Можно пропустить.", optional: true, keys: [], label: "Фото" },
-  name: { group: "Клиент", q: "Как зовут клиента?", hint: "Фамилия, имя и отчество", keys: ["name"], label: "ФИО" },
-  phone: { group: "Клиент", q: "Номер телефона", keys: ["phone"], label: "Телефон" },
-  phone2: { group: "Клиент", q: "Запасной контакт", hint: "Родственник или друг — кто ответит, если клиент недоступен", optional: true, keys: [], label: "Запасной контакт" },
-  birth: { group: "Клиент", q: "Дата рождения", keys: ["birth"], label: "Дата рождения" },
-  source: { group: "Клиент", q: "Откуда узнал о нас?", keys: ["source", "sourceCustom"], label: "Откуда узнал" },
-  doc: { group: "Паспорт", q: "Какой документ?", keys: ["passportRaw"], label: "Документ" },
-  passSerNum: { group: "Паспорт", q: "Серия и номер паспорта", keys: ["passSer", "passNum"], label: "Серия и номер" },
-  issuer: { group: "Паспорт", q: "Кем выдан паспорт?", optional: true, keys: [], label: "Кем выдан" },
-  pdate: { group: "Паспорт", q: "Дата выдачи паспорта", optional: true, keys: [], label: "Дата выдачи" },
-  pcode: { group: "Паспорт", q: "Код подразделения", hint: "Шесть цифр, например 230-001", keys: ["passCode"], label: "Код подразделения" },
-  scans: { group: "Паспорт", q: "Фото паспорта", hint: "Разворот с фото и страница с пропиской", optional: true, keys: [], label: "Фото паспорта" },
-  reg: { group: "Адрес", q: "Адрес регистрации", hint: "Как в паспорте на странице «прописка»", keys: ["regAddr"], label: "Регистрация" },
-  live: { group: "Адрес", q: "Где живёт сейчас?", optional: true, keys: [], label: "Фактический адрес" },
-  license: { group: "Документы", q: "Водительское удостоверение", hint: "Если прав нет — пропустите: тогда доступны скутеры до 50 куб.см", optional: true, keys: [], label: "Водительское" },
-  other: { group: "Документы", q: "Другие документы", hint: "Справки, расписки — если есть", optional: true, keys: [], label: "Другие документы" },
-  review: { group: "Проверка", q: "Проверьте данные", hint: "Нажмите на строку, чтобы исправить", keys: [], label: "Проверка" },
+  photo: { title: "Фото", q: "Сфотографируйте клиента", hint: "Так его проще узнать в лицо", optional: true, keys: [], Icon: Camera, tone: "bg-violet-50 text-violet-600" },
+  who: { title: "Кто", q: "Кто клиент?", hint: "Как в паспорте", keys: ["name", "birth"], Icon: UserRound, tone: "bg-blue-50 text-blue-600" },
+  contact: { title: "Связь", q: "Как связаться?", hint: "Запасной — кто ответит, если клиент недоступен", keys: ["phone"], Icon: Smartphone, tone: "bg-green-soft text-green-ink" },
+  source: { title: "Откуда", q: "Откуда узнал о нас?", keys: ["source", "sourceCustom"], Icon: Megaphone, tone: "bg-orange-soft text-orange-ink" },
+  passport: { title: "Паспорт", q: "Паспорт", hint: "Гражданство и номер документа", keys: ["passportRaw", "passSer", "passNum"], Icon: IdCard, tone: "bg-blue-50 text-blue-600" },
+  issued: { title: "Выдан", q: "Кем и когда выдан?", hint: "Код подразделения — шесть цифр, например 230-001", keys: ["passCode"], Icon: Stamp, tone: "bg-blue-50 text-blue-600" },
+  scans: { title: "Фото паспорта", q: "Фото паспорта", hint: "Разворот с фото и страница с пропиской", optional: true, keys: [], Icon: ScanLine, tone: "bg-violet-50 text-violet-600" },
+  address: { title: "Адрес", q: "Где живёт?", hint: "Адрес регистрации — как в паспорте на странице «прописка»", keys: ["regAddr"], Icon: House, tone: "bg-amber-50 text-amber-700" },
+  docs: { title: "Документы", q: "Права и документы", hint: "Без прав — только скутеры до 50 куб.см. Можно пропустить", optional: true, keys: [], Icon: FileText, tone: "bg-surface-soft text-ink-2" },
+  review: { title: "Проверка", q: "Проверьте данные", hint: "Нажмите на строку, чтобы исправить", keys: [], Icon: ClipboardCheck, tone: "bg-green-soft text-green-ink" },
 };
 
 function microList(foreigner: boolean): MicroId[] {
   return foreigner
-    ? ["photo", "name", "phone", "phone2", "birth", "source", "doc", "reg", "live", "license", "other", "review"]
-    : ["photo", "name", "phone", "phone2", "birth", "source", "doc", "passSerNum", "issuer", "pdate", "pcode", "scans", "reg", "live", "license", "other", "review"];
+    ? ["photo", "who", "contact", "source", "passport", "address", "docs", "review"]
+    : ["photo", "who", "contact", "source", "passport", "issued", "scans", "address", "docs", "review"];
 }
 
 function MicroQuestion({ id, tablet }: { id: MicroId; tablet: boolean }) {
   const m = MICRO_META[id];
   return (
-    <div className={cn("mb-6", tablet && "mb-8")}>
-      <h2 className={cn("font-display text-[26px] font-extrabold leading-tight tracking-tight text-ink", tablet && "text-[34px]")}>
-        {m.q}
-      </h2>
-      {m.hint && <p className={cn("mt-1.5 text-[15px] leading-snug text-muted", tablet && "text-[18px]")}>{m.hint}</p>}
+    <div className={cn("mb-6 flex items-center gap-4", tablet && "mb-8 gap-5")}>
+      <span
+        className={cn(
+          "flex shrink-0 items-center justify-center rounded-2xl",
+          tablet ? "h-16 w-16" : "h-12 w-12",
+          m.tone,
+        )}
+      >
+        <m.Icon size={tablet ? 30 : 23} strokeWidth={1.9} />
+      </span>
+      <div className="min-w-0">
+        <h2 className={cn("font-display text-[24px] font-extrabold leading-tight tracking-tight text-ink", tablet && "text-[32px]")}>
+          {m.q}
+        </h2>
+        {m.hint && <p className={cn("mt-1 text-[14.5px] leading-snug text-muted", tablet && "text-[17px]")}>{m.hint}</p>}
+      </div>
     </div>
   );
 }
@@ -1933,20 +1996,19 @@ function MicroHeader({
   micros: MicroId[];
   current: MicroId;
   tablet: boolean;
+  foreigner: boolean;
   canOpen: (id: MicroId) => boolean;
   onGroup: (id: MicroId) => void;
   onClose: () => void;
 }) {
-  const groups: MicroGroup[] = ["Клиент", "Паспорт", "Адрес", "Документы", "Проверка"];
   const idx = micros.indexOf(current);
-  const curGroup = MICRO_META[current].group;
   return (
-    <div className={cn("shrink-0 bg-surface px-5 pb-3 pt-4", tablet && "px-10 pb-5 pt-6")}>
+    <div className={cn("shrink-0 border-b border-border bg-surface px-5 pb-3 pt-4", tablet && "px-10 pb-4 pt-5")}>
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <div className={cn("font-display text-[18px] font-extrabold text-ink", tablet && "text-[24px]")}>Новый клиент</div>
           <div className={cn("text-[13px] font-semibold text-muted-2", tablet && "text-[15px]")}>
-            {idx + 1} из {micros.length}
+            Шаг {idx + 1} из {micros.length} · {MICRO_META[current].title}
           </div>
         </div>
         <button
@@ -1958,31 +2020,288 @@ function MicroHeader({
           <X size={tablet ? 22 : 19} />
         </button>
       </div>
-      {/* Прогресс: тонкая полоса по микрошагам + разделы (нажимаются) */}
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-soft">
-        <div className="h-full rounded-full bg-blue-600 transition-all duration-300" style={{ width: `${((idx + 1) / micros.length) * 100}%` }} />
-      </div>
-      <div className={cn("mt-2 flex justify-between gap-1", tablet && "mt-3")}>
-        {groups.map((g) => {
-          const first = micros.find((m) => MICRO_META[m].group === g)!;
-          const open = canOpen(first);
+      {/* Шкала шагов: отрезок на каждую мысль; на планшете — с названиями */}
+      <div className={cn("mt-3 flex gap-1.5", tablet && "mt-4 gap-2")}>
+        {micros.map((m, i) => {
+          const open = canOpen(m);
           return (
             <button
-              key={g}
+              key={m}
               type="button"
               disabled={!open}
-              onClick={() => onGroup(first)}
-              className={cn(
-                "whitespace-nowrap rounded-lg py-1 text-center text-[11.5px] font-bold",
-                tablet && "text-[14px]",
-                g === curGroup ? "text-blue-600" : open ? "text-ink-2" : "text-muted-2",
-              )}
+              onClick={() => onGroup(m)}
+              className="flex min-w-0 flex-1 flex-col gap-1.5 text-left"
+              aria-label={MICRO_META[m].title}
             >
-              {g}
+              <span
+                className={cn(
+                  "h-1.5 w-full rounded-full transition-colors",
+                  i < idx ? "bg-blue-600" : i === idx ? "bg-blue-600" : "bg-surface-soft",
+                  i === idx && "shadow-[0_0_0_3px_rgba(37,99,235,0.15)]",
+                )}
+              />
+              {tablet && (
+                <span
+                  className={cn(
+                    "truncate text-[13px] font-bold",
+                    i === idx ? "text-blue-600" : open ? "text-ink-2" : "text-muted-2",
+                  )}
+                >
+                  {MICRO_META[m].title}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ───────── Живая карточка клиента (планшет): собирается по мере ввода ───────── */
+
+function initialsOfName(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function ageOf(birth: string): number | null {
+  const m = birth.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!m) return null;
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  const now = new Date();
+  let a = now.getFullYear() - d.getFullYear();
+  if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) a--;
+  return a >= 0 && a < 120 ? a : null;
+}
+
+function sourceLabel(f: Form): string | null {
+  if (f.source === "custom") return f.sourceCustom.trim() || null;
+  const l = SOURCE_OPTIONS.find((x) => x.id === f.source)?.label;
+  return l ? l.charAt(0).toUpperCase() + l.slice(1) : null;
+}
+
+function Avatar({ f, size }: { f: Form; size: number }) {
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-blue-50 font-display font-extrabold text-blue-700"
+      style={{ width: size, height: size, fontSize: size * 0.34 }}
+    >
+      {f.photoFile?.thumbUrl ? (
+        <img src={f.photoFile.thumbUrl} alt="" className="h-full w-full object-cover" />
+      ) : f.name.trim() ? (
+        initialsOfName(f.name)
+      ) : (
+        <UserRound size={size * 0.45} strokeWidth={1.6} />
+      )}
+    </span>
+  );
+}
+
+/** Планшет стоя: карточка — компактной полоской над вопросом. */
+function LiveClientStrip({ f, className }: { f: Form; className?: string }) {
+  if (!f.name.trim() && !f.phone && !f.photoFile) return null;
+  return (
+    <div className={cn("flex items-center gap-3 rounded-2xl bg-surface-soft px-4 py-3", className)}>
+      <Avatar f={f} size={44} />
+      <div className="min-w-0">
+        <div className="truncate text-[17px] font-bold text-ink">{f.name.trim() || "Новый клиент"}</div>
+        <div className="truncate text-[14px] text-muted">{[f.phone, sourceLabel(f)].filter(Boolean).join(" · ") || "заполняется…"}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Планшет лёжа: карточка справа — видно, что уже собрано, нажал строку — к шагу. */
+function LiveClientCard({
+  f,
+  current,
+  onEdit,
+}: {
+  f: Form;
+  current: MicroId;
+  onEdit: (id: MicroId) => void;
+}) {
+  const age = ageOf(f.birth);
+  const rows: { id: MicroId; label: string; value: string | null }[] = [
+    { id: "contact", label: "Телефон", value: f.phone || null },
+    { id: "source", label: "Откуда", value: sourceLabel(f) },
+    {
+      id: "passport",
+      label: "Паспорт",
+      value: f.isForeigner
+        ? f.passportRaw.trim() ? "иностранный" : null
+        : f.passSer || f.passNum ? `${f.passSer} ${f.passNum}`.trim() : null,
+    },
+    ...(!f.isForeigner ? [{ id: "issued" as MicroId, label: "Код подразд.", value: f.passCode || null }] : []),
+    { id: "address", label: "Адрес", value: f.regAddr.trim() || null },
+  ];
+  const docs: { id: MicroId; label: string; ok: boolean }[] = [
+    { id: "photo", label: "Фото", ok: !!f.photoFile },
+    ...(!f.isForeigner ? [{ id: "scans" as MicroId, label: "Паспорт", ok: !!(f.passportMainFile || f.passportRegFile) }] : []),
+    { id: "docs", label: "Права", ok: !!f.licenseFile },
+  ];
+  return (
+    <aside className="hidden w-[380px] shrink-0 flex-col border-l border-border bg-surface-soft/60 px-7 py-8 landscape:flex">
+      <div className="text-[13px] font-bold uppercase tracking-[0.12em] text-muted-2">Карточка клиента</div>
+      <div className="mt-4 rounded-3xl bg-surface p-5 shadow-card">
+        <button type="button" onClick={() => onEdit("who")} className="flex w-full items-center gap-4 text-left">
+          <Avatar f={f} size={64} />
+          <span className="min-w-0">
+            <span className={cn("block text-[19px] font-extrabold leading-tight", f.name.trim() ? "text-ink" : "text-muted-2")}>
+              {f.name.trim() || "Имя клиента"}
+            </span>
+            <span className="mt-0.5 block text-[14.5px] text-muted">
+              {f.birth ? `${f.birth}${age != null ? ` · ${age} ${age % 10 === 1 && age % 100 !== 11 ? "год" : age % 10 >= 2 && age % 10 <= 4 && (age % 100 < 12 || age % 100 > 14) ? "года" : "лет"}` : ""}` : "дата рождения"}
+            </span>
+          </span>
+        </button>
+        <div className="mt-4 flex flex-col">
+          {rows.map((r) => (
+            <button
+              key={r.label}
+              type="button"
+              onClick={() => onEdit(r.id)}
+              className={cn(
+                "flex items-start justify-between gap-3 border-t border-border py-2.5 text-left",
+                r.id === current && "text-blue-700",
+              )}
+            >
+              <span className="shrink-0 text-[14px] text-muted">{r.label}</span>
+              <span className={cn("min-w-0 break-words text-right text-[15px] font-semibold leading-snug", r.value ? "text-ink" : "text-muted-2")}>
+                {r.value ?? "—"}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 flex gap-2 border-t border-border pt-3">
+          {docs.map((d) => (
+            <button
+              key={d.label}
+              type="button"
+              onClick={() => onEdit(d.id)}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-[13.5px] font-bold",
+                d.ok ? "bg-green-soft text-green-ink" : "bg-surface-soft text-muted-2",
+              )}
+            >
+              {d.ok ? <Check size={15} strokeWidth={3} /> : <Camera size={15} />}
+              {d.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/** Поля для экрана проверки. */
+const REVIEW_FIELDS: { id: FieldId; label: string; optional?: boolean; long?: boolean }[] = [
+  { id: "name", label: "ФИО" },
+  { id: "birth", label: "Дата рождения" },
+  { id: "phone", label: "Телефон" },
+  { id: "phone2", label: "Запасной контакт", optional: true },
+  { id: "source", label: "Откуда узнал" },
+  { id: "doc", label: "Документ", long: true },
+  { id: "passSerNum", label: "Серия и номер" },
+  { id: "pcode", label: "Код подразделения" },
+  { id: "issuer", label: "Кем выдан", optional: true, long: true },
+  { id: "pdate", label: "Дата выдачи", optional: true },
+  { id: "reg", label: "Регистрация", long: true },
+  { id: "live", label: "Фактический адрес", optional: true, long: true },
+  { id: "photo", label: "Фото", optional: true },
+  { id: "scans", label: "Фото паспорта", optional: true },
+  { id: "license", label: "Водительское", optional: true },
+  { id: "other", label: "Другие документы", optional: true },
+];
+
+/** Экран проверки: все введённые данные целиком; нажал строку — вернулся к шагу. */
+function MicroReview({
+  f,
+  foreigner,
+  duplicateName,
+  onEdit,
+}: {
+  f: Form;
+  foreigner: boolean;
+  duplicateName: string | null;
+  onEdit: (id: MicroId) => void;
+}) {
+  const val = (id: FieldId): string | null => {
+    switch (id) {
+      case "photo": return f.photoFile ? "есть" : null;
+      case "name": return f.name.trim() || null;
+      case "phone": return f.phone || null;
+      case "phone2": return f.phone2 || null;
+      case "birth": return f.birth || null;
+      case "source": return sourceLabel(f);
+      case "doc": return f.isForeigner ? `Иностранный · ${f.passportRaw.trim()}` : "Паспорт РФ";
+      case "passSerNum": return f.passSer || f.passNum ? `${f.passSer} ${f.passNum}`.trim() : null;
+      case "issuer": return f.passIssuer.trim() || null;
+      case "pdate": return f.passDate || null;
+      case "pcode": return f.passCode || null;
+      case "scans": {
+        const n = [f.passportMainFile, f.passportRegFile].filter(Boolean).length;
+        return n ? `${n} из 2` : null;
+      }
+      case "reg": return f.regAddr.trim() || null;
+      case "live": return f.sameAddr ? "совпадает с регистрацией" : f.liveAddr.trim() || null;
+      case "license": return f.licenseFile ? "есть" : null;
+      case "other": return f.otherDocs.length ? `${f.otherDocs.length} шт.` : null;
+    }
+  };
+  const all = REVIEW_FIELDS.filter(
+    (x) => !foreigner || !["passSerNum", "pcode", "issuer", "pdate", "scans"].includes(x.id),
+  );
+  const shown = all.filter((x) => !x.optional || val(x.id) != null);
+  const skipped = all.filter((x) => x.optional && val(x.id) == null);
+  return (
+    <div className="flex flex-col gap-3">
+      {duplicateName && (
+        <div className="rounded-2xl bg-red-soft px-4 py-3 text-[15px] font-semibold text-red-ink">
+          Клиент с этим телефоном уже есть: «{duplicateName}». Не создавайте дубль — откройте его карточку.
+        </div>
+      )}
+      <div className="grid grid-cols-1 overflow-hidden rounded-2xl border border-border landscape:grid-cols-2 landscape:grid-flow-dense">
+        {shown.map((x) => {
+          const v = val(x.id);
+          return (
+            <button
+              key={x.id}
+              type="button"
+              onClick={() => onEdit(FIELD_SCREEN[x.id])}
+              className={cn(
+                "flex w-full flex-col gap-0.5 border-b border-border bg-surface px-4 py-2 text-left active:bg-surface-soft",
+                x.long ? "landscape:col-span-2" : "landscape:border-r",
+              )}
+            >
+              <span className="text-[13px] text-muted">{x.label}</span>
+              <span className={cn("break-words text-[16px] font-semibold leading-snug", v ? "text-ink" : "text-red-ink")}>
+                {v ?? "не заполнено"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {skipped.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[14px] text-muted">Пропущено:</span>
+          {skipped.map((x) => (
+            <button
+              key={x.id}
+              type="button"
+              onClick={() => onEdit(FIELD_SCREEN[x.id])}
+              className="rounded-full bg-surface-soft px-3 py-1.5 text-[13.5px] font-semibold text-ink-2 active:bg-border"
+            >
+              {x.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2026,7 +2345,7 @@ function MicroCapture({
           selfie
             ? "mx-auto aspect-square w-[min(52vw,220px)] rounded-full"
             : wide
-              ? "mx-auto aspect-[16/10] max-h-[30vh] w-full rounded-3xl"
+              ? "mx-auto aspect-[16/10] max-h-[30vh] w-full rounded-3xl landscape:max-h-[22vh]"
               : "aspect-[4/3] max-h-[26vh] w-full rounded-3xl",
         )}
       >
@@ -2084,94 +2403,3 @@ function MicroCapture({
   );
 }
 
-/** Экран проверки: все введённые данные; нажал строку — вернулся к шагу. */
-function MicroReview({
-  f,
-  micros,
-  duplicateName,
-  onEdit,
-}: {
-  f: Form;
-  micros: MicroId[];
-  duplicateName: string | null;
-  onEdit: (id: MicroId) => void;
-}) {
-  const val = (id: MicroId): string | null => {
-    switch (id) {
-      case "photo": return f.photoFile ? "есть" : null;
-      case "name": return f.name.trim() || null;
-      case "phone": return f.phone || null;
-      case "phone2": return f.phone2 || null;
-      case "birth": return f.birth || null;
-      case "source":
-        if (f.source === "custom") return f.sourceCustom.trim() || null;
-        return SOURCE_OPTIONS.find((x) => x.id === f.source)?.label ?? null;
-      case "doc": return f.isForeigner ? `Иностранный · ${f.passportRaw.trim()}` : "Паспорт РФ";
-      case "passSerNum": return f.passSer || f.passNum ? `${f.passSer} ${f.passNum}`.trim() : null;
-      case "issuer": return f.passIssuer.trim() || null;
-      case "pdate": return f.passDate || null;
-      case "pcode": return f.passCode || null;
-      case "scans": {
-        const n = [f.passportMainFile, f.passportRegFile].filter(Boolean).length;
-        return n ? `${n} из 2` : null;
-      }
-      case "reg": return f.regAddr.trim() || null;
-      case "live": return f.sameAddr ? "совпадает с регистрацией" : f.liveAddr.trim() || null;
-      case "license": return f.licenseFile ? "есть" : null;
-      case "other": return f.otherDocs.length ? `${f.otherDocs.length} шт.` : null;
-      default: return null;
-    }
-  };
-  const all = micros.filter((id) => id !== "review");
-  // длинные значения (адреса, документ иностранца) — строкой во всю ширину
-  const LONG = new Set<MicroId>(["reg", "live", "doc", "issuer"]);
-  const shown = all.filter((id) => !MICRO_META[id].optional || val(id) != null);
-  const skipped = all.filter((id) => MICRO_META[id].optional && val(id) == null);
-  return (
-    <div className="flex flex-col gap-3">
-      {duplicateName && (
-        <div className="rounded-2xl bg-red-soft px-4 py-3 text-[15px] font-semibold text-red-ink">
-          Клиент с этим телефоном уже есть: «{duplicateName}». Не создавайте дубль — откройте его карточку.
-        </div>
-      )}
-      {/* Заполненное и обязательное — строками; пропущенное — одной строкой
-          чипов, чтобы проверка помещалась на экран без прокрутки. */}
-      <div className="grid grid-cols-1 overflow-hidden rounded-2xl border border-border landscape:grid-cols-2 landscape:grid-flow-dense">
-        {shown.map((id) => {
-          const v = val(id);
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onEdit(id)}
-              className={cn(
-                "flex w-full flex-col gap-0.5 border-b border-border bg-surface px-4 py-2 text-left active:bg-surface-soft",
-                LONG.has(id) ? "landscape:col-span-2" : "landscape:border-r",
-              )}
-            >
-              <span className="text-[13px] text-muted">{MICRO_META[id].label}</span>
-              <span className={cn("break-words text-[16px] font-semibold leading-snug", v ? "text-ink" : "text-red-ink")}>
-                {v ?? "не заполнено"}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {skipped.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[14px] text-muted">Пропущено:</span>
-          {skipped.map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onEdit(id)}
-              className="rounded-full bg-surface-soft px-3 py-1.5 text-[13.5px] font-semibold text-ink-2 active:bg-border"
-            >
-              {MICRO_META[id].label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}

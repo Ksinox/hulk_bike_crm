@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ArrowLeftRight, Banknote, Check, CreditCard, Lock, Package, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeftRight, Banknote, Bike, CalendarDays, Check, CreditCard, Lock, Package, Search, UserPlus, UserRound, X } from "lucide-react";
 import { fileUrl } from "@/lib/files";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -39,8 +39,9 @@ import { ChevronLeft, ArrowRight } from "lucide-react";
 import { ScooterName } from "@/components/ScooterName";
 
 // Заголовки шагов мобильного мастера аренды.
-// 22.10: «Экипировка, залог и оплата» не помещались на один экран — три шага.
-const STEP_TITLES = ["Клиент", "Скутер", "Срок", "Экипировка", "Залог", "Оплата"] as const;
+// 22.10: «одна мысль — один экран»: выдача (экипировка + залог) и оплата —
+// отдельно; вместе с оплатой они не помещались на экран.
+const STEP_TITLES = ["Клиент", "Скутер", "Срок", "Выдача", "Оплата"] as const;
 /**
  * 22.10 (планшет): у шага — вопрос крупным заголовком, как в приложениях:
  * человек отвечает на один вопрос за раз, а не разглядывает форму целиком.
@@ -49,9 +50,16 @@ const STEP_QUESTIONS = [
   "Кто берёт скутер?",
   "Какой скутер выдаём?",
   "На какой срок?",
-  "Что выдаём с собой?",
-  "Залог",
+  "Что выдаём и какой залог?",
   "Как платит клиент?",
+] as const;
+/** Значок шага — у каждого экрана своё лицо (как в анкете клиента). */
+const STEP_ICONS = [
+  { Icon: UserRound, tone: "bg-blue-50 text-blue-600" },
+  { Icon: Bike, tone: "bg-green-soft text-green-ink" },
+  { Icon: CalendarDays, tone: "bg-orange-soft text-orange-ink" },
+  { Icon: Package, tone: "bg-violet-50 text-violet-600" },
+  { Icon: Banknote, tone: "bg-green-soft text-green-ink" },
 ] as const;
 
 /** Сегодня в формате DD.MM.YYYY (локальное время). */
@@ -669,19 +677,16 @@ export function NewRentalModal({
                 value: clientId != null && scooterName ? `${days} ${plural(days, ["день", "дня", "дней"])} · ${sum.toLocaleString("ru-RU")} ₽` : null,
               },
               {
-                title: "Экипировка",
+                title: "Выдача",
                 value: clientId != null && scooterName && step > 4
-                  ? equipmentSelected.length
-                    ? equipmentSelected.map((e) => e.name).join(", ")
-                    : "без экипировки"
-                  : null,
-              },
-              {
-                title: "Залог",
-                value: clientId != null && scooterName && step > 5
-                  ? depositMode === "sum"
-                    ? `${depositSum.toLocaleString("ru-RU")} ₽`
-                    : depositItemText.trim() || "предмет"
+                  ? [
+                      equipmentSelected.length ? equipmentSelected.map((e) => e.name).join(", ") : null,
+                      depositMode === "sum"
+                        ? `залог ${depositSum.toLocaleString("ru-RU")} ₽`
+                        : `залог: ${depositItemText.trim() || "предмет"}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
                   : null,
               },
               {
@@ -1250,7 +1255,7 @@ export function NewRentalModal({
           {/* 4 Экипировка + залог + оплата */}
           <Section num={4} title="Экипировка, залог и оплата" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout}>
             <div>
-              <div className={cn("mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2", stepMode && "hidden")}>
+              <div className={cn("mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2", stepMode && "mb-3 text-[13px] text-ink-2")}>
                 Выданная экипировка {equipmentExtra > 0 && (
                   <span className="text-blue-700">+{equipmentExtra}₽</span>
                 )}
@@ -1322,9 +1327,15 @@ export function NewRentalModal({
 
           </Section>
           {/* 5 Залог (на компьютере — продолжение блока 4, без своего заголовка) */}
-          <Section num={5} title="Залог" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout} headless={!stepMode}>
+          <Section num={4} title="Залог" mobile={stepMode} current={step} className={sectionCls} headless={!stepMode}>
             <div className={cn(!stepMode && "mt-3")}>
-              <div className={cn("mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2", stepMode && "hidden")}>
+              <div
+                className={cn(
+                  "mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2",
+                  // мастер: подзаголовок второй половины шага «Выдача»
+                  stepMode && "mb-3 text-[13px] text-ink-2",
+                )}
+              >
                 Залог
               </div>
               <div className="mb-2 inline-flex rounded-full bg-surface-soft p-0.5">
@@ -1389,7 +1400,7 @@ export function NewRentalModal({
             </div>
           </Section>
           {/* 6 Оплата */}
-          <Section num={6} title="Оплата" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout} headless={!stepMode}>
+          <Section num={5} title="Оплата" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout} headless={!stepMode}>
             <div className={cn(!stepMode && "mt-3")} data-rental-pay>
               <div className={cn("mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-2", stepMode && "hidden")}>
                 Способ оплаты
@@ -1566,10 +1577,10 @@ export function NewRentalModal({
               },
               { step: 3, label: "Выдача", value: clientId != null && scooterName ? `${start} ${startTime}` : null },
               { step: 3, label: "Возврат", value: clientId != null && scooterName ? `${endPlanned} ${startTime}` : null },
-              { step: 4, label: "Экипировка", value: equipmentSelected.length ? equipmentSelected.map((e) => e.name).join(", ") : clientId != null && scooterName && step > 4 ? "нет" : null },
+              { step: 4, label: "Экипировка", value: equipmentSelected.length ? equipmentSelected.map((e) => e.name).join(", ") : clientId != null && scooterName && step > 4 ? "без экипировки" : null },
               { step: 3, label: "Тариф", value: scooterName ? `${rate} ₽/${isWeeklyCustom ? "нед" : "сут"} × ${isWeeklyCustom ? `${weeks} нед` : `${days} дн`}` : null },
               {
-                step: 5,
+                step: 4,
                 label: "Залог",
                 value:
                   depositMode === "sum"
@@ -1577,7 +1588,7 @@ export function NewRentalModal({
                     : depositItemText.trim() || null,
               },
               {
-                step: 6,
+                step: 5,
                 label: "Оплата",
                 value: splitValid
                   ? `нал ${splitCash.toLocaleString("ru-RU")} + перевод ${splitTransfer.toLocaleString("ru-RU")}`
@@ -1800,7 +1811,8 @@ function EquipmentTile({
         on ? "border-blue-600 bg-blue-50" : "border-border bg-surface",
       )}
     >
-      <span className="relative flex aspect-square w-full items-center justify-center bg-white p-2">
+      {/* планшет лёжа: плитка пониже — вместе с залогом шаг помещается на экран */}
+      <span className={cn("relative flex w-full items-center justify-center bg-white p-2", tablet ? "h-[112px]" : "aspect-square")}>
         {src ? (
           <img src={src} alt={item.name} className="h-full w-full object-contain" />
         ) : (
@@ -1997,14 +2009,24 @@ function Section({
   return (
     <section className={cn("mb-5 last:mb-0", className)}>
       {big && (
-        <h2
-          className={cn(
-            "mb-4 font-display text-[24px] font-extrabold leading-tight tracking-tight text-ink",
-            bigTablet && "mb-6 text-[30px]",
-          )}
-        >
-          {STEP_QUESTIONS[num - 1]}
-        </h2>
+        <div className={cn("mb-4 flex items-center gap-3.5", bigTablet && "mb-6 gap-4")}>
+          {STEP_ICONS[num - 1] && (() => {
+            const { Icon, tone } = STEP_ICONS[num - 1]!;
+            return (
+              <span className={cn("flex shrink-0 items-center justify-center rounded-2xl", bigTablet ? "h-14 w-14" : "h-11 w-11", tone)}>
+                <Icon size={bigTablet ? 27 : 21} strokeWidth={1.9} />
+              </span>
+            );
+          })()}
+          <h2
+            className={cn(
+              "font-display text-[23px] font-extrabold leading-tight tracking-tight text-ink",
+              bigTablet && "text-[30px]",
+            )}
+          >
+            {STEP_QUESTIONS[num - 1]}
+          </h2>
+        </div>
       )}
       {/* На мобиле номер-шага дублируется в прогресс-баре сверху — здесь скрываем. */}
       <header className={cn("mb-2 flex items-center gap-2", mobile && "hidden")}>
