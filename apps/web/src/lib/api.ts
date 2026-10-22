@@ -74,7 +74,11 @@ async function request<T>(
       !dkRetried
     ) {
       const { acquireDirectorApproval } = await import("./directorGate");
-      const approval = await acquireDirectorApproval(b.action ?? "");
+      const extra = body as { brief?: unknown; ticket?: string } | null;
+      const approval = await acquireDirectorApproval(b.action ?? "", {
+        brief: (extra?.brief ?? null) as import("./directorGate").ApprovalBrief | null,
+        ticket: extra?.ticket ?? null,
+      });
       if (approval) {
         return request<T>(
           path,

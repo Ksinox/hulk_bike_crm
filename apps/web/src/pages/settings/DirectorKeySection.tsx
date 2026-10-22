@@ -11,11 +11,7 @@ import {
   Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  useApprovalsStatus,
-  useSetDirectorKey,
-  useToggleDirectorCode,
-} from "@/lib/api/approvals";
+import { useApprovalsStatus } from "@/lib/api/approvals";
 import { useCreateRecoveryCodes, useRecoveryCodesStatus } from "@/lib/api/auth";
 import { DirectorCodeRing } from "@/components/DirectorCode";
 import { toast } from "@/lib/toast";
@@ -24,16 +20,15 @@ import { toast } from "@/lib/toast";
  * Защита директора (настройки). Видна ТОЛЬКО директору — из его аккаунта.
  *
  *  · Меняющийся код (22.10): 6 цифр, меняются каждые 30 секунд, считает
- *    сервер. Директор диктует код сотруднику; постоянный ключ в этом режиме
- *    не принимается.
- *  · Постоянный ключ — прежний способ (пока код не включён).
+ *    сервер. Это и есть защита — без выключателя и постоянного ключа
+ *    (заказчик). Главный путь — запрос директору и «Подтвердить» одной
+ *    кнопкой; код — когда директор рядом и диктует.
  *  · Коды восстановления пароля — «как на GitHub»: 10 одноразовых кодов на
  *    случай, если директор забыл пароль.
  */
 export function DirectorKeySection() {
   const { data } = useApprovalsStatus();
   if (!data?.isDirector) return null;
-  const codeOn = data.mode === "code";
   return (
     <section className="rounded-2xl bg-surface p-5 shadow-card-sm">
       <div className="mb-1 flex items-center gap-2">
@@ -46,187 +41,33 @@ export function DirectorKeySection() {
       <p className="mb-4 max-w-xl text-[12.5px] leading-relaxed text-muted">
         Защищённые действия (удаление аренды, перенос техники между
         категориями, отмена старых операций, правка принятых денег) сотрудник
-        выполняет только с вашего подтверждения. Вы сами подтверждаете одним
-        нажатием — ключ не нужен.
+        выполняет только с вашего подтверждения: запрос приходит вам в CRM — на
+        телефон или компьютер, — вы смотрите, что за операция, и жмёте
+        «Подтвердить». Если вы рядом — продиктуйте сотруднику код.
       </p>
       <div className="flex flex-col gap-4">
-        <CodeBlock on={codeOn} />
-        {!codeOn && <StaticKeyForm keySet={!!data.keyHashSet} />}
+        <CodeBlock />
         <RecoveryBlock />
       </div>
     </section>
   );
 }
 
-function CodeBlock({ on }: { on: boolean }) {
-  const toggle = useToggleDirectorCode();
-  const run = async (next: boolean) => {
-    try {
-      await toggle.mutateAsync(next);
-      toast.success(
-        next ? "Меняющийся код включён" : "Меняющийся код выключен",
-        next
-          ? "Постоянный ключ больше не действует — сотрудникам диктуйте код."
-          : "Снова действует постоянный ключ.",
-      );
-    } catch {
-      toast.error("Не получилось", "Попробуйте ещё раз");
-    }
-  };
-  if (!on)
-    return (
-      <div className="rounded-2xl border border-border p-4">
-        <div className="flex items-center gap-2 text-[13.5px] font-bold text-ink">
-          <Timer size={15} className="text-green-ink" /> Меняющийся код
-        </div>
-        <p className="mt-1 max-w-xl text-[12.5px] leading-relaxed text-muted">
-          Вместо постоянного ключа — 6 цифр, которые меняются каждые 30
-          секунд, как в Google Authenticator. Код видите только вы, в своём
-          аккаунте. Сохранённый браузером ключ перестанет работать.
-        </p>
-        <button
-          type="button"
-          onClick={() => run(true)}
-          disabled={toggle.isPending}
-          className="mt-3 inline-flex h-11 items-center gap-2 rounded-xl bg-green-ink px-5 text-[13.5px] font-bold text-white transition-transform hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
-        >
-          {toggle.isPending ? <Loader2 size={15} className="animate-spin" /> : <Timer size={15} />}
-          Включить меняющийся код
-        </button>
-      </div>
-    );
+function CodeBlock() {
   return (
     <div className="relative overflow-hidden rounded-2xl bg-[#0b1220] p-5 text-white">
       <div className="pointer-events-none absolute -left-16 -top-20 h-48 w-48 rounded-full bg-blue-600/25 blur-[60px]" />
       <div className="relative flex flex-col items-center gap-5 sm:flex-row sm:items-center">
         <DirectorCodeRing size={208} />
         <div className="min-w-0 flex-1 text-center sm:text-left">
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-300/80">
-            Включён
-          </div>
-          <div className="mt-0.5 font-display text-[18px] font-bold">Меняющийся код</div>
-          <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/60">
-            Сотрудник вводит этот код в окне подтверждения. Код одноразовый и
-            через 30 секунд сменится. Постоянный ключ сейчас не принимается.
-            Код также открывается кнопкой «Код» в шапке.
+          <div className="font-display text-[18px] font-bold">Меняющийся код</div>
+          <p className="mt-1.5 max-w-md text-[12.5px] leading-relaxed text-white/60">
+            Новый код каждые 30 секунд, каждый срабатывает один раз. Код видите
+            только вы — у сотрудников его нет. Открыть его можно и кнопкой
+            «Код» в шапке.
           </p>
-          <button
-            type="button"
-            onClick={() => run(false)}
-            disabled={toggle.isPending}
-            className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl bg-white/10 px-4 text-[12.5px] font-bold text-white/80 transition-colors hover:bg-white/15 disabled:opacity-40"
-          >
-            Выключить и вернуть постоянный ключ
-          </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function StaticKeyForm({ keySet }: { keySet: boolean }) {
-  const setKey = useSetDirectorKey();
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [repeat, setRepeat] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async () => {
-    setError(null);
-    if (next.length < 4) return setError("Ключ — минимум 4 символа.");
-    if (next !== repeat) return setError("Повтор ключа не совпадает.");
-    try {
-      await setKey.mutateAsync({
-        currentKey: keySet ? current : undefined,
-        newKey: next,
-      });
-      toast.success(
-        keySet ? "Ключ директора изменён" : "Ключ директора установлен",
-        "Защищённые действия теперь требуют подтверждения этим ключом.",
-      );
-      setCurrent("");
-      setNext("");
-      setRepeat("");
-    } catch (e) {
-      setError(
-        (e as { status?: number }).status === 403
-          ? "Текущий ключ неверен."
-          : "Не удалось сохранить ключ.",
-      );
-    }
-  };
-
-  const inputCls = (bad?: boolean) =>
-    cn(
-      "h-11 w-full rounded-xl border-2 bg-surface px-3 text-[14px] font-semibold text-ink outline-none transition-colors",
-      bad ? "border-red-300" : "border-border focus:border-blue-500",
-    );
-
-  return (
-    <div className="rounded-2xl border border-border p-4">
-      <div className="flex items-center gap-2 text-[13.5px] font-bold text-ink">
-        <KeyRound size={15} className="text-blue-600" /> Постоянный ключ
-        {keySet && (
-          <span className="flex items-center gap-1 rounded-full bg-green-soft px-2 py-0.5 text-[11px] font-bold text-green-ink">
-            <ShieldCheck size={11} /> установлен
-          </span>
-        )}
-      </div>
-      {!keySet && (
-        <p className="mt-1 text-[12.5px] text-muted">
-          Пока ни ключ, ни код не включены, защита выключена.
-        </p>
-      )}
-      <div className="mt-3 grid max-w-xl gap-3 sm:grid-cols-3">
-        {keySet && (
-          <div>
-            <label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              Текущий ключ
-            </label>
-            <input
-              type="password"
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-              autoComplete="off"
-              className={inputCls()}
-            />
-          </div>
-        )}
-        <div>
-          <label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-muted-2">
-            {keySet ? "Новый ключ" : "Ключ"}
-          </label>
-          <input
-            type="password"
-            value={next}
-            onChange={(e) => setNext(e.target.value)}
-            autoComplete="new-password"
-            className={inputCls(!!error && next.length < 4)}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-muted-2">
-            Повторите
-          </label>
-          <input
-            type="password"
-            value={repeat}
-            onChange={(e) => setRepeat(e.target.value)}
-            autoComplete="new-password"
-            className={inputCls(!!error && next !== repeat)}
-          />
-        </div>
-      </div>
-      {error && <div className="mt-2 text-[12.5px] font-semibold text-red-ink">{error}</div>}
-      <button
-        type="button"
-        onClick={submit}
-        disabled={setKey.isPending || !next}
-        className="mt-3 inline-flex h-11 items-center gap-2 rounded-xl bg-ink px-5 text-[13.5px] font-bold text-white transition-colors hover:bg-blue-600 disabled:opacity-40"
-      >
-        {setKey.isPending ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
-        {keySet ? "Сменить ключ" : "Установить ключ"}
-      </button>
     </div>
   );
 }

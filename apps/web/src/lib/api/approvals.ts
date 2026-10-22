@@ -7,7 +7,8 @@ export type ApprovalRequest = {
   id: number;
   action: string;
   summary: string;
-  detailsJson: string[] | null;
+  /** Старые запросы — строки; с 22.10 — { facts, note } (см. OperationBrief). */
+  detailsJson: string[] | { facts?: unknown; note?: string[] } | null;
   status: "pending" | "approved" | "rejected" | "cancelled";
   requestedByUserId: number | null;
   requestedByName: string | null;
@@ -21,7 +22,6 @@ export type ApprovalRequest = {
 export type ApprovalsStatus = {
   keySet: boolean;
   mode?: "off" | "key" | "code";
-  keyHashSet?: boolean;
   /** Это аккаунт директора — подтверждает одним нажатием, видит код. */
   isDirector?: boolean;
   pending: number;
@@ -74,25 +74,6 @@ export function useRejectRequest() {
         args.key ? { key: args.key } : {},
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: approvalsKeys.all }),
-  });
-}
-
-export function useSetDirectorKey() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (args: { currentKey?: string; newKey: string }) =>
-      api.post<{ ok: true }>("/api/approvals/key", args),
-    onSuccess: () => qc.invalidateQueries({ queryKey: approvalsKeys.status }),
-  });
-}
-
-/** 22.10: меняющийся код — включить / выключить (только директор). */
-export function useToggleDirectorCode() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (on: boolean) =>
-      api.post<{ ok: true }>(`/api/approvals/code/${on ? "enable" : "disable"}`, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: approvalsKeys.status }),
   });
 }
 
