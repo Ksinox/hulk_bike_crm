@@ -1120,8 +1120,9 @@ const RELEASE_2_0_11: ReleaseTourConfig = {
       audience: "managers",
       devices: ["desktop", "phone"],
       before: { desktop: `${R2011}/d-settings-was.jpg` },
-      img: { desktop: `${R2011}/d-code-now.jpg`, phone: `${R2011}/m-code-now.jpg` },
-      zoom: { desktop: { before: `${R2011}/d-settings-was.jpg`, after: `${R2011}/d-settings-now.jpg` } },
+      // сравниваем одно и то же место — раздел настроек; окно кода — «Крупно»
+      img: { desktop: `${R2011}/d-settings-now.jpg`, phone: `${R2011}/m-code-now.jpg` },
+      zoom: { desktop: { after: `${R2011}/d-code-now.jpg` } },
       imgPos: { desktop: "center center", phone: "center top" },
     },
     {
