@@ -11,13 +11,15 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const port = process.env.PORT ?? "5173";
+// --api=<адрес> — проксировать не в песочницу, а, например, в превью.
+const apiArg = process.argv.find((a) => a.startsWith("--api="))?.slice(6);
 const child = spawn("pnpm", ["-C", "apps/web", "exec", "vite", "--port", port, "--strictPort"], {
   cwd: root,
   stdio: "inherit",
   shell: true,
   env: {
     ...process.env,
-    SHOT_PROXY_API: process.env.SHOT_PROXY_API ?? "http://localhost:4999",
+    SHOT_PROXY_API: apiArg ?? process.env.SHOT_PROXY_API ?? "http://localhost:4999",
     VITE_API_URL: `http://localhost:${port}`,
   },
 });

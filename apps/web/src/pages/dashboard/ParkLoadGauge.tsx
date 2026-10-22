@@ -76,6 +76,7 @@ export function ParkLoadGauge({
   size = 110,
   layout = "row",
   compact = false,
+  narrowBelow = 260,
 }: {
   percent: number;
   active: number;
@@ -95,6 +96,11 @@ export function ParkLoadGauge({
    * встают в половину прежнего места — круг меньше, подписи мельче.
    */
   compact?: boolean;
+  /**
+   * С какой ширины плашки круг уходит над подписью (22.10: на планшете
+   * четыре плашки в ряд по ~240px — подписи справа там помещаются).
+   */
+  narrowBelow?: number;
 }) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
 
@@ -111,11 +117,11 @@ export function ParkLoadGauge({
     const el = cardRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
-      if (entry) setNarrow(entry.contentRect.width < 260);
+      if (entry) setNarrow(entry.contentRect.width < narrowBelow);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [narrowBelow]);
 
   const SIZE = compact ? 54 : narrow ? Math.round(size * 0.78) : size;
   // Белый круг по центру — 0.66 диаметра (правка 27.08: и сам круг, и
