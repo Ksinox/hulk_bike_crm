@@ -17,13 +17,24 @@ import { db } from "../db/index.js";
 import { appSettings } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 
+/**
+ * 22.10 (обходы ключа директора): общий PUT писал ЛЮБОЙ ключ — в том числе
+ * `director_key_hash` (подставить свой ключ = снять защиту целиком) и
+ * `buyout_markups` (у наценок свой путь с ключом). А GET отдавал хэш ключа
+ * любому вошедшему. Теперь служебное не читается, а писать через общий PUT
+ * можно только то, что настраивается на экране «Настройки».
+ */
+const HIDDEN_KEYS = new Set(["director_key_hash"]);
+const WRITABLE_KEYS = new Set(["work_hours_start", "work_hours_end", "return_reasons", "breakdown_reasons"]);
+
 export async function appSettingsRoutes(app: FastifyInstance) {
   app.get("/", async () => {
     const rows = await db.select().from(appSettings);
-    return { items: rows };
+    return { items: rows.filter((r) => !HIDDEN_KEYS.has(r.key)) };
   });
 
   app.get<{ Params: { key: string } }>("/:key", async (req, reply) => {
+    if (HIDDEN_KEYS.has(req.params.key)) return reply.code(404).send({ error: "not found" });
     const [row] = await db
       .select()
       .from(appSettings)
@@ -41,6 +52,12 @@ export async function appSettingsRoutes(app: FastifyInstance) {
       const allowed = ["director", "creator", "admin"] as const;
       if (!allowed.includes(req.user?.role as never)) {
         return reply.code(403).send({ error: "forbidden" });
+      }
+      if (!WRITABLE_KEYS.has(req.params.key)) {
+        return reply.code(403).send({
+          error: "protected_setting",
+          message: "Эта настройка меняется только своим разделом (с ключом директора).",
+        });
       }
       const Body = z.object({ value: z.string().min(1).max(2000) });
       const parsed = Body.safeParse(req.body);
