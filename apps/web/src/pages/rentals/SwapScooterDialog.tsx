@@ -26,6 +26,7 @@ import { ScooterPosterAvatar } from "./ScooterPosterAvatar";
 import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 import { useTabletLayout } from "@/lib/useIsMobile";
+import { setNextApprovalContext } from "@/lib/directorGate";
 import {
   MileageCorrectionBox,
   MileageField,
@@ -264,6 +265,17 @@ export function SwapScooterDialog({
     if (mp) {
       toast.error(mp[0], mp[1]);
       return;
+    }
+    // 22.10: снятый скутер меняет категорию — сервер спросит ключ
+    // директора; в окне ключа — что именно происходит.
+    if (currentScooter && currentScooter.baseStatus !== oldStatus) {
+      setNextApprovalContext({
+        summary: `Замена скутера в аренде #${String(rental.id).padStart(4, "0")}`,
+        details: [
+          `Снятый скутер: ${scooterModelName(rental.scooter)}${currentScooter.rentalSlot ? ` №${currentScooter.rentalSlot}` : ""}`,
+          `Переводится в «${SCOOTER_BASE_STATUS_OPTIONS.find((o) => o.value === oldStatus)?.label ?? oldStatus}»`,
+        ],
+      });
     }
     try {
       const updated = await swap.mutateAsync({

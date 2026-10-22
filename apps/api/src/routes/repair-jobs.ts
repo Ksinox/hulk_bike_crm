@@ -13,6 +13,7 @@ import {
   damageReportItems,
 } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
+import { requireDirectorApproval } from "./approvals.js";
 import { makeFileKey, removeObject } from "../storage/index.js";
 import { putObjectWithImageVariants } from "../storage/image.js";
 
@@ -486,6 +487,20 @@ export async function repairJobsRoutes(app: FastifyInstance) {
           error: "already_completed",
           message: "Этот ремонт уже закрыт.",
         });
+      }
+      // 22.10 (обходы ключа): закрытие ремонта переводило скутер в любую
+      // категорию без ключа — тогда как в карточке скутера это с ключом.
+      {
+        const [sc] = await db
+          .select({ baseStatus: scooters.baseStatus })
+          .from(scooters)
+          .where(eq(scooters.id, job.scooterId));
+        if (
+          sc &&
+          sc.baseStatus !== parsed.data.newScooterStatus &&
+          !(await requireDirectorApproval(app, req, reply, "scooter_status_change"))
+        )
+          return;
       }
       const userId = getUserId(req);
       await db.transaction(async (tx) => {
