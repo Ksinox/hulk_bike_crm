@@ -3,15 +3,19 @@
  * Ничего не создаёт: доходит до последнего шага и закрывается.
  *   VP=land|port PREFIX=tabrent node scripts/shots/shot.mjs scripts/shots/scenarios/tab-rental-wizard.mjs
  */
+const PHONE_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
 const IPAD_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
 
 export async function run(page, ctx) {
   const vp = process.env.VP ?? "land";
   const prefix = process.env.PREFIX ?? "tabrent";
-  await page.setUserAgent(IPAD_UA);
+  await page.setUserAgent(vp === "phone" ? PHONE_UA : IPAD_UA);
   await page.setViewport(
-    vp === "port"
+    vp === "phone"
+      ? { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true }
+      : vp === "port"
       ? { width: 820, height: 1180, deviceScaleFactor: 1, isMobile: true, hasTouch: true }
       : { width: 1180, height: 820, deviceScaleFactor: 1, isMobile: true, hasTouch: true },
   );
@@ -59,6 +63,11 @@ export async function run(page, ctx) {
   console.log("далее:", await click("^Далее"));
   await ctx.sleep(1200);
   await ctx.shot(`${prefix}-4-${vp}`, { jpeg: true });
+  console.log("экипировка → залог:", await click("^Далее"));
+  await ctx.sleep(900);
+  await ctx.shot(`${prefix}-4b-${vp}`, { jpeg: true });
+  console.log("залог → оплата:", await click("^Далее"));
+  await ctx.sleep(900);
   console.log("оплата:", await click("^Наличные$"));
   await ctx.sleep(800);
   await ctx.shot(`${prefix}-5-${vp}`, { jpeg: true });

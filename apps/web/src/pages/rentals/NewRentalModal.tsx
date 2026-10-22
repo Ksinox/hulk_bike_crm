@@ -39,7 +39,8 @@ import { ChevronLeft, ArrowRight } from "lucide-react";
 import { ScooterName } from "@/components/ScooterName";
 
 // Заголовки шагов мобильного мастера аренды.
-const STEP_TITLES = ["Клиент", "Скутер", "Срок", "Оплата"] as const;
+// 22.10: «Экипировка, залог и оплата» не помещались на один экран — три шага.
+const STEP_TITLES = ["Клиент", "Скутер", "Срок", "Экипировка", "Залог", "Оплата"] as const;
 /**
  * 22.10 (планшет): у шага — вопрос крупным заголовком, как в приложениях:
  * человек отвечает на один вопрос за раз, а не разглядывает форму целиком.
@@ -48,7 +49,9 @@ const STEP_QUESTIONS = [
   "Кто берёт скутер?",
   "Какой скутер выдаём?",
   "На какой срок?",
-  "Экипировка, залог и оплата",
+  "Что выдаём с собой?",
+  "Залог",
+  "Как платит клиент?",
 ] as const;
 
 /** Сегодня в формате DD.MM.YYYY (локальное время). */
@@ -642,6 +645,8 @@ export function NewRentalModal({
           // Мобайл: полноэкранно (min-h-100dvh, без скруглений). Десктоп: карточка 780.
           "min-h-[100dvh] w-full overflow-hidden bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[780px] sm:rounded-2xl",
           tabletLayout && TABLET_DIALOG_PANEL,
+          // телефон: шапка и кнопки на месте, едет только шаг; кнопки — у низа
+          stepMode && !tabletLayout && "flex h-[100dvh] flex-col",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -664,6 +669,22 @@ export function NewRentalModal({
                 value: clientId != null && scooterName ? `${days} ${plural(days, ["день", "дня", "дней"])} · ${sum.toLocaleString("ru-RU")} ₽` : null,
               },
               {
+                title: "Экипировка",
+                value: clientId != null && scooterName && step > 4
+                  ? equipmentSelected.length
+                    ? equipmentSelected.map((e) => e.name).join(", ")
+                    : "без экипировки"
+                  : null,
+              },
+              {
+                title: "Залог",
+                value: clientId != null && scooterName && step > 5
+                  ? depositMode === "sum"
+                    ? `${depositSum.toLocaleString("ru-RU")} ₽`
+                    : depositItemText.trim() || "предмет"
+                  : null,
+              },
+              {
                 title: "Оплата",
                 value: splitValid ? "Разделить" : paymentMethod === "cash" ? "Наличные" : paymentMethod === "transfer" ? "Перевод" : null,
               },
@@ -681,7 +702,9 @@ export function NewRentalModal({
               Новая аренда
             </div>
             <div className="text-[11px] text-muted-2">
-              заполните 4 блока — ставка и сумма рассчитываются автоматически
+              {stepMode
+                ? `Шаг ${step} из ${STEP_TITLES.length}`
+                : "заполните 4 блока — ставка и сумма рассчитываются автоматически"}
             </div>
           </div>
           <button
@@ -734,6 +757,7 @@ export function NewRentalModal({
         <div
           className={cn(
             "max-h-[calc(100vh-220px)] overflow-y-auto px-5 py-4 sm:max-h-[calc(100vh-220px)]",
+            stepMode && !tabletLayout && "!max-h-none min-h-0 flex-1",
             // Планшет: один шаг на весь экран, крупно (.tab-xl — шкала
             // шрифтов и высот под палец, см. index.css). Прокручивается
             // только сам шаг, шапка с шагами и кнопки стоят на месте.
@@ -743,7 +767,7 @@ export function NewRentalModal({
         >
           {/* 1 Клиент */}
           <div className={colCls}>
-          <Section num={1} title="Клиент" mobile={stepMode} current={step} className={sectionCls} big={tabletLayout}>
+          <Section num={1} title="Клиент" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout}>
             {client ? (
               <ClientChip
                 client={client}
@@ -871,7 +895,7 @@ export function NewRentalModal({
           </Section>
 
           {/* 2 Скутер */}
-          <Section num={2} title="Скутер" mobile={stepMode} current={step} className={sectionCls} big={tabletLayout}>
+          <Section num={2} title="Скутер" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout}>
             {scooterName ? (
               <button
                 type="button"
@@ -1000,7 +1024,7 @@ export function NewRentalModal({
           </Section>
 
           {/* 3 Срок и тариф */}
-          <Section num={3} title="Срок и тариф" mobile={stepMode} current={step} className={sectionCls} big={tabletLayout}>
+          <Section num={3} title="Срок и тариф" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout}>
             <div
               className={cn(
                 "grid grid-cols-2 gap-3 sm:grid-cols-3",
@@ -1224,9 +1248,9 @@ export function NewRentalModal({
           <div className={colCls}>
 
           {/* 4 Экипировка + залог + оплата */}
-          <Section num={4} title="Экипировка, залог и оплата" mobile={stepMode} current={step} className={sectionCls} big={tabletLayout}>
+          <Section num={4} title="Экипировка, залог и оплата" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout}>
             <div>
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+              <div className={cn("mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2", stepMode && "hidden")}>
                 Выданная экипировка {equipmentExtra > 0 && (
                   <span className="text-blue-700">+{equipmentExtra}₽</span>
                 )}
@@ -1296,8 +1320,11 @@ export function NewRentalModal({
               )}
             </div>
 
-            <div className="mt-3">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+          </Section>
+          {/* 5 Залог (на компьютере — продолжение блока 4, без своего заголовка) */}
+          <Section num={5} title="Залог" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout} headless={!stepMode}>
+            <div className={cn(!stepMode && "mt-3")}>
+              <div className={cn("mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2", stepMode && "hidden")}>
                 Залог
               </div>
               <div className="mb-2 inline-flex rounded-full bg-surface-soft p-0.5">
@@ -1334,7 +1361,11 @@ export function NewRentalModal({
                     onChange={(e) =>
                       setDepositSum(Math.max(0, Number(e.target.value) || 0))
                     }
-                    className="h-9 w-40 rounded-[10px] border border-border bg-surface px-3 text-[13px] outline-none focus:border-blue-600"
+                    className={cn(
+                      "h-9 w-40 rounded-[10px] border border-border bg-surface px-3 text-[13px] outline-none focus:border-blue-600",
+                      // мастер: сумма залога — крупно, это главное на шаге
+                      stepMode && "!h-14 !w-52 rounded-2xl text-[20px] font-bold tabular-nums",
+                    )}
                   />
                   <span className="text-[12px] text-muted-2">₽</span>
                   <button
@@ -1356,8 +1387,11 @@ export function NewRentalModal({
                 />
               )}
             </div>
-            <div className="mt-3" data-rental-pay>
-              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+          </Section>
+          {/* 6 Оплата */}
+          <Section num={6} title="Оплата" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout} headless={!stepMode}>
+            <div className={cn(!stepMode && "mt-3")} data-rental-pay>
+              <div className={cn("mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-2", stepMode && "hidden")}>
                 Способ оплаты
                 {payChoice === null && (
                   <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[9px] font-bold normal-case text-orange-ink">
@@ -1532,9 +1566,10 @@ export function NewRentalModal({
               },
               { step: 3, label: "Выдача", value: clientId != null && scooterName ? `${start} ${startTime}` : null },
               { step: 3, label: "Возврат", value: clientId != null && scooterName ? `${endPlanned} ${startTime}` : null },
+              { step: 4, label: "Экипировка", value: equipmentSelected.length ? equipmentSelected.map((e) => e.name).join(", ") : clientId != null && scooterName && step > 4 ? "нет" : null },
               { step: 3, label: "Тариф", value: scooterName ? `${rate} ₽/${isWeeklyCustom ? "нед" : "сут"} × ${isWeeklyCustom ? `${weeks} нед` : `${days} дн`}` : null },
               {
-                step: 4,
+                step: 5,
                 label: "Залог",
                 value:
                   depositMode === "sum"
@@ -1542,7 +1577,7 @@ export function NewRentalModal({
                     : depositItemText.trim() || null,
               },
               {
-                step: 4,
+                step: 6,
                 label: "Оплата",
                 value: splitValid
                   ? `нал ${splitCash.toLocaleString("ru-RU")} + перевод ${splitTransfer.toLocaleString("ru-RU")}`
@@ -1588,7 +1623,7 @@ export function NewRentalModal({
               <ChevronLeft size={tabletLayout ? 22 : 18} />
               {step === 1 ? "Отмена" : "Назад"}
             </button>
-            {step < 4 ? (
+            {step < STEP_TITLES.length ? (
               <button
                 type="button"
                 disabled={!canAdvanceStep(step)}
@@ -1670,7 +1705,7 @@ export function NewRentalModal({
         <AddClientModal
           onClose={() => setNewClientOpen(false)}
           // 22.10: анкета по шагам, а после неё — сразу к выбору скутера.
-          saveLabel={stepMode ? "Сохранить и выбрать скутер →" : undefined}
+          saveLabel={tabletLayout ? "Сохранить и выбрать скутер →" : stepMode ? "Сохранить →" : undefined}
           onCreated={(c) => {
             setClientId(c.id);
             setClientQuery("");
@@ -1907,7 +1942,7 @@ function TabletOrderAside({
               type="button"
               disabled={!canOpen(r.step)}
               onClick={() => onStep(r.step)}
-              className="flex min-h-[52px] items-center justify-between gap-3 border-b border-border/70 py-2 text-left last:border-0 active:opacity-70 disabled:active:opacity-100"
+              className="flex min-h-[46px] items-center justify-between gap-3 border-b border-border/70 py-1.5 text-left last:border-0 active:opacity-70 disabled:active:opacity-100"
             >
               <span className="shrink-0 text-[15px] text-muted">{r.label}</span>
               <span
@@ -1940,6 +1975,8 @@ function Section({
   current,
   className,
   big,
+  bigTablet,
+  headless,
 }: {
   num: number;
   title: string;
@@ -1949,14 +1986,23 @@ function Section({
   current?: number;
   /** Планшет: блок живёт в своей клетке сетки и прокручивается сам. */
   className?: string;
-  /** Планшет: шаг — вопрос крупным заголовком. */
+  /** Мастер (телефон и планшет): шаг — вопрос крупным заголовком. */
   big?: boolean;
+  bigTablet?: boolean;
+  /** Продолжение предыдущего блока на компьютере: без заголовка и отступа. */
+  headless?: boolean;
 }) {
   if (mobile && current != null && current !== num) return null;
+  if (headless) return <section className={cn("-mt-5 mb-5 last:mb-0", className)}>{children}</section>;
   return (
     <section className={cn("mb-5 last:mb-0", className)}>
       {big && (
-        <h2 className="mb-6 font-display text-[30px] font-extrabold leading-tight tracking-tight text-ink">
+        <h2
+          className={cn(
+            "mb-4 font-display text-[24px] font-extrabold leading-tight tracking-tight text-ink",
+            bigTablet && "mb-6 text-[30px]",
+          )}
+        >
           {STEP_QUESTIONS[num - 1]}
         </h2>
       )}
@@ -2077,8 +2123,8 @@ function MobileClientPicker({
         type="button"
         onClick={onNew}
         className={cn(
-          "flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-ink text-[14px] font-bold text-white active:bg-ink-2",
-          tablet && "h-12 shrink-0 px-6 text-[15px]",
+          "mt-2.5 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-ink px-4 text-[14px] font-bold text-white active:bg-ink-2",
+          tablet && "mt-0 h-12 w-auto shrink-0 px-6 text-[15px]",
         )}
       >
         <UserPlus size={16} /> Новый клиент
