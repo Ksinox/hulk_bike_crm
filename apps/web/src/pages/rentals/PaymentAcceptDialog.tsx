@@ -1580,6 +1580,7 @@ export function PaymentAcceptDialog({
               conditionOk: false,
               equipmentOk: true,
               returnReason: intake.returnReason,
+              breakdownReason: scooterNext === "repair" ? intake.breakdownReason : null,
               // Залог считается «возвращённым» только если зачёта не было.
               depositReturned: depositZachet === 0,
               damageNotes: "",
@@ -1598,6 +1599,7 @@ export function PaymentAcceptDialog({
               conditionOk: true,
               equipmentOk: true,
               returnReason: intake.returnReason,
+              breakdownReason: scooterNext === "repair" ? intake.breakdownReason : null,
               depositReturned: true,
               mileage,
               mileageCorrection: intake.mileageCorrectionForApi(),

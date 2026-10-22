@@ -1478,6 +1478,8 @@ export const repairJobs = pgTable(
       mode: "number",
     }).references(() => users.id, { onDelete: "set null" }),
     note: text("note"),
+    /** 22.10: что сломалось — указали при замене или сдаче в ремонт. */
+    breakdownReason: text("breakdown_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

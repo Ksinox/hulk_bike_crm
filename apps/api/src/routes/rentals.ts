@@ -49,6 +49,7 @@ function pickRateByPeriod(
 import { logActivity } from "../services/activityLog.js";
 import type { DiffPayload } from "../services/activityLog.js";
 import { requireDirectorApproval } from "./approvals.js";
+import { ensureRepairJobForScooter } from "./repair-jobs.js";
 import { rentalStatusLabel, scooterStatusLabel } from "../services/activityMessages.js";
 import { overdueDailyRate } from "../services/overdueCharge.js";
 
@@ -173,6 +174,8 @@ const CompleteBody = z
     scooterNextStatus: z.enum(SCOOTER_NEXT_STATUSES).optional(),
     /** Пункт 4: причина возврата (обязательность обеспечивает UI). */
     returnReason: z.string().max(200).optional().nullable(),
+    /** 22.10: что сломалось — при сдаче в ремонт, уходит в ремонт скутера. */
+    breakdownReason: z.string().trim().max(200).optional().nullable(),
   })
   .strict();
 
@@ -1752,7 +1755,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         action: "completed",
         summary: `${withDamage
           ? `Завершена аренда ${summary} · зафиксирован ущерб ${(d.damageAmount ?? 0).toLocaleString("ru-RU")} ₽`
-          : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`}${d.returnReason ? ` · причина возврата: ${d.returnReason}` : ""}`,
+          : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`}${d.returnReason ? ` · причина возврата: ${d.returnReason}` : ""}${d.breakdownReason && d.scooterNextStatus === "repair" ? ` · в ремонт: ${d.breakdownReason}` : ""}`,
         diff: {
           status: {
             label: "Статус",
@@ -1791,6 +1794,20 @@ export async function rentalsRoutes(app: FastifyInstance) {
           },
         },
       });
+      // 22.10: скутер сдали в ремонт — открываем ремонт с причиной поломки
+      // (видна в карточке скутера, вкладка «Ремонты», и в разделе «Ремонты»).
+      if (result.scooterId && (d.scooterNextStatus ?? "rental_pool") === "repair") {
+        try {
+          await ensureRepairJobForScooter({
+            scooterId: result.scooterId,
+            rentalId: id,
+            createdByUserId: req.user?.userId ?? null,
+            breakdownReason: d.breakdownReason ?? null,
+          });
+        } catch (e) {
+          req.log?.warn?.({ err: e }, "ensureRepairJobForScooter (complete) failed");
+        }
+      }
       // v0.4.60: лог изменения пробега скутера (на сущность scooter,
       // чтобы запись была видна в карточке скутера и в его таймлайне).
       if (
@@ -3295,6 +3312,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
             .max(1_000_000, "Пробег больше 1 000 000 км — проверьте, нет ли лишних цифр")
             .optional(),
           prevScooterMileageCorrection: z.boolean().optional(),
+          /** 22.10: что сломалось (причина «Поломка») — в ремонт скутера. */
+          breakdownReason: z.string().trim().max(200).optional(),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -3317,10 +3336,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
         ? (REASON_CAT_LABEL[d.reasonCategory] ?? null)
         : null;
       const comment = d.reason?.trim() ? d.reason.trim() : null;
-      const reasonText = catLabel
+      const breakdown = d.breakdownReason?.trim() || null;
+      const head = catLabel && breakdown ? `${catLabel}: ${breakdown}` : catLabel;
+      const reasonText = head
         ? comment
-          ? `${catLabel} — ${comment}`
-          : catLabel
+          ? `${head} — ${comment}`
+          : head
         : comment;
 
       const result = await db.transaction(async (tx) => {
@@ -3721,6 +3742,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
             : {}),
         },
       });
+
+      // 22.10: снятый скутер ушёл в ремонт — открываем ремонт с причиной
+      // поломки, он виден в карточке скутера («Ремонты») и в «Ремонтах».
+      if (result.prevScooterId && d.oldScooterStatus === "repair") {
+        try {
+          await ensureRepairJobForScooter({
+            scooterId: result.prevScooterId,
+            rentalId: id,
+            createdByUserId: req.user?.userId ?? null,
+            breakdownReason: breakdown ?? (catLabel === "Поломка" ? comment : null),
+          });
+        } catch (e) {
+          req.log?.warn?.({ err: e }, "ensureRepairJobForScooter (swap) failed");
+        }
+      }
 
       // 17.10: пробег снятого скутера — в его хронологию (как при возврате).
       if (

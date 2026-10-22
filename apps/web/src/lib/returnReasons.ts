@@ -17,46 +17,74 @@ export const DEFAULT_RETURN_REASONS = [
   "Уходит с доставки",
 ];
 
-const KEY = "return_reasons";
+/**
+ * 22.10 (заказчик): справочник поломок — для замены с причиной «Поломка» и
+ * сдачи скутера в ремонт. Растёт так же: «свой вариант» сохраняется для
+ * быстрого выбора в будущем. app_settings['breakdown_reasons'].
+ */
+export const DEFAULT_BREAKDOWN_REASONS = [
+  "Не заводится",
+  "Перегрев",
+  "Тормоза",
+  "Колесо / прокол",
+  "Электрика / свет",
+  "Вариатор / ремень",
+];
 
-function parse(value: string | undefined | null): string[] {
-  if (!value) return DEFAULT_RETURN_REASONS;
+/** Какой справочник: причины возврата или поломки. */
+export type ReasonListKind = "return" | "breakdown";
+
+const LISTS: Record<ReasonListKind, { key: string; defaults: string[] }> = {
+  return: { key: "return_reasons", defaults: DEFAULT_RETURN_REASONS },
+  breakdown: { key: "breakdown_reasons", defaults: DEFAULT_BREAKDOWN_REASONS },
+};
+
+function parse(value: string | undefined | null, defaults: string[]): string[] {
+  if (!value) return defaults;
   try {
     const arr = JSON.parse(value);
     if (Array.isArray(arr) && arr.every((x) => typeof x === "string"))
-      return arr.length > 0 ? arr : DEFAULT_RETURN_REASONS;
+      return arr.length > 0 ? arr : defaults;
   } catch {
     /* битое значение — дефолт */
   }
-  return DEFAULT_RETURN_REASONS;
+  return defaults;
 }
 
-export function useReturnReasons() {
+export function useReasonList(kind: ReasonListKind = "return") {
+  const { key, defaults } = LISTS[kind];
   const q = useQuery({
-    queryKey: ["app-settings", KEY],
+    queryKey: ["app-settings", key],
     queryFn: async () => {
       try {
         const r = await api.get<{ key: string; value: string }>(
-          `/api/app-settings/${KEY}`,
+          `/api/app-settings/${key}`,
         );
-        return parse(r.value);
+        return parse(r.value, defaults);
       } catch {
-        return DEFAULT_RETURN_REASONS; // ключа ещё нет
+        return defaults; // ключа ещё нет
       }
     },
     staleTime: 60_000,
   });
-  return { reasons: q.data ?? DEFAULT_RETURN_REASONS, isLoading: q.isLoading };
+  return { reasons: q.data ?? defaults, isLoading: q.isLoading };
 }
 
-export function useSaveReturnReasons() {
+export function useSaveReasonList(kind: ReasonListKind = "return") {
+  const { key } = LISTS[kind];
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (reasons: string[]) =>
-      api.put(`/api/app-settings/${KEY}`, {
+      api.put(`/api/app-settings/${key}`, {
         value: JSON.stringify(reasons.slice(0, 30)),
       }),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["app-settings", KEY] }),
+      qc.invalidateQueries({ queryKey: ["app-settings", key] }),
   });
+}
+
+export const useReturnReasons = () => useReasonList("return");
+export const useSaveReturnReasons = () => useSaveReasonList("return");
+export function defaultReasons(kind: ReasonListKind): string[] {
+  return LISTS[kind].defaults;
 }

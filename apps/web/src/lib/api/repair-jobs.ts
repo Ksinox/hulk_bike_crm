@@ -43,6 +43,8 @@ export type ApiRepairJob = {
   createdByUserId: number | null;
   completedByUserId: number | null;
   note: string | null;
+  /** 22.10: что сломалось — указали при замене или сдаче в ремонт. */
+  breakdownReason?: string | null;
   createdAt: string;
   updatedAt: string;
   scooter: {

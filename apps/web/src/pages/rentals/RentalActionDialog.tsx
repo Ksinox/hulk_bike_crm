@@ -3,6 +3,7 @@ import { AlertTriangle, Bike, Check, FileText, Image as ImageIcon, UserRound, X 
 import { cn } from "@/lib/utils";
 import { CheckBox, Picker } from "@/components/ui/picker";
 import { MAX_MILEAGE } from "./returnIntake";
+import { ReturnReasonPicker } from "@/components/ReturnReasonPicker";
 import type { Rental } from "@/lib/mock/rentals";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
@@ -192,6 +193,8 @@ export function RentalActionDialog({
   // v0.6.1: оператор ещё ни разу не трогал dropdown → подсказываем «в ремонт»
   // при появлении любого ущерба. Если уже трогал — не перезатираем выбор.
   const [scooterStatusTouched, setScooterStatusTouched] = useState(false);
+  // 22.10: «В ремонт» — что сломалось (уходит в ремонт скутера).
+  const [breakdownReason, setBreakdownReason] = useState<string | null>(null);
   // Legacy-флаг для action="complete-damage" — в новом flow «Завершить»
   // ущерб открывается через onOpenDamage callback, без чекбокса.
   const [hasDamage] = useState(false);
@@ -312,6 +315,7 @@ export function RentalActionDialog({
           depositReturned: true,
           mileage: mileageForApi(),
           mileageCorrection: mileageCorrectionForApi(),
+          breakdownReason: scooterNextStatus === "repair" ? breakdownReason : null,
         },
         scooterNextStatus,
       );
@@ -389,6 +393,7 @@ export function RentalActionDialog({
           damageNotes: "",
           mileage: mileageForApi(),
           mileageCorrection: mileageCorrectionForApi(),
+          breakdownReason: scooterNextStatus === "repair" ? breakdownReason : null,
         },
         0,
         "",
@@ -673,6 +678,11 @@ export function RentalActionDialog({
                 <div className="mt-1 text-[10.5px] text-muted-2">
                   По умолчанию — назад в парк. При ущербе обычно выбирают «В ремонт».
                 </div>
+                {scooterNextStatus === "repair" && (
+                  <div className="mt-3 rounded-[12px] border border-orange-200 bg-orange-soft/20 p-3">
+                    <ReturnReasonPicker kind="breakdown" value={breakdownReason} onChange={setBreakdownReason} />
+                  </div>
+                )}
               </div>
             )}
 
@@ -789,6 +799,7 @@ export function RentalActionDialog({
           if (!allDecided) return true;
           // 13.10: дикий пробег или меньший без решения — не завершаем.
           if (mileageTooBig || mileageNeedsDecision) return true;
+          if (rental.scooterId != null && scooterNextStatus === "repair" && !breakdownReason) return true;
           if (cardStates[scooterCard] === "problem" && scooterDamages.length === 0)
             return true;
           if (!allEquipmentProblemsFilled) return true;
