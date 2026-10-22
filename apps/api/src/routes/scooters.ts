@@ -6,6 +6,7 @@ import { activityLog, appSettings, buyoutDeals, rentals, scooterModels, scooterS
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
 import { requireDirectorApproval } from "./approvals.js";
+import { briefScooterStatus, scooterFacts } from "../services/approvalBrief.js";
 import { scooterStatusLabel } from "../services/activityMessages.js";
 import { ensureRepairJobForScooter } from "./repair-jobs.js";
 
@@ -1200,7 +1201,20 @@ export async function scootersRoutes(app: FastifyInstance) {
 
     // ── Ключ директора: один на всю партию ──
     if (moving.length) {
-      if (!(await requireDirectorApproval(app, req, reply, "scooter_status_change"))) return;
+      if (
+        !(await requireDirectorApproval(app, req, reply, "scooter_status_change", () => ({
+          summary:
+            moving.length === 1
+              ? `${scooterLabel(moving[0]!.name, moving[0]!.rentalSlot)} переходит в «${scooterStatusLabel(targetOf.get(moving[0]!.id) ?? "")}»`
+              : `Перенос ${moving.length} единиц техники в другую категорию`,
+          facts: moving.slice(0, 12).map((u) => ({
+            label: scooterLabel(u.name, u.rentalSlot),
+            from: scooterStatusLabel(u.baseStatus),
+            to: scooterStatusLabel(targetOf.get(u.id) ?? ""),
+          })),
+        })))
+      )
+        return;
     }
 
     type Row = typeof scooters.$inferSelect;
@@ -1428,7 +1442,18 @@ export async function scootersRoutes(app: FastifyInstance) {
       );
       if (
         identityChanged &&
-        !(await requireDirectorApproval(app, req, reply, "scooter_identity_change"))
+        !(await requireDirectorApproval(app, req, reply, "scooter_identity_change", () => ({
+          summary: `${scooterLabel(before.name, before.rentalSlot)}: меняется номер рамы / двигателя`,
+          facts: (
+            [
+              ["VIN", before.vin, parsed.data.vin],
+              ["Рама", before.frameNumber, parsed.data.frameNumber],
+              ["Двигатель", before.engineNo, parsed.data.engineNo],
+            ] as const
+          )
+            .filter(([, o, n]) => n !== undefined && (o ?? "").trim() !== (n ?? "").trim())
+            .map(([label, o, n]) => ({ label, from: (o ?? "").trim() || "—", to: (n ?? "").trim() || "—" })),
+        })))
       )
         return;
     }
@@ -1465,11 +1490,8 @@ export async function scootersRoutes(app: FastifyInstance) {
       parsed.data.baseStatus !== before.baseStatus
     ) {
       if (
-        !(await requireDirectorApproval(
-          app,
-          req,
-          reply,
-          "scooter_status_change",
+        !(await requireDirectorApproval(app, req, reply, "scooter_status_change", () =>
+          briefScooterStatus(id, parsed.data.baseStatus!),
         ))
       )
         return;
@@ -1753,7 +1775,16 @@ export async function scootersRoutes(app: FastifyInstance) {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     // Пункты 1/17: скутер покидает парк — только с ключом директора.
-    if (!(await requireDirectorApproval(app, req, reply, "scooter_remove")))
+    if (
+      !(await requireDirectorApproval(app, req, reply, "scooter_remove", async () => {
+        const sc = await scooterFacts(id);
+        const b = (req.body ?? {}) as { reason?: unknown };
+        return {
+          summary: `${sc.name} убирается из парка в архив`,
+          facts: [...sc.facts, ...(typeof b.reason === "string" && b.reason.trim() ? [{ label: "Причина", value: b.reason.trim() }] : [])],
+        };
+      }))
+    )
       return;
 
     // Причина переноса в архив (опционально). Тело может быть пустым —
@@ -1858,7 +1889,12 @@ export async function scootersRoutes(app: FastifyInstance) {
        * кликом. Именно так на проде пропал скутер: архив и удаление прошли
        * в одну минуту.
        */
-      if (!(await requireDirectorApproval(app, req, reply, "scooter_purge")))
+      if (
+        !(await requireDirectorApproval(app, req, reply, "scooter_purge", async () => {
+          const f = await scooterFacts(id);
+          return { summary: `${f.name} удаляется из базы НАВСЕГДА`, facts: f.facts };
+        }))
+      )
         return;
 
       const name = sc.name;

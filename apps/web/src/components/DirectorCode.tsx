@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Copy, Loader2, ShieldCheck, X } from "lucide-react";
+import { Check, Copy, Loader2, ShieldCheck, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useApprovalsStatus, type DirectorCode } from "@/lib/api/approvals";
@@ -91,20 +91,24 @@ export function DirectorCodeRing({ size = 248 }: { size?: number }) {
   const stale = data ? Date.now() + offset >= data.endsAt + 50 : true;
   const code = data && !stale ? data.code : null;
 
+  // 22.10 (заказчик): аккуратная кнопка «Скопировать» — код можно
+  // переслать в мессенджер. Живёт он мало (это окно и следующее, до ~1 мин).
+  const [copied, setCopied] = useState(false);
   const copy = () => {
     if (!code) return;
     navigator.clipboard?.writeText(code).then(
-      () => toast.success("Код скопирован", "Действует один раз и до смены"),
-      () => undefined,
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1600);
+      },
+      () => toast.error("Не скопировалось", "Продиктуйте код голосом"),
     );
   };
 
   return (
-    <button
-      type="button"
-      onClick={copy}
-      title="Нажмите, чтобы скопировать"
-      className="group relative mx-auto block select-none rounded-full outline-none"
+    <div className="flex flex-col items-center gap-4">
+    <div
+      className="relative mx-auto block select-none rounded-full"
       style={{ width: size, height: size }}
     >
       {/* мягкое свечение цвета линии */}
@@ -156,9 +160,6 @@ export function DirectorCodeRing({ size = 248 }: { size?: number }) {
         >
           {secs} с
         </span>
-        <span className="mt-2 flex items-center gap-1 text-[10.5px] font-semibold text-white/35 opacity-0 transition-opacity group-hover:opacity-100">
-          <Copy size={11} /> скопировать
-        </span>
       </span>
       <style>{`
         @keyframes dcFlip {
@@ -167,7 +168,20 @@ export function DirectorCodeRing({ size = 248 }: { size?: number }) {
         }
         .dc-flip { animation: dcFlip 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
       `}</style>
+    </div>
+    <button
+      type="button"
+      onClick={copy}
+      disabled={!code}
+      className={cn(
+        "inline-flex h-10 items-center gap-2 rounded-full px-4 text-[13px] font-bold transition-colors disabled:opacity-40",
+        copied ? "bg-emerald-400/20 text-emerald-200" : "bg-white/10 text-white/85 hover:bg-white/15 active:bg-white/20",
+      )}
+    >
+      {copied ? <Check size={15} strokeWidth={3} /> : <Copy size={15} />}
+      {copied ? "Скопировано" : "Скопировать"}
     </button>
+    </div>
   );
 }
 
@@ -257,8 +271,9 @@ export function DirectorCodeSheet({ onClose }: { onClose: () => void }) {
           <DirectorCodeRing />
         </div>
         <p className="relative text-center text-[13px] leading-relaxed text-white/60">
-          Продиктуйте код сотруднику — он введёт его в окне подтверждения.
-          Код действует один раз и меняется каждые 30&nbsp;секунд.
+          Продиктуйте код сотруднику или скопируйте и отправьте — он введёт
+          его в окне подтверждения. Код срабатывает один раз; новый — каждые
+          30&nbsp;секунд.
         </p>
       </div>
     </div>,

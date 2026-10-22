@@ -51,13 +51,10 @@ const sd = (await dir("GET", "/api/approvals/status")).data;
 const sa = (await adm("GET", "/api/approvals/status")).data;
 ok(sd.isDirector === true && sa.isDirector === false, "статус различает директора и администратора");
 
-// 2) администратор не может ни включить код, ни увидеть его, ни сменить ключ
-ok((await adm("POST", "/api/approvals/code/enable", {})).status === 403, "администратор не включает код");
-ok((await adm("POST", "/api/approvals/key", { currentKey: "x", newKey: "abcd" })).status === 403, "администратор не меняет ключ");
-
-// 3) директор включает код
-ok((await dir("POST", "/api/approvals/code/enable", {})).status === 200, "директор включил меняющийся код");
-ok((await dir("GET", "/api/approvals/status")).data.mode === "code", "режим — код");
+// 2) код — это и есть защита: выключателя и постоянного ключа нет
+ok((await dir("POST", "/api/approvals/code/disable", {})).status === 404, "выключить код нельзя (такого действия нет)");
+ok((await adm("POST", "/api/approvals/key", { newKey: "abcd" })).status === 404, "постоянный ключ не задаётся");
+ok((await dir("GET", "/api/approvals/status")).data.mode === "code", "режим — код, всегда");
 ok((await adm("GET", "/api/approvals/code")).status === 403, "администратор код НЕ получает");
 const c1 = (await dir("GET", "/api/approvals/code")).data;
 ok(/^\d{6}$/.test(c1.code) && c1.period === 30 && c1.endsAt > c1.serverNow, "директор получает код", `${c1.code}, до смены ${Math.round((c1.endsAt - c1.serverNow) / 1000)} с`);
@@ -97,11 +94,18 @@ ok(p1.status === 200 && p1.data.baseStatus === "repair", "действие вы�
 const back = await dir("PATCH", `/api/scooters/${target.id}`, { baseStatus: "rental_pool" }, { "x-director-approval": "self" });
 ok(back.status === 200 && back.data.baseStatus === "rental_pool", "директор подтвердил одним нажатием (self)", `статус ${back.status}`);
 
-// 6) запрос директору: администратор просит, директор жмёт «Подтвердить» без ключа
-const req = (await adm("POST", "/api/approvals", { action: "scooter_status_change", summary: "ТЕСТ песочницы: перенос в ремонт" })).data;
+// 6) запрос директору: администратор просит, директор жмёт «Подтвердить» без ключа.
+// Описание операции собирает сервер (билет из 428), подтверждение привязано к ней.
+const p428 = await patch({});
+ok(p428.status === 428 && !!p428.data.ticket && /переходит в «Ремонт»/.test(p428.data.brief?.summary ?? ""), "сервер описал операцию", p428.data.brief?.summary);
+ok((p428.data.brief?.facts ?? []).some((f) => f.label === "Категория" && f.to === "Ремонт"), "в описании «было → стало»", JSON.stringify(p428.data.brief?.facts?.find((f) => f.from)));
+const req = (await adm("POST", "/api/approvals", { action: "scooter_status_change", summary: "подменённое описание", ticket: p428.data.ticket })).data;
+ok(req.summary === p428.data.brief.summary, "описание в запросе — серверное, не из браузера");
 ok((await adm("POST", `/api/approvals/${req.id}/approve`, {})).status === 403, "администратор сам свой запрос не подтвердит");
 const ap = await dir("POST", `/api/approvals/${req.id}/approve`, {});
 ok(ap.status === 200 && ap.data.status === "approved", "директор подтвердил запрос одной кнопкой");
+const other = await adm("PATCH", `/api/scooters/${target.id}`, { baseStatus: "for_sale" }, { "x-director-approval": `req:${req.id}` });
+ok(other.status === 428, "этим подтверждением другую операцию не сделать", `статус ${other.status}`);
 const p2 = await patch({ "x-director-approval": `req:${req.id}` });
 ok(p2.status === 200, "действие по подтверждённому запросу выполнено");
 const p3 = await adm("PATCH", `/api/scooters/${target.id}`, { baseStatus: "rental_pool" }, { "x-director-approval": `req:${req.id}` });
@@ -110,7 +114,7 @@ await dir("PATCH", `/api/scooters/${target.id}`, { baseStatus: "rental_pool" }, 
 
 // 7) журнал
 const act = ((await dir("GET", "/api/activity?limit=40")).data.items ?? []).map((x) => x.action);
-ok(act.includes("director_code_enabled") && act.includes("director_code_wrong"), "включение кода и неверные попытки — в журнале");
+ok(act.includes("director_code_wrong"), "неверные попытки кода — в журнале");
 
 // 8) коды восстановления
 ok((await adm("GET", "/api/auth/recovery-codes")).status === 403, "администратору коды восстановления недоступны");

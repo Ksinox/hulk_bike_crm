@@ -50,6 +50,13 @@ import { logActivity } from "../services/activityLog.js";
 import type { DiffPayload } from "../services/activityLog.js";
 import { requireDirectorApproval } from "./approvals.js";
 import { ensureRepairJobForScooter } from "./repair-jobs.js";
+import {
+  briefPayment,
+  briefRentalDelete,
+  briefRentalScooterStatus,
+  briefRollbackAction,
+  scooterName as scooterBriefName,
+} from "../services/approvalBrief.js";
 import { rentalStatusLabel, scooterStatusLabel } from "../services/activityMessages.js";
 import { overdueDailyRate } from "../services/overdueCharge.js";
 
@@ -858,7 +865,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     // Пункт 1: удаление аренды — защищённое действие, требует ключ директора.
-    if (!(await requireDirectorApproval(app, req, reply, "rental_delete")))
+    if (
+      !(await requireDirectorApproval(app, req, reply, "rental_delete", () => {
+        const b = (req.body ?? {}) as { reason?: unknown };
+        return briefRentalDelete(id, typeof b.reason === "string" ? b.reason.trim() : null);
+      }))
+    )
       return;
 
     // v0.6.51: опциональная причина удаления в архив (напр. «Создано
@@ -1580,7 +1592,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           if (
             sc &&
             sc.baseStatus !== next &&
-            !(await requireDirectorApproval(app, req, reply, "scooter_status_change"))
+            !(await requireDirectorApproval(app, req, reply, "scooter_status_change", () =>
+              briefRentalScooterStatus(id, cur.scooterId!, next, "Закрытие аренды"),
+            ))
           )
             return;
         }
@@ -2480,7 +2494,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           p0 &&
           p0.rentalId === id &&
           Date.now() - p0.createdAt.getTime() > UNDO_FREE_MS &&
-          !(await requireDirectorApproval(app, req, reply, "rollback_late"))
+          !(await requireDirectorApproval(app, req, reply, "rollback_late", () =>
+            briefPayment(paymentId, { rollback: true }),
+          ))
         )
           return;
       }
@@ -3408,7 +3424,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
           if (
             sc &&
             sc.baseStatus !== d.oldScooterStatus &&
-            !(await requireDirectorApproval(app, req, reply, "scooter_status_change"))
+            !(await requireDirectorApproval(app, req, reply, "scooter_status_change", async () => {
+              const b = await briefRentalScooterStatus(id, cur.scooterId!, d.oldScooterStatus, "Замена скутера в аренде");
+              const [ns] = await db
+                .select({ name: scooters.name, slot: scooters.rentalSlot })
+                .from(scooters)
+                .where(eq(scooters.id, d.newScooterId));
+              if (ns) b.facts.push({ label: "Выдаём взамен", value: scooterBriefName(ns.name, ns.slot) });
+              if (catLabel || d.reason?.trim())
+                b.facts.push({ label: "Причина", value: [catLabel, (d as { breakdownReason?: string }).breakdownReason?.trim(), d.reason?.trim()].filter(Boolean).join(" · ") });
+              return b;
+            }))
           )
             return;
         }
@@ -5563,7 +5589,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
         if (
           a0 &&
           Date.now() - a0.createdAt.getTime() > UNDO_FREE_MS &&
-          !(await requireDirectorApproval(app, req, reply, "rollback_late"))
+          !(await requireDirectorApproval(app, req, reply, "rollback_late", () =>
+            briefRollbackAction(activityId),
+          ))
         )
           return;
       }

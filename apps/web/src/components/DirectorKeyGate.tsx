@@ -12,8 +12,10 @@ import { api, ApiError } from "@/lib/api";
 import {
   ACTION_META,
   setDirectorGateHandler,
+  type ApprovalBrief,
   type ApprovalContext,
 } from "@/lib/directorGate";
+import { OperationBrief } from "./OperationBrief";
 import { useApprovalsStatus } from "@/lib/api/approvals";
 
 /**
@@ -34,6 +36,8 @@ import { useApprovalsStatus } from "@/lib/api/approvals";
 type GateState = {
   action: string;
   context: ApprovalContext | null;
+  brief: ApprovalBrief | null;
+  ticket: string | null;
   resolve: (v: string | null) => void;
 };
 
@@ -42,9 +46,9 @@ export function DirectorKeyGateProvider() {
 
   useEffect(() => {
     setDirectorGateHandler(
-      ({ action, context }) =>
+      ({ action, context, brief, ticket }) =>
         new Promise<string | null>((resolve) => {
-          setGate({ action, context, resolve });
+          setGate({ action, context, brief, ticket, resolve });
         }),
     );
     return () => setDirectorGateHandler(null);
@@ -55,6 +59,8 @@ export function DirectorKeyGateProvider() {
     <DirectorKeyDialog
       action={gate.action}
       context={gate.context}
+      brief={gate.brief}
+      ticket={gate.ticket}
       onDone={(v) => {
         gate.resolve(v);
         setGate(null);
@@ -66,10 +72,14 @@ export function DirectorKeyGateProvider() {
 function DirectorKeyDialog({
   action,
   context,
+  brief,
+  ticket,
   onDone,
 }: {
   action: string;
   context: ApprovalContext | null;
+  brief: ApprovalBrief | null;
+  ticket: string | null;
   onDone: (v: string | null) => void;
 }) {
   const meta = ACTION_META[action] ?? {
@@ -145,6 +155,8 @@ function DirectorKeyDialog({
         action,
         summary: context?.summary ?? meta.generic,
         details: context?.details,
+        // подписанный сервером билет: описание операции + привязка к ней
+        ...(ticket ? { ticket } : {}),
       });
       setWaitingId(r.id);
     } catch {
@@ -205,29 +217,14 @@ function DirectorKeyDialog({
         </div>
 
         <div className="flex flex-col gap-4 px-5 py-4">
-          {/* Краткий отчёт операции */}
-          <div className="rounded-2xl bg-surface-soft px-4 py-3">
-            <div className="text-[13px] font-semibold leading-snug text-ink">
-              {context?.summary ?? meta.generic}
-            </div>
-            {(context?.details?.length || meta.warn) && (
-              <ul className="mt-2 flex flex-col gap-1">
-                {(context?.details ?? []).map((d, i) => (
-                  <li
-                    key={i}
-                    className="flex gap-2 text-[12px] leading-snug text-muted"
-                  >
-                    <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-muted-2" />
-                    {d}
-                  </li>
-                ))}
-                {meta.warn && (
-                  <li className="mt-0.5 text-[12px] font-semibold text-amber-700">
-                    {meta.warn}
-                  </li>
-                )}
-              </ul>
-            )}
+          {/* Краткий отчёт операции — тот же, что увидит директор */}
+          <div className="rounded-2xl bg-surface-soft p-3.5">
+            <OperationBrief
+              summary={brief?.summary ?? context?.summary ?? meta.generic}
+              facts={brief?.facts ?? []}
+              notes={brief ? undefined : context?.details}
+              warn={meta.warn}
+            />
           </div>
 
           {!status ? (

@@ -14,6 +14,7 @@ import {
 } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 import { requireDirectorApproval } from "./approvals.js";
+import { briefScooterStatus } from "../services/approvalBrief.js";
 import { makeFileKey, removeObject } from "../storage/index.js";
 import { putObjectWithImageVariants } from "../storage/image.js";
 
@@ -515,7 +516,9 @@ export async function repairJobsRoutes(app: FastifyInstance) {
         if (
           sc &&
           sc.baseStatus !== parsed.data.newScooterStatus &&
-          !(await requireDirectorApproval(app, req, reply, "scooter_status_change"))
+          !(await requireDirectorApproval(app, req, reply, "scooter_status_change", () =>
+            briefScooterStatus(job.scooterId, parsed.data.newScooterStatus, "Закрытие ремонта"),
+          ))
         )
           return;
       }

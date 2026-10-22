@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "../db/index.js";
 import { payments, rentals } from "../db/schema.js";
 import { requireDirectorApproval } from "./approvals.js";
+import { briefPayment } from "../services/approvalBrief.js";
 import { mirrorRentalPaymentToDebtor } from "../services/debtorMirror.js";
 import { logActivity } from "../services/activityLog.js";
 
@@ -165,7 +166,9 @@ export async function paymentsRoutes(app: FastifyInstance) {
     const unpaid = before?.paid && parsed.data.paid === false;
     if (
       (amountChanged || unpaid) &&
-      !(await requireDirectorApproval(app, req, reply, "payment_edit"))
+      !(await requireDirectorApproval(app, req, reply, "payment_edit", () =>
+        briefPayment(id, { amount: parsed.data.amount, unpaid: !!unpaid }),
+      ))
     )
       return;
     const [row] = await db
