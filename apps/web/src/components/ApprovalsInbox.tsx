@@ -20,6 +20,9 @@ import { toast } from "@/lib/toast";
  * отчёт операции (что произойдёт, кто запросил, когда), поле ключа и
  * Подтвердить / Отклонить. Сценарий заказчика: менеджер запустил операцию →
  * позвонил директору → директор открыл с телефона, ознакомился, ввёл ключ.
+ *
+ * 22.10: очередь видит только директор (из своего аккаунта) и подтверждает
+ * одним нажатием — без ключа. Администратор свой запрос ждёт в окне.
  */
 
 function timeAgo(iso: string): string {
@@ -35,7 +38,7 @@ export function ApprovalsBell({ className }: { className?: string }) {
   const { data } = useApprovalsStatus();
   const [open, setOpen] = useState(false);
   const pending = data?.pending ?? 0;
-  if (!data?.keySet || pending === 0) return null;
+  if (!data?.keySet || !data.isDirector || pending === 0) return null;
   return (
     <>
       <button
@@ -48,7 +51,7 @@ export function ApprovalsBell({ className }: { className?: string }) {
         )}
       >
         <KeyRound size={15} />
-        Подтверждения
+        <span className="hidden sm:inline">Подтверждения</span>
         <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[11px] font-extrabold text-white">
           {pending}
         </span>
@@ -122,27 +125,24 @@ function ApprovalCard({ r }: { r: ApprovalRequest }) {
   const meta = ACTION_META[r.action];
   const approve = useApproveRequest();
   const reject = useRejectRequest();
-  const [key, setKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const busy = approve.isPending || reject.isPending;
   const details = Array.isArray(r.detailsJson) ? r.detailsJson : [];
 
   const run = async (kind: "approve" | "reject") => {
-    if (!key.trim() || busy) return;
+    if (busy) return;
     setError(null);
     try {
       if (kind === "approve") {
-        await approve.mutateAsync({ id: r.id, key: key.trim() });
+        await approve.mutateAsync({ id: r.id });
         toast.success("Подтверждено", r.summary);
       } else {
-        await reject.mutateAsync({ id: r.id, key: key.trim() });
+        await reject.mutateAsync({ id: r.id });
         toast.info("Отклонено", r.summary);
       }
     } catch (e) {
       setError(
-        (e as { status?: number }).status === 403
-          ? "Неверный ключ."
-          : "Не удалось обработать запрос.",
+        (e as { message?: string }).message || "Не удалось обработать запрос.",
       );
     }
   };
@@ -180,26 +180,11 @@ function ApprovalCard({ r }: { r: ApprovalRequest }) {
         </div>
       </div>
       <div className="flex items-center gap-2 border-t border-border bg-surface-soft/60 px-3 py-2.5">
-        <input
-          type="password"
-          value={key}
-          onChange={(e) => {
-            setKey(e.target.value);
-            setError(null);
-          }}
-          onKeyDown={(e) => e.key === "Enter" && run("approve")}
-          placeholder="Ключ"
-          autoComplete="off"
-          className={cn(
-            "h-11 w-0 min-w-0 flex-1 rounded-xl border-2 bg-surface px-3 text-center text-[15px] font-bold tracking-[0.2em] text-ink outline-none transition-colors placeholder:text-[13px] placeholder:font-normal placeholder:tracking-normal",
-            error ? "border-red-300" : "border-border focus:border-blue-500",
-          )}
-        />
         <button
           type="button"
           onClick={() => run("approve")}
-          disabled={!key.trim() || busy}
-          className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-green-ink px-4 text-[13px] font-bold text-white transition-transform hover:brightness-110 active:scale-95 disabled:opacity-40"
+          disabled={busy}
+          className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-green-ink px-4 text-[14px] font-bold text-white transition-transform hover:brightness-110 active:scale-95 disabled:opacity-40"
         >
           {busy ? (
             <Loader2 size={15} className="animate-spin" />
@@ -211,8 +196,8 @@ function ApprovalCard({ r }: { r: ApprovalRequest }) {
         <button
           type="button"
           onClick={() => run("reject")}
-          disabled={!key.trim() || busy}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-soft text-red-ink transition-transform hover:brightness-95 active:scale-95 disabled:opacity-40"
+          disabled={busy}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-soft text-red-ink transition-transform hover:brightness-95 active:scale-95 disabled:opacity-40"
           title="Отклонить"
         >
           <X size={16} />

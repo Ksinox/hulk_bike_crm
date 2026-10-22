@@ -5,6 +5,15 @@ import bcrypt from "bcryptjs";
 import { db } from "../db/index.js";
 import { appSettings, approvalRequests, users } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
+import { isFullAccessRole } from "../auth/permissions.js";
+import { loadAuthUser } from "../auth/plugin.js";
+import {
+  TOTP_PERIOD_S,
+  matchTotp,
+  newTotpSecret,
+  totpCode,
+  totpStep,
+} from "../services/totp.js";
 
 /**
  * Пункт 1 — «Ключ директора».
@@ -24,16 +33,125 @@ import { logActivity } from "../services/activityLog.js";
  *     `x-director-approval: req:<id>` (запрос потребляется ровно один раз).
  *
  * Хэш ключа — app_settings['director_key_hash'] (bcrypt).
+ *
+ * 22.10 — «Меняющийся код» вместо постоянного ключа. Директор включает его
+ * в настройках: секрет хранится только на сервере, код (6 цифр) меняется
+ * каждые 30 секунд и виден лишь в аккаунте директора. В этом режиме
+ * постоянный ключ больше не принимается — сохранённый браузером ключ
+ * перестаёт что-либо открывать. Код одноразовый, подбор ограничен.
+ * Сам директор (вошёл под своей учётной записью) подтверждает одним
+ * нажатием — без ключа и кода (заголовок `x-director-approval: self`,
+ * роль проверяется по базе, а не по словам клиента).
  */
 
 const KEY_SETTING = "director_key_hash";
+const TOTP_SETTING = "director_totp_secret";
+const TOTP_USED_SETTING = "director_totp_used_step";
 
-async function getKeyHash(): Promise<string | null> {
+async function getSetting(key: string): Promise<string | null> {
   const [row] = await db
     .select()
     .from(appSettings)
-    .where(eq(appSettings.key, KEY_SETTING));
+    .where(eq(appSettings.key, key));
   return row?.value ?? null;
+}
+const getKeyHash = () => getSetting(KEY_SETTING);
+const getTotpSecret = () => getSetting(TOTP_SETTING);
+
+type ProtectionMode = "off" | "key" | "code";
+async function protectionMode(): Promise<ProtectionMode> {
+  if (await getTotpSecret()) return "code";
+  if (await getKeyHash()) return "key";
+  return "off";
+}
+
+/** Запрос идёт из аккаунта директора (или создателя) — по базе, не по токену. */
+export async function isDirectorSession(req: FastifyRequest): Promise<boolean> {
+  const id = (req as unknown as { user?: { userId?: number } }).user?.userId;
+  if (!id) return false;
+  const u = await loadAuthUser(id);
+  return !!u && u.active && isFullAccessRole(u.role);
+}
+
+/**
+ * Защита от подбора кода: 6 цифр — миллион вариантов, поэтому неверные
+ * попытки считаем на весь сервер (не на IP) и после 8 за 10 минут код
+ * не принимаем вовсе до конца окна. Каждая неверная попытка — в журнал.
+ */
+const CODE_FAIL_WINDOW_MS = 10 * 60 * 1000;
+const CODE_FAIL_MAX = 8;
+let codeFails: number[] = [];
+function codeLocked(): boolean {
+  const now = Date.now();
+  codeFails = codeFails.filter((t) => now - t < CODE_FAIL_WINDOW_MS);
+  return codeFails.length >= CODE_FAIL_MAX;
+}
+
+type FactorResult =
+  | { ok: true }
+  | { ok: false; status: number; error: string; message: string };
+
+/**
+ * Проверка того, что ввёл оператор: в режиме кода — меняющийся код
+ * (одноразовый), в режиме ключа — постоянный ключ.
+ */
+async function checkFactor(
+  req: FastifyRequest,
+  input: { key?: string; code?: string },
+): Promise<FactorResult> {
+  const secret = await getTotpSecret();
+  if (secret) {
+    if (codeLocked())
+      return {
+        ok: false,
+        status: 429,
+        error: "code_locked",
+        message:
+          "Слишком много неверных кодов. Подождите 10 минут или попросите директора подтвердить из его аккаунта.",
+      };
+    const code = (input.code ?? input.key ?? "").trim();
+    const step = matchTotp(secret, code);
+    if (step == null) {
+      codeFails.push(Date.now());
+      await logActivity(req, {
+        entity: "settings",
+        entityId: null,
+        action: "director_code_wrong",
+        summary: "Введён неверный код директора",
+      });
+      return {
+        ok: false,
+        status: 403,
+        error: "wrong_code",
+        message: "Неверный код. Код меняется каждые 30 секунд — уточните текущий.",
+      };
+    }
+    // Одноразовость: код окна принимается один раз. Атомарно — двое
+    // одновременно одним кодом не воспользуются.
+    const used = await db.execute(sql`
+      INSERT INTO app_settings (key, value) VALUES (${TOTP_USED_SETTING}, ${String(step)})
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+      WHERE app_settings.value ~ '^[0-9]+$' AND app_settings.value::bigint < EXCLUDED.value::bigint
+      RETURNING key
+    `);
+    const rows =
+      (used as unknown as { rows?: unknown[] }).rows ?? (used as unknown as unknown[]);
+    if (!Array.isArray(rows) || rows.length === 0)
+      return {
+        ok: false,
+        status: 403,
+        error: "code_used",
+        message: "Этот код уже использован. Дождитесь следующего — он появится через несколько секунд.",
+      };
+    return { ok: true };
+  }
+  const hash = await getKeyHash();
+  if (!hash)
+    return { ok: false, status: 409, error: "key_not_set", message: "Ключ ещё не установлен." };
+  const ok = !!input.key && (await bcrypt.compare(input.key, hash));
+  return ok
+    ? { ok: true }
+    : { ok: false, status: 403, error: "wrong_key", message: "Неверный ключ." };
 }
 
 function getUser(req: FastifyRequest): { id: number | null; name: string } {
@@ -64,11 +182,13 @@ export async function requireDirectorApproval(
   reply: FastifyReply,
   action: string,
 ): Promise<boolean> {
-  const hash = await getKeyHash();
-  if (!hash) return true; // ключ не настроен — защита выключена
+  if ((await protectionMode()) === "off") return true; // защита не настроена
 
   const header = String(req.headers["x-director-approval"] ?? "");
-  if (header.startsWith("pass:")) {
+  if (header === "self") {
+    // Директор сам, из своего аккаунта — одно нажатие «Подтвердить».
+    if (await isDirectorSession(req)) return true;
+  } else if (header.startsWith("pass:")) {
     try {
       const payload = app.jwt.verify<{ dk?: boolean; act?: string }>(
         header.slice(5),
@@ -107,15 +227,86 @@ export async function requireDirectorApproval(
   return false;
 }
 
+const FactorBody = z
+  .object({
+    key: z.string().min(1).max(200).optional(),
+    code: z.string().min(1).max(20).optional(),
+  })
+  .strict();
+
 export async function approvalsRoutes(app: FastifyInstance) {
   /** Установлен ли ключ + сколько запросов ждут подтверждения. */
-  app.get("/status", async () => {
-    const hash = await getKeyHash();
+  app.get("/status", async (req) => {
+    const mode = await protectionMode();
     const [cnt] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(approvalRequests)
       .where(eq(approvalRequests.status, "pending"));
-    return { keySet: !!hash, pending: cnt?.n ?? 0 };
+    return {
+      // keySet = «защита включена» (ключом или кодом) — так читают старые места.
+      keySet: mode !== "off",
+      mode,
+      keyHashSet: !!(await getKeyHash()),
+      isDirector: await isDirectorSession(req),
+      pending: cnt?.n ?? 0,
+    };
+  });
+
+  /**
+   * 22.10: текущий меняющийся код — ТОЛЬКО в аккаунт директора.
+   * Отдаём и момент смены, чтобы кольцо обратного отсчёта шло по часам
+   * сервера, а не телефона.
+   */
+  app.get("/code", async (req, reply) => {
+    if (!(await isDirectorSession(req)))
+      return reply.code(403).send({ error: "only_director" });
+    const secret = await getTotpSecret();
+    if (!secret) return reply.code(409).send({ error: "code_off" });
+    const now = Date.now();
+    const step = totpStep(now);
+    reply.header("Cache-Control", "no-store");
+    return {
+      code: totpCode(secret, step),
+      period: TOTP_PERIOD_S,
+      serverNow: now,
+      endsAt: (step + 1) * TOTP_PERIOD_S * 1000,
+    };
+  });
+
+  /** Включить меняющийся код (только директор). */
+  app.post("/code/enable", async (req, reply) => {
+    if (!(await isDirectorSession(req)))
+      return reply.code(403).send({ error: "only_director" });
+    if (await getTotpSecret()) return { ok: true };
+    const me = getUser(req);
+    await db
+      .insert(appSettings)
+      .values({ key: TOTP_SETTING, value: newTotpSecret(), updatedByUserId: me.id })
+      .onConflictDoNothing();
+    await logActivity(req, {
+      entity: "settings",
+      entityId: null,
+      action: "director_code_enabled",
+      summary:
+        "Включён меняющийся код директора — постоянный ключ больше не принимается",
+    });
+    return { ok: true };
+  });
+
+  /** Выключить (вернуться к постоянному ключу) — только директор. */
+  app.post("/code/disable", async (req, reply) => {
+    if (!(await isDirectorSession(req)))
+      return reply.code(403).send({ error: "only_director" });
+    await db.delete(appSettings).where(eq(appSettings.key, TOTP_SETTING));
+    await logActivity(req, {
+      entity: "settings",
+      entityId: null,
+      action: "director_code_disabled",
+      summary: (await getKeyHash())
+        ? "Меняющийся код выключен — снова действует постоянный ключ директора"
+        : "Меняющийся код выключен — защищённые действия больше не требуют подтверждения",
+    });
+    return { ok: true };
   });
 
   /** Установить / сменить ключ. Смена требует текущий ключ. */
@@ -131,6 +322,13 @@ export async function approvalsRoutes(app: FastifyInstance) {
       return reply
         .code(400)
         .send({ error: "validation", issues: parsed.error.issues });
+    // 22.10: ключ меняет только директор из своего аккаунта — знание
+    // текущего ключа (его мог сохранить браузер) больше не даёт права.
+    if (!(await isDirectorSession(req)))
+      return reply.code(403).send({
+        error: "only_director",
+        message: "Ключ меняет директор из своего аккаунта.",
+      });
     const hash = await getKeyHash();
     if (hash) {
       const ok =
@@ -171,23 +369,20 @@ export async function approvalsRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const Body = z
-        .object({ key: z.string().min(1).max(200), action: z.string().max(80).optional() })
+        .object({
+          key: z.string().min(1).max(200).optional(),
+          code: z.string().min(1).max(20).optional(),
+          action: z.string().max(80).optional(),
+        })
         .strict();
       const parsed = Body.safeParse(req.body);
       if (!parsed.success)
         return reply
           .code(400)
           .send({ error: "validation", issues: parsed.error.issues });
-      const hash = await getKeyHash();
-      if (!hash)
-        return reply
-          .code(409)
-          .send({ error: "key_not_set", message: "Ключ ещё не установлен." });
-      const ok = await bcrypt.compare(parsed.data.key, hash);
-      if (!ok)
-        return reply
-          .code(403)
-          .send({ error: "wrong_key", message: "Неверный ключ." });
+      const f = await checkFactor(req, parsed.data);
+      if (!f.ok)
+        return reply.code(f.status).send({ error: f.error, message: f.message });
       // Полезная нагрузка pass-токена отличается от сессионной (dk/act),
       // поэтому каст: @fastify/jwt типизирован под JwtPayload сессии.
       const pass = app.jwt.sign(
@@ -273,19 +468,17 @@ export async function approvalsRoutes(app: FastifyInstance) {
       const id = Number(req.params.id);
       if (!Number.isFinite(id))
         return reply.code(400).send({ error: "bad id" });
-      const Body = z.object({ key: z.string().min(1).max(200) }).strict();
-      const parsed = Body.safeParse(req.body);
+      const parsed = FactorBody.safeParse(req.body ?? {});
       if (!parsed.success)
         return reply
           .code(400)
           .send({ error: "validation", issues: parsed.error.issues });
-      const hash = await getKeyHash();
-      if (!hash) return reply.code(409).send({ error: "key_not_set" });
-      const ok = await bcrypt.compare(parsed.data.key, hash);
-      if (!ok)
-        return reply
-          .code(403)
-          .send({ error: "wrong_key", message: "Неверный ключ." });
+      // 22.10: директор из своего аккаунта — одним нажатием, без ключа.
+      if (!(await isDirectorSession(req))) {
+        const f = await checkFactor(req, parsed.data);
+        if (!f.ok)
+          return reply.code(f.status).send({ error: f.error, message: f.message });
+      }
       const me = getUser(req);
       const name = await userName(me.id);
       const [row] = await db
@@ -321,19 +514,16 @@ export async function approvalsRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>("/:id/reject", async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
-    const Body = z.object({ key: z.string().min(1).max(200) }).strict();
-    const parsed = Body.safeParse(req.body);
+    const parsed = FactorBody.safeParse(req.body ?? {});
     if (!parsed.success)
       return reply
         .code(400)
         .send({ error: "validation", issues: parsed.error.issues });
-    const hash = await getKeyHash();
-    if (!hash) return reply.code(409).send({ error: "key_not_set" });
-    const ok = await bcrypt.compare(parsed.data.key, hash);
-    if (!ok)
-      return reply
-        .code(403)
-        .send({ error: "wrong_key", message: "Неверный ключ." });
+    if (!(await isDirectorSession(req))) {
+      const f = await checkFactor(req, parsed.data);
+      if (!f.ok)
+        return reply.code(f.status).send({ error: f.error, message: f.message });
+    }
     const me = getUser(req);
     const name = await userName(me.id);
     const [row] = await db

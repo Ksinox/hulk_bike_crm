@@ -208,6 +208,14 @@ export const users = pgTable("users", {
   sessionVersion: integer("session_version").notNull().default(0),
   /** Ответ директора при создании: 'existing' — уже работает, 'new' — новый. */
   staffKind: text("staff_kind"),
+  /**
+   * 22.10: коды восстановления пароля (директор/создатель) — только
+   * bcrypt-хэши, каждый код одноразовый.
+   */
+  recoveryCodes: jsonb("recovery_codes").$type<{
+    createdAt: string;
+    codes: { h: string; usedAt: string | null }[];
+  }>(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

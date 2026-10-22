@@ -37,6 +37,7 @@ import { Finance } from "@/pages/finance/Finance";
 import { Analytics } from "@/pages/analytics/Analytics";
 import { Buyout } from "@/pages/buyout/Buyout";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
+import { DirectorCodeButton } from "@/components/DirectorCode";
 import { DayReportDialog } from "@/components/DayReport";
 import { TABLET_COLUMN } from "./tablet";
 import { useNewSections } from "@/release/ReleaseTour";
@@ -292,10 +293,10 @@ function MobileTopBar({ title }: { title: string }) {
     <header className="shrink-0 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)]">
       <div className={cn("mx-auto flex h-14 w-full items-center gap-3", TABLET_COLUMN)}>
       <BrandLogo className="h-9 w-9 rounded-[10px]" />
-      <h1 className="font-display text-[18px] font-bold tracking-tight text-ink">
+      <h1 className="min-w-0 truncate font-display text-[18px] font-bold tracking-tight text-ink">
         {title}
       </h1>
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
         <button
           type="button"
           aria-label="Сводка дня"
@@ -307,6 +308,7 @@ function MobileTopBar({ title }: { title: string }) {
         {/* Пункт 1: подтверждения ключа директора — сценарий «директор с
             телефона видит висящий запрос и подтверждает». */}
         <ApprovalsBell />
+        <DirectorCodeButton compact />
       </div>
       </div>
       {dayReportOpen && (

@@ -11,7 +11,12 @@ import {
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useLogin, useLoginTiles, type LoginTile } from "@/lib/api/auth";
+import {
+  useLogin,
+  useLoginTiles,
+  useRecoverPassword,
+  type LoginTile,
+} from "@/lib/api/auth";
 
 /**
  * Экран входа. Тайлы юзеров — как на Windows login screen.
@@ -42,6 +47,9 @@ export function Login({ notice = null }: { notice?: keyof typeof NOTICE_TEXT | n
   const [remember, setRemember] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  // 22.10: «Забыли пароль?» — восстановление кодом (директор/создатель).
+  const [recovering, setRecovering] = useState(false);
+  const [recoveredNote, setRecoveredNote] = useState<string | null>(null);
 
   const { data: tiles = [], isLoading } = useLoginTiles(unlock);
   const loginMut = useLogin();
@@ -90,6 +98,8 @@ export function Login({ notice = null }: { notice?: keyof typeof NOTICE_TEXT | n
     if (selectedId != null) {
       setPassword("");
       setErrorMsg(null);
+      setRecovering(false);
+      setRecoveredNote(null);
       setTimeout(() => passwordInputRef.current?.focus(), 50);
     }
   }, [selectedId]);
@@ -188,6 +198,25 @@ export function Login({ notice = null }: { notice?: keyof typeof NOTICE_TEXT | n
                 {roleLabel(selected.role)}
               </span>
             </div>
+            {recovering ? (
+              <RecoverForm
+                login={selected.login}
+                onBack={() => setRecovering(false)}
+                onDone={(left) => {
+                  setRecovering(false);
+                  setRecoveredNote(
+                    `Пароль изменён. Войдите с новым паролем. Неиспользованных кодов осталось: ${left}.`,
+                  );
+                  setTimeout(() => passwordInputRef.current?.focus(), 50);
+                }}
+              />
+            ) : (
+            <>
+            {recoveredNote && (
+              <div className="mb-3 rounded-[10px] border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-[12px] leading-snug text-emerald-100">
+                {recoveredNote}
+              </div>
+            )}
             <div className="relative">
               <input
                 ref={passwordInputRef}
@@ -257,6 +286,20 @@ export function Login({ notice = null }: { notice?: keyof typeof NOTICE_TEXT | n
                 </>
               )}
             </button>
+            {(selected.role === "director" || selected.role === "creator") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRecovering(true);
+                  setRecoveredNote(null);
+                }}
+                className="mx-auto mt-3 block py-1.5 text-[12.5px] font-semibold text-white/55 underline-offset-4 hover:text-white hover:underline"
+              >
+                Забыли пароль?
+              </button>
+            )}
+            </>
+            )}
           </div>
         </div>
       )}
@@ -314,6 +357,109 @@ export function Login({ notice = null }: { notice?: keyof typeof NOTICE_TEXT | n
           animation: hulkModalCard 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
         }
       `}</style>
+    </div>
+  );
+}
+
+/* ========== Восстановление пароля кодом (22.10) ========== */
+
+function RecoverForm({
+  login,
+  onBack,
+  onDone,
+}: {
+  login: string;
+  onBack: () => void;
+  onDone: (left: number) => void;
+}) {
+  const recover = useRecoverPassword();
+  const [code, setCode] = useState("");
+  const [pass, setPass] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const inputCls =
+    "h-11 w-full rounded-[12px] border border-white/15 bg-white/[0.06] px-4 text-[14px] text-white outline-none placeholder:text-white/30 focus:border-emerald-400/60 focus:bg-white/[0.08]";
+
+  const submit = async () => {
+    setError(null);
+    if (code.replace(/[^a-z0-9]/gi, "").length < 10) return setError("Код — 10 знаков, например k7m2p-x9qre.");
+    if (pass.length < 8) return setError("Новый пароль — минимум 8 символов.");
+    if (pass !== repeat) return setError("Пароли не совпадают.");
+    try {
+      const r = await recover.mutateAsync({ login, code, newPassword: pass });
+      onDone(r.left);
+    } catch (e) {
+      const st = (e as { status?: number }).status;
+      setError(
+        st === 429
+          ? "Слишком много попыток. Подождите 15 минут."
+          : "Код не подходит или уже использован.",
+      );
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="text-[12.5px] leading-snug text-white/65">
+        Введите один из кодов восстановления — вы сохранили их, когда
+        создавали в «Настройках». Код сработает один раз.
+      </div>
+      <input
+        value={code}
+        autoFocus
+        onChange={(e) => {
+          setCode(e.target.value);
+          setError(null);
+        }}
+        placeholder="Код восстановления"
+        autoComplete="one-time-code"
+        autoCapitalize="none"
+        spellCheck={false}
+        className={cn(inputCls, "font-mono text-[16px] tracking-wider")}
+      />
+      <input
+        type="password"
+        value={pass}
+        onChange={(e) => {
+          setPass(e.target.value);
+          setError(null);
+        }}
+        placeholder="Новый пароль (от 8 символов)"
+        autoComplete="new-password"
+        className={inputCls}
+      />
+      <input
+        type="password"
+        value={repeat}
+        onChange={(e) => {
+          setRepeat(e.target.value);
+          setError(null);
+        }}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        placeholder="Повторите пароль"
+        autoComplete="new-password"
+        className={inputCls}
+      />
+      {error && (
+        <div className="rounded-[10px] border border-red-400/30 bg-red-500/15 px-3 py-2 text-[12px] text-red-100">
+          {error}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={submit}
+        disabled={recover.isPending}
+        className="mt-1 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-white text-[14px] font-bold text-[#0a0d14] transition-all hover:bg-emerald-50 disabled:opacity-50"
+      >
+        {recover.isPending ? <Loader2 className="animate-spin" size={16} /> : "Сменить пароль"}
+      </button>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mx-auto block py-1.5 text-[12.5px] font-semibold text-white/55 hover:text-white"
+      >
+        Назад ко входу
+      </button>
     </div>
   );
 }
