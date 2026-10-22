@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { payments, rentals } from "../db/schema.js";
+import { requireDirectorApproval } from "./approvals.js";
+import { briefPayment } from "../services/approvalBrief.js";
 import { mirrorRentalPaymentToDebtor } from "../services/debtorMirror.js";
 import { logActivity } from "../services/activityLog.js";
 
@@ -157,12 +159,41 @@ export async function paymentsRoutes(app: FastifyInstance) {
       .select()
       .from(payments)
       .where(eq(payments.id, id));
+    // 22.10 (обходы ключа): у УЖЕ принятого платежа можно было тихо поменять
+    // сумму или снять «оплачен» — выручка менялась без ключа и без журнала.
+    const amountChanged =
+      before?.paid && parsed.data.amount !== undefined && parsed.data.amount !== before.amount;
+    const unpaid = before?.paid && parsed.data.paid === false;
+    if (
+      (amountChanged || unpaid) &&
+      !(await requireDirectorApproval(app, req, reply, "payment_edit", () =>
+        briefPayment(id, { amount: parsed.data.amount, unpaid: !!unpaid }),
+      ))
+    )
+      return;
     const [row] = await db
       .update(payments)
       .set(patch)
       .where(eq(payments.id, id))
       .returning();
     if (!row) return reply.code(404).send({ error: "not found" });
+    if (before && (amountChanged || unpaid)) {
+      await logActivity(req, {
+        entity: "rental",
+        entityId: row.rentalId,
+        action: "payment_edited",
+        summary: unpaid
+          ? `Платёж ${before.amount} ₽ (${PAYMENT_TYPE_RU[row.type] ?? row.type}) отмечен как не оплаченный`
+          : `Изменена сумма принятого платежа (${PAYMENT_TYPE_RU[row.type] ?? row.type}): ${before.amount} → ${row.amount} ₽`,
+        meta: { paymentId: row.id, type: row.type },
+        diff: {
+          ...(amountChanged
+            ? { amount: { label: "Сумма", from: before.amount, to: row.amount, kind: "money" } }
+            : {}),
+          ...(unpaid ? { paid: { label: "Оплачен", from: "да", to: "нет", kind: "text" } } : {}),
+        },
+      });
+    }
     // Пункт 8: смена способа у УЖЕ проведённого платежа — в журнал с diff.
     // Приём placeholder'ов (paid false→true с установкой метода) не логируем:
     // это не «смена формата», а первичный выбор при оплате.

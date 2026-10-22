@@ -66,6 +66,8 @@ export type ReturnInspection = {
   depositReturned: boolean;
   /** Пункт 4: причина возврата (обязательна в UI закрытия). */
   returnReason?: string | null;
+  /** 22.10: что сломалось — при сдаче «в ремонт». */
+  breakdownReason?: string | null;
   /**
    * Баг 13.10: оператор осознанно записывает пробег МЕНЬШЕ прежнего —
    * прежний был ошибкой. Без флага сервер меньший пробег не принимает.
@@ -296,6 +298,7 @@ export function completeRentalNoDamage(
       mileageAtReturn: inspection.mileage,
       ...(inspection.mileageCorrection ? { mileageCorrection: true } : {}),
       ...(inspection.returnReason ? { returnReason: inspection.returnReason } : {}),
+      ...(inspection.breakdownReason ? { breakdownReason: inspection.breakdownReason } : {}),
       ...(scooterNextStatus ? { scooterNextStatus } : {}),
     })
     .then(invAll)
@@ -325,6 +328,7 @@ export function completeRentalWithDamage(
       mileageAtReturn: inspection.mileage,
       ...(inspection.mileageCorrection ? { mileageCorrection: true } : {}),
       ...(inspection.returnReason ? { returnReason: inspection.returnReason } : {}),
+      ...(inspection.breakdownReason ? { breakdownReason: inspection.breakdownReason } : {}),
       ...(scooterNextStatus ? { scooterNextStatus } : {}),
     })
     .then(() => {

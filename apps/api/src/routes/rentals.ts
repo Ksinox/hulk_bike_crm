@@ -49,6 +49,14 @@ function pickRateByPeriod(
 import { logActivity } from "../services/activityLog.js";
 import type { DiffPayload } from "../services/activityLog.js";
 import { requireDirectorApproval } from "./approvals.js";
+import { ensureRepairJobForScooter } from "./repair-jobs.js";
+import {
+  briefPayment,
+  briefRentalDelete,
+  briefRentalScooterStatus,
+  briefRollbackAction,
+  scooterName as scooterBriefName,
+} from "../services/approvalBrief.js";
 import { rentalStatusLabel, scooterStatusLabel } from "../services/activityMessages.js";
 import { overdueDailyRate } from "../services/overdueCharge.js";
 
@@ -173,6 +181,8 @@ const CompleteBody = z
     scooterNextStatus: z.enum(SCOOTER_NEXT_STATUSES).optional(),
     /** Пункт 4: причина возврата (обязательность обеспечивает UI). */
     returnReason: z.string().max(200).optional().nullable(),
+    /** 22.10: что сломалось — при сдаче в ремонт, уходит в ремонт скутера. */
+    breakdownReason: z.string().trim().max(200).optional().nullable(),
   })
   .strict();
 
@@ -197,6 +207,9 @@ async function summaryForRental(rentalId: number): Promise<string> {
  * деньги клиента ему трогать нельзя. creator/director/admin/accountant
  * проходят. Возвращает true если роль OK, иначе шлёт 403 и возвращает false.
  */
+/** Сколько после операции её можно отменить без ключа директора (22.10). */
+const UNDO_FREE_MS = 10 * 60 * 1000;
+
 function assertFinancialRole(
   req: { user?: { role?: string } },
   reply: { code: (n: number) => { send: (b: unknown) => unknown } },
@@ -478,6 +491,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
     }
     const [before] = await db.select().from(rentals).where(eq(rentals.id, id));
     if (!before) return reply.code(404).send({ error: "not found" });
+
+    // 22.10 (обходы ключа): PATCH менял скутер аренды напрямую — мимо замены
+    // (без записи замены, без пробега и без ключа на категорию снятого).
+    // Интерфейс так не делает; скутер меняется только «Заменой».
+    if (
+      parsed.data.scooterId !== undefined &&
+      parsed.data.scooterId !== before.scooterId
+    ) {
+      return reply.code(409).send({
+        error: "use_swap",
+        message: "Скутер в аренде меняется только через «Заменить скутер».",
+      });
+    }
 
     // v0.4.36: whitelist переходов статуса. Через generic PATCH /:id
     // нельзя загнать аренду в произвольный статус — это плодит баги
@@ -839,7 +865,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     // Пункт 1: удаление аренды — защищённое действие, требует ключ директора.
-    if (!(await requireDirectorApproval(app, req, reply, "rental_delete")))
+    if (
+      !(await requireDirectorApproval(app, req, reply, "rental_delete", () => {
+        const b = (req.body ?? {}) as { reason?: unknown };
+        return briefRentalDelete(id, typeof b.reason === "string" ? b.reason.trim() : null);
+      }))
+    )
       return;
 
     // v0.6.51: опциональная причина удаления в архив (напр. «Создано
@@ -1544,6 +1575,31 @@ export async function rentalsRoutes(app: FastifyInstance) {
       const d = parsed.data;
       const withDamage = (d.damageAmount ?? 0) > 0 || !d.conditionOk;
 
+      // 22.10 (обходы ключа): при закрытии аренды скутер уходил в любую
+      // категорию (ремонт, продажа, разборка) без ключа. Обычный возврат в
+      // парк — как раньше, без ключа.
+      {
+        const [cur] = await db
+          .select({ scooterId: rentals.scooterId })
+          .from(rentals)
+          .where(eq(rentals.id, id));
+        if (cur?.scooterId) {
+          const [sc] = await db
+            .select({ baseStatus: scooters.baseStatus })
+            .from(scooters)
+            .where(eq(scooters.id, cur.scooterId));
+          const next = d.scooterNextStatus ?? "rental_pool";
+          if (
+            sc &&
+            sc.baseStatus !== next &&
+            !(await requireDirectorApproval(app, req, reply, "scooter_status_change", () =>
+              briefRentalScooterStatus(id, cur.scooterId!, next, "Закрытие аренды"),
+            ))
+          )
+            return;
+        }
+      }
+
       // v0.4.36: блокируем complete если по аренде висят неоплаченные
       // swap_fee/fine платежи. Раньше аренда уезжала в архив с долгом
       // по доплате за свап или штрафом — клиент должен, но в системе
@@ -1752,7 +1808,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         action: "completed",
         summary: `${withDamage
           ? `Завершена аренда ${summary} · зафиксирован ущерб ${(d.damageAmount ?? 0).toLocaleString("ru-RU")} ₽`
-          : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`}${d.returnReason ? ` · причина возврата: ${d.returnReason}` : ""}`,
+          : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`}${d.returnReason ? ` · причина возврата: ${d.returnReason}` : ""}${d.breakdownReason && d.scooterNextStatus === "repair" ? ` · в ремонт: ${d.breakdownReason}` : ""}`,
         diff: {
           status: {
             label: "Статус",
@@ -1791,6 +1847,20 @@ export async function rentalsRoutes(app: FastifyInstance) {
           },
         },
       });
+      // 22.10: скутер сдали в ремонт — открываем ремонт с причиной поломки
+      // (видна в карточке скутера, вкладка «Ремонты», и в разделе «Ремонты»).
+      if (result.scooterId && (d.scooterNextStatus ?? "rental_pool") === "repair") {
+        try {
+          await ensureRepairJobForScooter({
+            scooterId: result.scooterId,
+            rentalId: id,
+            createdByUserId: req.user?.userId ?? null,
+            breakdownReason: d.breakdownReason ?? null,
+          });
+        } catch (e) {
+          req.log?.warn?.({ err: e }, "ensureRepairJobForScooter (complete) failed");
+        }
+      }
       // v0.4.60: лог изменения пробега скутера (на сущность scooter,
       // чтобы запись была видна в карточке скутера и в его таймлайне).
       if (
@@ -2411,6 +2481,25 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .code(400)
           .send({ error: "validation", issues: parsed.error.issues });
       const paymentId = parsed.data.paymentId;
+
+      // 22.10 (обходы ключа): «Отменить» платёж работал весь день без ключа —
+      // так можно было убрать принятые деньги из выручки. Свою свежую ошибку
+      // (первые 10 минут) отменяют как раньше, позже — с ключом директора.
+      {
+        const [p0] = await db
+          .select({ createdAt: payments.createdAt, rentalId: payments.rentalId })
+          .from(payments)
+          .where(eq(payments.id, paymentId));
+        if (
+          p0 &&
+          p0.rentalId === id &&
+          Date.now() - p0.createdAt.getTime() > UNDO_FREE_MS &&
+          !(await requireDirectorApproval(app, req, reply, "rollback_late", () =>
+            briefPayment(paymentId, { rollback: true }),
+          ))
+        )
+          return;
+      }
 
       // Календарная дата по Москве (как и весь долговой расчёт в этом файле).
       const mskDate = (d: Date): string => {
@@ -3295,6 +3384,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
             .max(1_000_000, "Пробег больше 1 000 000 км — проверьте, нет ли лишних цифр")
             .optional(),
           prevScooterMileageCorrection: z.boolean().optional(),
+          /** 22.10: что сломалось (причина «Поломка») — в ремонт скутера. */
+          breakdownReason: z.string().trim().max(200).optional(),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -3316,11 +3407,45 @@ export async function rentalsRoutes(app: FastifyInstance) {
       const catLabel = d.reasonCategory
         ? (REASON_CAT_LABEL[d.reasonCategory] ?? null)
         : null;
+
+      // 22.10 (обходы ключа): замена переводила снятый скутер в другую
+      // категорию (ремонт, продажа, разборка…) без ключа — тогда как то же
+      // самое через карточку скутера ключ требует. Теперь одинаково.
+      {
+        const [cur] = await db
+          .select({ scooterId: rentals.scooterId })
+          .from(rentals)
+          .where(eq(rentals.id, id));
+        if (cur?.scooterId) {
+          const [sc] = await db
+            .select({ baseStatus: scooters.baseStatus })
+            .from(scooters)
+            .where(eq(scooters.id, cur.scooterId));
+          if (
+            sc &&
+            sc.baseStatus !== d.oldScooterStatus &&
+            !(await requireDirectorApproval(app, req, reply, "scooter_status_change", async () => {
+              const b = await briefRentalScooterStatus(id, cur.scooterId!, d.oldScooterStatus, "Замена скутера в аренде");
+              const [ns] = await db
+                .select({ name: scooters.name, slot: scooters.rentalSlot })
+                .from(scooters)
+                .where(eq(scooters.id, d.newScooterId));
+              if (ns) b.facts.push({ label: "Выдаём взамен", value: scooterBriefName(ns.name, ns.slot) });
+              if (catLabel || d.reason?.trim())
+                b.facts.push({ label: "Причина", value: [catLabel, (d as { breakdownReason?: string }).breakdownReason?.trim(), d.reason?.trim()].filter(Boolean).join(" · ") });
+              return b;
+            }))
+          )
+            return;
+        }
+      }
       const comment = d.reason?.trim() ? d.reason.trim() : null;
-      const reasonText = catLabel
+      const breakdown = d.breakdownReason?.trim() || null;
+      const head = catLabel && breakdown ? `${catLabel}: ${breakdown}` : catLabel;
+      const reasonText = head
         ? comment
-          ? `${catLabel} — ${comment}`
-          : catLabel
+          ? `${head} — ${comment}`
+          : head
         : comment;
 
       const result = await db.transaction(async (tx) => {
@@ -3644,7 +3769,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
          * ремонт и выбыл из парка аренды. Именно так у заказчика «пропала»
          * единица из 62.
          */
-        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}: ${prevScooterName} → ${newScooterName}${catLabel ? ` · причина: ${catLabel}` : ""}${d.oldScooterStatus ? ` · снятый переведён в «${scooterStatusLabel(d.oldScooterStatus)}»` : ""}${result.prevMileageAfter != null ? ` · пробег снятого ${result.prevMileageAfter.toLocaleString("ru-RU")} км` : ""}${result.feeAmount > 0 ? ` · доплата ${result.feeAmount} ₽` : ""}${result.canceledFee > 0 ? ` · погашен долг по замене ${result.canceledFee} ₽` : ""}${result.refundToDeposit > 0 ? ` · возврат ${result.refundToDeposit} ₽ в депозит` : ""}`,
+        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}: ${prevScooterName} → ${newScooterName}${head ? ` · причина: ${head}` : ""}${d.oldScooterStatus ? ` · снятый переведён в «${scooterStatusLabel(d.oldScooterStatus)}»` : ""}${result.prevMileageAfter != null ? ` · пробег снятого ${result.prevMileageAfter.toLocaleString("ru-RU")} км` : ""}${result.feeAmount > 0 ? ` · доплата ${result.feeAmount} ₽` : ""}${result.canceledFee > 0 ? ` · погашен долг по замене ${result.canceledFee} ₽` : ""}${result.refundToDeposit > 0 ? ` · возврат ${result.refundToDeposit} ₽ в депозит` : ""}`,
         // v0.8.14: «ревизорские» поля — кто на кого заменён, причина и куда
         // ушёл старый скутер (в ремонт / обратно в парк) на момент замены.
         meta: {
@@ -3659,6 +3784,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           reason: comment,
           reasonCategory: d.reasonCategory ?? null,
           reasonLabel: catLabel,
+          breakdownReason: breakdown,
           oldScooterDestination: d.oldScooterStatus,
           // Снимок для отката свапа «в день совершения» (rollback-action).
           swapId: result.swapId,
@@ -3721,6 +3847,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
             : {}),
         },
       });
+
+      // 22.10: снятый скутер ушёл в ремонт — открываем ремонт с причиной
+      // поломки, он виден в карточке скутера («Ремонты») и в «Ремонтах».
+      if (result.prevScooterId && d.oldScooterStatus === "repair") {
+        try {
+          await ensureRepairJobForScooter({
+            scooterId: result.prevScooterId,
+            rentalId: id,
+            createdByUserId: req.user?.userId ?? null,
+            breakdownReason: breakdown ?? (catLabel === "Поломка" ? comment : null),
+          });
+        } catch (e) {
+          req.log?.warn?.({ err: e }, "ensureRepairJobForScooter (swap) failed");
+        }
+      }
 
       // 17.10: пробег снятого скутера — в его хронологию (как при возврате).
       if (
@@ -5436,6 +5577,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .code(400)
           .send({ error: "validation", issues: parsed.error.issues });
       const activityId = parsed.data.activityId;
+
+      // 22.10 (обходы ключа): откат создания аренды / замены / начислений
+      // весь день без ключа = удаление аренды и денег мимо ключа. Первые
+      // 10 минут — как раньше, позже — с ключом.
+      {
+        const [a0] = await db
+          .select({ createdAt: activityLog.createdAt })
+          .from(activityLog)
+          .where(eq(activityLog.id, activityId));
+        if (
+          a0 &&
+          Date.now() - a0.createdAt.getTime() > UNDO_FREE_MS &&
+          !(await requireDirectorApproval(app, req, reply, "rollback_late", () =>
+            briefRollbackAction(activityId),
+          ))
+        )
+          return;
+      }
 
       const SUPPORTED = new Set([
         "debt_manual",

@@ -523,3 +523,73 @@
     display: none !important;
   }
 }
+
+/*
+ * 22.10 — крупная шкала для планшета (.tab-xl).
+ *
+ * Заказчик: «перед компьютером сидим близко, а планшет держим на
+ * расстоянии, и экран меньше — если всё маленькое, рассматривать неудобно».
+ * Формы общие с компьютером и написаны в его размерах (12–13px, поля 36px).
+ * Внутри .tab-xl та же разметка получает планшетную шкалу: текст на 3px
+ * крупнее, поля и кнопки — под палец (48–56px). Вешается на тело мастера
+ * только по признаку планшета (useTabletLayout).
+ */
+.tab-xl .text-\[9px\] { font-size: 12px; }
+.tab-xl .text-\[10px\] { font-size: 13px; }
+.tab-xl .text-\[10\.5px\] { font-size: 13.5px; }
+.tab-xl .text-\[11px\] { font-size: 14px; }
+.tab-xl .text-\[11\.5px\] { font-size: 14.5px; }
+.tab-xl .text-\[12px\] { font-size: 15px; }
+.tab-xl .text-\[12\.5px\] { font-size: 15.5px; }
+.tab-xl .text-\[13px\] { font-size: 16px; }
+.tab-xl .text-\[13\.5px\] { font-size: 16.5px; }
+.tab-xl .text-\[14px\] { font-size: 17px; }
+.tab-xl .text-\[15px\] { font-size: 18px; }
+.tab-xl .text-\[16px\] { font-size: 19px; }
+.tab-xl .h-8 { height: 46px; }
+.tab-xl .h-9 { height: 52px; }
+.tab-xl .h-10 { height: 52px; }
+.tab-xl .h-11 { height: 54px; }
+.tab-xl .h-12 { height: 58px; }
+.tab-xl .min-h-8 { min-height: 46px; }
+.tab-xl .min-h-\[48px\] { min-height: 56px; }
+/* чипы и переключатели: под палец */
+.tab-xl button.py-1 { padding-top: 11px; padding-bottom: 11px; }
+.tab-xl button.py-1\.5 { padding-top: 12px; padding-bottom: 12px; }
+.tab-xl button.px-2\.5,
+.tab-xl button.px-3 { padding-left: 18px; padding-right: 18px; }
+.tab-xl .w-24 { width: 128px; }
+.tab-xl .w-40 { width: 200px; }
+.tab-xl .p-3 { padding: 16px; }
+/* группы полей дышат: на расстоянии вытянутой руки слипшиеся блоки не читаются */
+.tab-xl .mt-3 { margin-top: 26px; }
+.tab-xl .mb-1 { margin-bottom: 10px; }
+.tab-xl .mb-2 { margin-bottom: 12px; }
+
+/*
+ * 22.10 — микрошаги анкеты (телефон и планшет): «одно поле — один экран».
+ * Поле крупное, подпись поля не дублирует вопрос шага (data-micro-single).
+ */
+.micro-xl input:not([type="checkbox"]):not([type="file"]):not([type="radio"]),
+.micro-xl textarea {
+  /* !important: планшетная шкала .tab-xl висит на том же теле и иначе
+     перебивает размер поля своим text-[13px] → 16px */
+  height: 64px !important;
+  font-size: 21px !important;
+  border-radius: 16px;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+.micro-xl textarea { height: auto !important; min-height: 132px; padding-top: 14px; line-height: 1.4; }
+/* подсказка поля повторяет подсказку под вопросом шага — прячем (ошибки остаются) */
+.micro-xl [data-micro-single] .mt-1.text-muted-2 { display: none; }
+.micro-xl [data-micro-single] label { display: none; }
+.micro-xl label { font-size: 15px; margin-bottom: 8px; }
+.micro-xl .text-\[11px\] { font-size: 14px; }
+.micro-xl .text-\[10px\] { font-size: 13px; }
+.micro-xl [data-micro-active] button.py-1\.5 { padding-top: 16px; padding-bottom: 16px; font-size: 17px; }
+
+/* короткие значения — короткие поля: длина поля подсказывает, сколько вводить */
+.micro-xl #f-pser { max-width: 170px; }
+.micro-xl #f-pnum { max-width: 240px; }
+.micro-xl #f-pcode { max-width: 220px; }

@@ -254,6 +254,13 @@ function JobDetail({ job }: { job: ApiRepairJob }) {
             <DetailRow label="По аренде" value={job.rental.clientName} />
           </>
         )}
+        {/* 22.10: поломка при замене или сдаче в ремонт — паритет с компьютером. */}
+        {job.breakdownReason && (
+          <>
+            <div className="border-t border-border" />
+            <DetailRow label="Поломка" value={job.breakdownReason} />
+          </>
+        )}
         {job.note && (
           <>
             <div className="border-t border-border" />

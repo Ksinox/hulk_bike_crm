@@ -24,6 +24,8 @@ export type NoteSticker = {
   createdAt: string;
   dismissedAt: string | null;
   dismissedByName: string | null;
+  /** 22.10: копия стикера аренды у клиента — из какой аренды. */
+  sourceRentalId?: number | null;
 };
 
 export const stickerKeys = {

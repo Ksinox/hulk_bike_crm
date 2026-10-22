@@ -37,6 +37,7 @@ import { Finance } from "@/pages/finance/Finance";
 import { Analytics } from "@/pages/analytics/Analytics";
 import { Buyout } from "@/pages/buyout/Buyout";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
+import { DirectorCodeButton } from "@/components/DirectorCode";
 import { DayReportDialog } from "@/components/DayReport";
 import { TABLET_COLUMN } from "./tablet";
 import { useNewSections } from "@/release/ReleaseTour";
@@ -288,25 +289,31 @@ function MobilePage({
 function MobileTopBar({ title }: { title: string }) {
   // Пункт 7: сводка дня (Z-отчёт) — доступна в любой момент с телефона.
   const [dayReportOpen, setDayReportOpen] = useState(false);
+  // 22.10: на планшете шапка крупнее — экран держат на расстоянии руки.
+  const tablet = useTabletLayout();
   return (
-    <header className="shrink-0 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)]">
-      <div className={cn("mx-auto flex h-14 w-full items-center gap-3", TABLET_COLUMN)}>
-      <BrandLogo className="h-9 w-9 rounded-[10px]" />
-      <h1 className="font-display text-[18px] font-bold tracking-tight text-ink">
+    <header className={cn("shrink-0 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)]", tablet && "px-6")}>
+      <div className={cn("mx-auto flex h-14 w-full items-center gap-3", tablet && "h-16 gap-4", TABLET_COLUMN)}>
+      <BrandLogo className={cn("h-9 w-9 rounded-[10px]", tablet && "h-11 w-11 rounded-xl")} />
+      <h1 className={cn("min-w-0 truncate font-display text-[18px] font-bold tracking-tight text-ink", tablet && "text-[23px]")}>
         {title}
       </h1>
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
         <button
           type="button"
           aria-label="Сводка дня"
           onClick={() => setDayReportOpen(true)}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-muted transition-colors active:bg-surface-soft"
+          className={cn(
+            "flex h-10 w-10 items-center justify-center rounded-full text-muted transition-colors active:bg-surface-soft",
+            tablet && "h-12 w-12",
+          )}
         >
-          <ReceiptText size={19} />
+          <ReceiptText size={tablet ? 23 : 19} />
         </button>
         {/* Пункт 1: подтверждения ключа директора — сценарий «директор с
             телефона видит висящий запрос и подтверждает». */}
         <ApprovalsBell />
+        <DirectorCodeButton compact />
       </div>
       </div>
       {dayReportOpen && (
@@ -339,12 +346,16 @@ function MobileTabBar({
 }) {
   const isNewSection = useNewSections();
   const moreHasNew = buildMoreItems(true).some((i) => isNewSection(i.id));
+  // 22.10: на планшете вкладки как в iPadOS — значок и подпись в строку,
+  // подпись читаемая (15px), а не телефонные 10px.
+  const tablet = useTabletLayout();
   return (
     <nav className="shrink-0 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)]">
       <div
         className={cn(
           "mx-auto flex h-[60px] max-w-md items-stretch justify-around px-1",
           action && "max-w-[1180px] justify-between gap-6 px-6",
+          tablet && "h-[76px] max-w-none",
         )}
       >
         <div
@@ -358,6 +369,7 @@ function MobileTabBar({
             item={item}
             active={!moreActive && route === item.id}
             onClick={() => onSelect(item.id)}
+            tablet={tablet}
           />
         ))}
         <button
@@ -366,14 +378,16 @@ function MobileTabBar({
           onClick={onMore}
           className={cn(
             "relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl",
+            tablet && "my-2 flex-row gap-2.5 rounded-2xl",
+            tablet && moreActive && "bg-blue-50",
             moreActive ? "text-blue-600" : "text-muted",
           )}
         >
           {moreHasNew && (
             <span className="absolute right-[calc(50%-18px)] top-2 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-surface" />
           )}
-          <MoreIcon size={22} strokeWidth={moreActive ? 2.4 : 2} />
-          <span className="text-[10px] font-semibold">Ещё</span>
+          <MoreIcon size={tablet ? 24 : 22} strokeWidth={moreActive ? 2.4 : 2} />
+          <span className={cn("text-[10px] font-semibold", tablet && "text-[16px]")}>Ещё</span>
         </button>
         </div>
         {action && (
@@ -381,9 +395,12 @@ function MobileTabBar({
             type="button"
             data-tour="fab"
             onClick={action.onClick}
-            className="my-2 flex shrink-0 items-center gap-2 rounded-2xl bg-blue-600 px-7 text-[15px] font-bold text-white transition-transform active:scale-95"
+            className={cn(
+              "my-2 flex shrink-0 items-center gap-2 rounded-2xl bg-blue-600 px-7 text-[15px] font-bold text-white transition-transform active:scale-95",
+              tablet && "px-8 text-[17px]",
+            )}
           >
-            <Plus size={20} strokeWidth={2.5} />
+            <Plus size={tablet ? 22 : 20} strokeWidth={2.5} />
             {action.label}
           </button>
         )}
@@ -396,10 +413,12 @@ function TabButton({
   item,
   active,
   onClick,
+  tablet = false,
 }: {
   item: MobileNavItem;
   active: boolean;
   onClick: () => void;
+  tablet?: boolean;
 }) {
   const Icon = item.icon;
   return (
@@ -408,11 +427,13 @@ function TabButton({
       onClick={onClick}
       className={cn(
         "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl transition-colors",
+        tablet && "my-2 flex-row gap-2.5 rounded-2xl",
+        tablet && active && "bg-blue-50",
         active ? "text-blue-600" : "text-muted",
       )}
     >
-      <Icon size={22} strokeWidth={active ? 2.4 : 2} />
-      <span className="text-[10px] font-semibold">{item.label}</span>
+      <Icon size={tablet ? 24 : 22} strokeWidth={active ? 2.4 : 2} />
+      <span className={cn("text-[10px] font-semibold", tablet && "text-[16px]")}>{item.label}</span>
     </button>
   );
 }

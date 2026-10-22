@@ -117,6 +117,8 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
   const [scooterStatusTouched, setScooterStatusTouched] = useState(false);
   // Пункт 4: обязательная причина возврата (выбор в приёмке).
   const [returnReason, setReturnReason] = useState<string | null>(null);
+  // 22.10: «В ремонт» — что сломалось (уходит в ремонт скутера, «Ремонты»).
+  const [breakdownReason, setBreakdownReason] = useState<string | null>(null);
   // #28: фото/видео ущерба — копим локально (staged), заливаем в акт после
   // его создания на завершении (PaymentAcceptDialog). Привязка — на весь акт.
   const [mediaStaged, setMediaStaged] = useState<StagedMedia[]>([]);
@@ -238,7 +240,8 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     mileageTooBig ||
     mileageNeedsDecision ||
     (cardStates[scooterCard] === "problem" && !linesFilled(scooterDamages)) ||
-    !allEquipmentProblemsFilled;
+    !allEquipmentProblemsFilled ||
+    (rental.scooterId != null && scooterNextStatus === "repair" && !breakdownReason);
 
   // v0.6.1: при появлении ущерба и если оператор не трогал dropdown —
   // подсказываем «В ремонт».
@@ -326,6 +329,8 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     setScooterStatusTouched,
     returnReason,
     setReturnReason,
+    breakdownReason,
+    setBreakdownReason,
     // #28: медиа ущерба (staged → upload после создания акта)
     mediaStaged,
     addMedia,
@@ -402,6 +407,8 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
     setScooterStatusTouched,
     returnReason,
     setReturnReason,
+    breakdownReason,
+    setBreakdownReason,
     scooterModel,
     scooterAvatar,
     equipmentItems,
@@ -667,6 +674,12 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
           <div className="mt-1 text-[10.5px] text-muted-2">
             По умолчанию — назад в парк. При ущербе обычно выбирают «В ремонт».
           </div>
+          {/* 22.10: в ремонт — что сломалось; сохраняется в ремонте скутера. */}
+          {scooterNextStatus === "repair" && (
+            <div className="mt-3 rounded-[12px] border border-orange-200 bg-orange-soft/20 p-3">
+              <ReturnReasonPicker kind="breakdown" value={breakdownReason} onChange={setBreakdownReason} />
+            </div>
+          )}
         </div>
       )}
 

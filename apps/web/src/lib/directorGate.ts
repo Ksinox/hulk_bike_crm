@@ -11,6 +11,13 @@
  * setNextApprovalContext(...) прямо перед мутацией (что за аренда, суммы).
  */
 
+/**
+ * 22.10: сводка операции, которую собрал СЕРВЕР (что за объект, было → стало).
+ * Приходит в 428 вместе с подписанным билетом; билет уходит директору.
+ */
+export type BriefFact = { label: string; value?: string; from?: string; to?: string };
+export type ApprovalBrief = { summary: string; facts: BriefFact[] };
+
 export type ApprovalContext = {
   /** Человекочитаемо: что произойдёт (одна строка). */
   summary?: string;
@@ -30,6 +37,17 @@ export const ACTION_META: Record<
   scooter_status_change: {
     title: "Перенос техники в другую категорию",
     generic: "Скутер будет переведён в другую категорию парка.",
+  },
+  // 22.10 (обходы ключа): принятые деньги и поздние откаты.
+  payment_edit: {
+    title: "Изменение принятого платежа",
+    generic: "У уже принятого платежа меняется сумма или снимается отметка «оплачен».",
+    warn: "Действие меняет выручку — запись останется в журнале.",
+  },
+  rollback_late: {
+    title: "Отмена операции",
+    generic: "Прошло больше 10 минут — отменить операцию можно только с ключом директора.",
+    warn: "Отмена убирает деньги или аренду из учёта.",
   },
   scooter_remove: {
     title: "Скутер покидает парк",
@@ -66,6 +84,8 @@ export function takeApprovalContext(): ApprovalContext | null {
 export type GateHandler = (args: {
   action: string;
   context: ApprovalContext | null;
+  brief: ApprovalBrief | null;
+  ticket: string | null;
 }) => Promise<string | null>;
 
 let handler: GateHandler | null = null;
@@ -75,7 +95,8 @@ export function setDirectorGateHandler(h: GateHandler | null) {
 
 export async function acquireDirectorApproval(
   action: string,
+  server: { brief: ApprovalBrief | null; ticket: string | null } = { brief: null, ticket: null },
 ): Promise<string | null> {
   if (!handler) return null;
-  return handler({ action, context: takeApprovalContext() });
+  return handler({ action, context: takeApprovalContext(), ...server });
 }

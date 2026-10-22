@@ -79,7 +79,7 @@ export function StaffAccountDialog({
   const [password, setPassword] = useState("");
   const [kind, setKind] = useState<StaffKind | null>(user?.staffKind ?? null);
   const [perms, setPerms] = useState<Perms>(() => ({
-    ...defaultPerms(),
+    ...defaultPerms(user?.role ?? "admin"),
     ...(user?.permissions ?? {}),
   }));
   const [active, setActive] = useState(user?.active ?? true);

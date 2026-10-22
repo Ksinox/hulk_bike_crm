@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { progressItems } from "@/data/progress";
+import { markChangelogSeen } from "@/pages/whats-new/useUnreadChangelog";
 
 /**
  * Отметки «здесь есть свежие изменения» на странице «Развитие» (31.08).
@@ -12,7 +13,16 @@ import { progressItems } from "@/data/progress";
  * Поэтому: посмотрел пункт — точка гаснет; доработали пункт и подняли
  * `updatedAt` — точка загорается снова, даже если раньше его читали.
  * Отметки живут в браузере заказчика: у каждого свой «прочитано».
+ *
+ * 22.10 (заказчик): «в реальной работе никто не будет просматривать каждый
+ * пункт — зашёл в раздел один раз, и всё прочитано». Поэтому при входе на
+ * страницу все пункты сразу отмечаются прочитанными — значок в меню гаснет.
+ * В этот заход новые пункты по-прежнему подсвечены (снимок на момент входа),
+ * чтобы было видно, что поменялось.
  */
+
+/** Событие для меню: отметки изменились — пересчитать значок. */
+export const PROGRESS_SEEN_EVENT = "hulk:progress-seen";
 
 const KEY = "hulk-progress-seen";
 
@@ -36,7 +46,18 @@ function save(map: SeenMap) {
 }
 
 export function useProgressSeen() {
+  // Снимок «что было прочитано» на момент входа — по нему подсветка.
   const [seen, setSeen] = useState<SeenMap>(load);
+
+  // Зашли в раздел — всё прочитано (в хранилище), значок в меню гаснет.
+  useEffect(() => {
+    const all: SeenMap = { ...load() };
+    for (const i of progressItems) if (i.updatedAt) all[i.id] = i.updatedAt;
+    save(all);
+    // и вкладка «Что уже сделано» — значок раздела складывается из обеих
+    markChangelogSeen();
+    window.dispatchEvent(new Event(PROGRESS_SEEN_EVENT));
+  }, []);
 
   const isFresh = useCallback(
     (id: string, updatedAt?: string) => {
@@ -50,12 +71,8 @@ export function useProgressSeen() {
   /** Пункт открыли — считаем прочитанным на его текущую дату. */
   const markSeen = useCallback((id: string, updatedAt?: string) => {
     if (!updatedAt) return;
-    setSeen((prev) => {
-      if (prev[id] === updatedAt) return prev;
-      const next = { ...prev, [id]: updatedAt };
-      save(next);
-      return next;
-    });
+    // хранилище уже отмечено при входе — гасим только подсветку пункта
+    setSeen((prev) => (prev[id] === updatedAt ? prev : { ...prev, [id]: updatedAt }));
   }, []);
 
   const freshCount = useMemo(

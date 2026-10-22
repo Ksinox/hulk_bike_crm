@@ -5,7 +5,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ArrowLeftRight, Banknote, Check, CreditCard, Lock, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeftRight, Banknote, Bike, CalendarDays, Check, CreditCard, Lock, Package, Search, UserPlus, UserRound, X } from "lucide-react";
+import { fileUrl } from "@/lib/files";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { compareByRentalNumber } from "@/lib/scooterOrder";
@@ -30,7 +31,7 @@ import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
-import { useApiEquipment } from "@/lib/api/equipment";
+import { useApiEquipment, type ApiEquipmentItem } from "@/lib/api/equipment";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useIsMobile, useTabletLayout } from "@/lib/useIsMobile";
 import { TABLET_DIALOG_OVERLAY, TABLET_DIALOG_PANEL } from "@/mobile/tablet";
@@ -38,7 +39,28 @@ import { ChevronLeft, ArrowRight } from "lucide-react";
 import { ScooterName } from "@/components/ScooterName";
 
 // Заголовки шагов мобильного мастера аренды.
-const STEP_TITLES = ["Клиент", "Скутер", "Срок", "Оплата"] as const;
+// 22.10: «одна мысль — один экран»: выдача (экипировка + залог) и оплата —
+// отдельно; вместе с оплатой они не помещались на экран.
+const STEP_TITLES = ["Клиент", "Скутер", "Срок", "Выдача", "Оплата"] as const;
+/**
+ * 22.10 (планшет): у шага — вопрос крупным заголовком, как в приложениях:
+ * человек отвечает на один вопрос за раз, а не разглядывает форму целиком.
+ */
+const STEP_QUESTIONS = [
+  "Кто берёт скутер?",
+  "Какой скутер выдаём?",
+  "На какой срок?",
+  "Что выдаём и какой залог?",
+  "Как платит клиент?",
+] as const;
+/** Значок шага — у каждого экрана своё лицо (как в анкете клиента). */
+const STEP_ICONS = [
+  { Icon: UserRound, tone: "bg-blue-50 text-blue-600" },
+  { Icon: Bike, tone: "bg-green-soft text-green-ink" },
+  { Icon: CalendarDays, tone: "bg-orange-soft text-orange-ink" },
+  { Icon: Package, tone: "bg-violet-50 text-violet-600" },
+  { Icon: Banknote, tone: "bg-green-soft text-green-ink" },
+] as const;
 
 /** Сегодня в формате DD.MM.YYYY (локальное время). */
 function todayRuDate(): string {
@@ -132,24 +154,21 @@ export function NewRentalModal({
   // Срок и тариф → Экипировка/залог/оплата). На десктопе все блоки сразу.
   const isMobile = useIsMobile();
   /**
-   * Планшет: мастер во весь экран. Шагов здесь НЕ делаем — на 1180px все
-   * четыре блока встают в две колонки и видны разом, как на компьютере.
-   * Пошаговый режим (stepMode) остаётся телефону, где иначе не помещается.
+   * Планшет (22.10, заказчик): «создание аренды — по шагам, как в
+   * приложениях; у нас сразу все поля и функции, маленькие строчки, всё
+   * надо рассматривать». Раньше планшет показывал все четыре блока разом в
+   * две колонки. Теперь планшет — тоже мастер по шагам, но свой: шаг во
+   * весь экран крупным шрифтом (.tab-xl), шаги наверху можно нажимать,
+   * лёжа справа постоянно видна сводка заказа.
    */
   const tabletLayout = useTabletLayout();
-  const stepMode = isMobile && !tabletLayout;
-  /** Планшет: каждый блок прокручивается сам, окно целиком — никогда. */
-  // shrink-0: в прокручиваемой колонке блок не должен ужиматься под
-  // соседа — иначе содержимое наезжает на следующий блок.
-  const sectionCls = tabletLayout ? "shrink-0" : undefined;
-  /**
-   * Планшет: две колонки по два блока. `display:contents` на компьютере и
-   * телефоне делает обёртку невидимой для раскладки — разметка там прежняя.
-   */
-  const colCls = tabletLayout
-    ? "scrollbar-thin flex min-h-0 flex-col pr-1 landscape:overflow-y-auto"
-    : "contents";
-  const [step, setStep] = useState(1);
+  const stepMode = isMobile;
+  const sectionCls = undefined;
+  const colCls = "contents";
+  // Открыли из карточки клиента/скутера — сразу на первый незаполненный шаг.
+  const [step, setStep] = useState(() =>
+    initialClientId != null ? (preselectedScooterName ? 3 : 2) : 1,
+  );
 
   const [clientId, setClientId] = useState<number | null>(
     initialClientId ?? null,
@@ -634,17 +653,63 @@ export function NewRentalModal({
           // Мобайл: полноэкранно (min-h-100dvh, без скруглений). Десктоп: карточка 780.
           "min-h-[100dvh] w-full overflow-hidden bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[780px] sm:rounded-2xl",
           tabletLayout && TABLET_DIALOG_PANEL,
+          // телефон: шапка и кнопки на месте, едет только шаг; кнопки — у низа
+          stepMode && !tabletLayout && "flex h-[100dvh] flex-col",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
       >
+        {tabletLayout ? (
+          <TabletWizardHeader
+            title="Новая аренда"
+            step={step}
+            onClose={requestClose}
+            steps={[
+              { title: "Клиент", value: client?.name ?? null },
+              {
+                title: "Скутер",
+                value: scooterName
+                  ? `${selectedScooter ? modelNameOf(selectedScooter) : MODEL_LABEL[model]}${selectedScooter?.rentalSlot ? ` №${selectedScooter.rentalSlot}` : ""}`
+                  : null,
+              },
+              {
+                title: "Срок",
+                value: clientId != null && scooterName ? `${days} ${plural(days, ["день", "дня", "дней"])} · ${sum.toLocaleString("ru-RU")} ₽` : null,
+              },
+              {
+                title: "Выдача",
+                value: clientId != null && scooterName && step > 4
+                  ? [
+                      equipmentSelected.length ? equipmentSelected.map((e) => e.name).join(", ") : null,
+                      depositMode === "sum"
+                        ? `залог ${depositSum.toLocaleString("ru-RU")} ₽`
+                        : `залог: ${depositItemText.trim() || "предмет"}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : null,
+              },
+              {
+                title: "Оплата",
+                value: splitValid ? "Разделить" : paymentMethod === "cash" ? "Наличные" : paymentMethod === "transfer" ? "Перевод" : null,
+              },
+            ]}
+            canOpen={(n) => {
+              for (let i = 1; i < n; i++) if (!canAdvanceStep(i)) return false;
+              return true;
+            }}
+            onStep={setStep}
+          />
+        ) : (
         <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
           <div className="min-w-0 flex-1">
             <div className="text-[15px] font-semibold text-ink">
               Новая аренда
             </div>
             <div className="text-[11px] text-muted-2">
-              заполните 4 блока — ставка и сумма рассчитываются автоматически
+              {stepMode
+                ? `Шаг ${step} из ${STEP_TITLES.length}`
+                : "заполните 4 блока — ставка и сумма рассчитываются автоматически"}
             </div>
           </div>
           <button
@@ -655,9 +720,10 @@ export function NewRentalModal({
             <X size={16} />
           </button>
         </div>
+        )}
 
-        {/* Мобильный прогресс шагов мастера */}
-        {stepMode && (
+        {/* Мобильный прогресс шагов мастера (на планшете — шаги в шапке) */}
+        {stepMode && !tabletLayout && (
           <div
             className={cn(
               "flex items-center gap-2 border-b border-border bg-surface px-4 py-2.5",
@@ -692,23 +758,21 @@ export function NewRentalModal({
           </div>
         )}
 
+        <div className={tabletLayout ? "flex min-h-0 flex-1" : "contents"}>
         <div
           className={cn(
             "max-h-[calc(100vh-220px)] overflow-y-auto px-5 py-4 sm:max-h-[calc(100vh-220px)]",
-            // Планшет: тело занимает всё, что осталось между шапкой и кнопками.
-            // Планшет: всё содержимое в две колонки, без прокрутки.
-            // Планшет лёжа: четыре блока = четыре клетки, каждая со своей
-            // прокруткой — окно целиком не едет. Стоя высоты хватает на всё,
-            // поэтому блоки идут как есть, а прокручивается само тело.
-            // Планшет лёжа: две колонки, каждая прокручивается сама — окно
-            // целиком не едет. Стоя высоты хватает, прокручивается тело.
+            stepMode && !tabletLayout && "!max-h-none min-h-0 flex-1",
+            // Планшет: один шаг на весь экран, крупно (.tab-xl — шкала
+            // шрифтов и высот под палец, см. index.css). Прокручивается
+            // только сам шаг, шапка с шагами и кнопки стоят на месте.
             tabletLayout &&
-              "grid min-h-0 flex-1 grid-cols-2 gap-x-7 !max-h-none px-7 py-5 landscape:overflow-hidden portrait:content-start portrait:overflow-y-auto",
+              "tab-xl scrollbar-thin min-h-0 flex-1 !max-h-none px-10 py-8",
           )}
         >
           {/* 1 Клиент */}
           <div className={colCls}>
-          <Section num={1} title="Клиент" mobile={stepMode} current={step} className={sectionCls}>
+          <Section num={1} title="Клиент" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout}>
             {client ? (
               <ClientChip
                 client={client}
@@ -722,7 +786,12 @@ export function NewRentalModal({
                 query={clientQuery}
                 onQuery={setClientQuery}
                 clients={filteredClients}
-                onPick={(id) => setClientId(id)}
+                onPick={(id) => {
+                  setClientId(id);
+                  // как в приложениях: выбрал — сразу следующий шаг
+                  const c = allClients.find((x) => x.id === id);
+                  if (stepMode && !c?.blacklisted) setStep(2);
+                }}
                 onNew={() => setNewClientOpen(true)}
                 tablet={tabletLayout}
               />
@@ -831,7 +900,7 @@ export function NewRentalModal({
           </Section>
 
           {/* 2 Скутер */}
-          <Section num={2} title="Скутер" mobile={stepMode} current={step} className={sectionCls}>
+          <Section num={2} title="Скутер" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout}>
             {scooterName ? (
               <button
                 type="button"
@@ -861,7 +930,10 @@ export function NewRentalModal({
                 onFilter={setScooterModelFilter}
                 power={powerFilter}
                 onPower={hasBothPower ? setPowerFilter : undefined}
-                onPick={(name) => setScooterName(name)}
+                onPick={(name) => {
+                  setScooterName(name);
+                  if (stepMode) setStep(3);
+                }}
                 tablet={tabletLayout}
               />
             ) : (
@@ -957,7 +1029,7 @@ export function NewRentalModal({
           </Section>
 
           {/* 3 Срок и тариф */}
-          <Section num={3} title="Срок и тариф" mobile={stepMode} current={step} className={sectionCls}>
+          <Section num={3} title="Срок и тариф" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout}>
             <div
               className={cn(
                 "grid grid-cols-2 gap-3 sm:grid-cols-3",
@@ -1181,9 +1253,9 @@ export function NewRentalModal({
           <div className={colCls}>
 
           {/* 4 Экипировка + залог + оплата */}
-          <Section num={4} title="Экипировка, залог и оплата" mobile={stepMode} current={step} className={sectionCls}>
+          <Section num={4} title="Экипировка, залог и оплата" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout}>
             <div>
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+              <div className={cn("mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2", stepMode && "mb-3 text-[13px] text-ink-2")}>
                 Выданная экипировка {equipmentExtra > 0 && (
                   <span className="text-blue-700">+{equipmentExtra}₽</span>
                 )}
@@ -1191,6 +1263,33 @@ export function NewRentalModal({
               {equipmentCatalog.length === 0 ? (
                 <div className="text-[12px] text-muted">
                   Каталог пуст — добавьте позиции в «Гараж → Экипировка».
+                </div>
+              ) : stepMode ? (
+                /* 22.10 (заказчик): экипировку выбирают глазами — плитки с
+                   фото, ценой и галочкой. Планшет — сетка квадратов, телефон —
+                   лента вбок (как фото в заявке). */
+                <div
+                  className={cn(
+                    tabletLayout
+                      ? "grid grid-cols-4 gap-3 portrait:grid-cols-4"
+                      : "no-scrollbar -mx-4 flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-4 pb-1",
+                  )}
+                >
+                  {equipmentCatalog
+                    .filter((e) => e.quickPick)
+                    .map((e) => (
+                      <EquipmentTile
+                        key={e.id}
+                        item={e}
+                        on={equipmentIds.includes(e.id)}
+                        tablet={tabletLayout}
+                        onToggle={() =>
+                          setEquipmentIds((prev) =>
+                            prev.includes(e.id) ? prev.filter((x) => x !== e.id) : [...prev, e.id],
+                          )
+                        }
+                      />
+                    ))}
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
@@ -1226,8 +1325,17 @@ export function NewRentalModal({
               )}
             </div>
 
-            <div className="mt-3">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+          </Section>
+          {/* 5 Залог (на компьютере — продолжение блока 4, без своего заголовка) */}
+          <Section num={4} title="Залог" mobile={stepMode} current={step} className={sectionCls} headless={!stepMode}>
+            <div className={cn(!stepMode && "mt-3")}>
+              <div
+                className={cn(
+                  "mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2",
+                  // мастер: подзаголовок второй половины шага «Выдача»
+                  stepMode && "mb-3 text-[13px] text-ink-2",
+                )}
+              >
                 Залог
               </div>
               <div className="mb-2 inline-flex rounded-full bg-surface-soft p-0.5">
@@ -1264,7 +1372,11 @@ export function NewRentalModal({
                     onChange={(e) =>
                       setDepositSum(Math.max(0, Number(e.target.value) || 0))
                     }
-                    className="h-9 w-40 rounded-[10px] border border-border bg-surface px-3 text-[13px] outline-none focus:border-blue-600"
+                    className={cn(
+                      "h-9 w-40 rounded-[10px] border border-border bg-surface px-3 text-[13px] outline-none focus:border-blue-600",
+                      // мастер: сумма залога — крупно, это главное на шаге
+                      stepMode && "!h-14 !w-52 rounded-2xl text-[20px] font-bold tabular-nums",
+                    )}
                   />
                   <span className="text-[12px] text-muted-2">₽</span>
                   <button
@@ -1286,8 +1398,11 @@ export function NewRentalModal({
                 />
               )}
             </div>
-            <div className="mt-3" data-rental-pay>
-              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+          </Section>
+          {/* 6 Оплата */}
+          <Section num={5} title="Оплата" mobile={stepMode} current={step} className={sectionCls} big={stepMode} bigTablet={tabletLayout} headless={!stepMode}>
+            <div className={cn(!stepMode && "mt-3")} data-rental-pay>
+              <div className={cn("mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-2", stepMode && "hidden")}>
                 Способ оплаты
                 {payChoice === null && (
                   <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[9px] font-bold normal-case text-orange-ink">
@@ -1408,8 +1523,10 @@ export function NewRentalModal({
               </span>
             </div>
 
-            {/* Сводка заказа на мобиле — обзор перед созданием. */}
+            {/* Сводка заказа на мобиле — обзор перед созданием. Планшет лёжа
+                видит её справа постоянно — здесь не дублируем. */}
             {isMobile && (
+              <div className={cn(tabletLayout && "landscape:hidden")}>
               <OrderSummary
                 clientName={client?.name ?? "—"}
                 scooterName={scooterName}
@@ -1435,9 +1552,56 @@ export function NewRentalModal({
                 }
                 total={sum}
               />
+              </div>
             )}
           </Section>
           </div>
+        </div>
+        {tabletLayout && (
+          <TabletOrderAside
+            onStep={setStep}
+            canOpen={(n) => {
+              for (let i = 1; i < n; i++) if (!canAdvanceStep(i)) return false;
+              return true;
+            }}
+            rows={[
+              { step: 1, label: "Клиент", value: client?.name ?? null },
+              {
+                step: 2,
+                label: "Скутер",
+                value: scooterName ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <ScooterName name={scooterName} number={selectedScooter?.rentalSlot ?? undefined} size="sm" />
+                  </span>
+                ) : null,
+              },
+              { step: 3, label: "Выдача", value: clientId != null && scooterName ? `${start} ${startTime}` : null },
+              { step: 3, label: "Возврат", value: clientId != null && scooterName ? `${endPlanned} ${startTime}` : null },
+              { step: 4, label: "Экипировка", value: equipmentSelected.length ? equipmentSelected.map((e) => e.name).join(", ") : clientId != null && scooterName && step > 4 ? "без экипировки" : null },
+              { step: 3, label: "Тариф", value: scooterName ? `${rate} ₽/${isWeeklyCustom ? "нед" : "сут"} × ${isWeeklyCustom ? `${weeks} нед` : `${days} дн`}` : null },
+              {
+                step: 4,
+                label: "Залог",
+                value:
+                  depositMode === "sum"
+                    ? `${depositSum.toLocaleString("ru-RU")} ₽`
+                    : depositItemText.trim() || null,
+              },
+              {
+                step: 5,
+                label: "Оплата",
+                value: splitValid
+                  ? `нал ${splitCash.toLocaleString("ru-RU")} + перевод ${splitTransfer.toLocaleString("ru-RU")}`
+                  : paymentMethod === "cash"
+                    ? "Наличные"
+                    : paymentMethod === "transfer"
+                      ? "Перевод"
+                      : null,
+              },
+            ]}
+            total={scooterName ? sum : null}
+          />
+        )}
         </div>
 
         {stepMode ? (
@@ -1447,34 +1611,43 @@ export function NewRentalModal({
               "flex items-center gap-2 border-t border-border bg-surface px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]",
               // Планшет: действия прижаты вправо, как в компьютерных мастерах,
               // и крупные — кнопка на всю ширину 1180px выглядит нелепо.
-              tabletLayout && "justify-end gap-3 px-7 py-4",
+              tabletLayout && "justify-end gap-4 px-10 py-5",
             )}
           >
+            {tabletLayout && scooterName && (
+              // Стоя сводки справа нет — итог держим перед глазами внизу.
+              <div className="mr-auto hidden flex-col portrait:flex">
+                <span className="text-[14px] font-semibold text-muted-2">Итого</span>
+                <span className="font-display text-[28px] font-extrabold leading-none tabular-nums text-ink">
+                  {sum.toLocaleString("ru-RU")} ₽
+                </span>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => (step === 1 ? requestClose() : setStep((s) => s - 1))}
               className={cn(
                 "flex min-h-[48px] items-center justify-center gap-1 rounded-xl border border-border px-4 text-[14px] font-semibold text-muted active:bg-surface-soft",
-                tabletLayout && "h-14 min-w-[170px] text-[15px]",
+                tabletLayout && "h-16 min-w-[190px] rounded-2xl text-[18px]",
               )}
             >
-              <ChevronLeft size={18} />
+              <ChevronLeft size={tabletLayout ? 22 : 18} />
               {step === 1 ? "Отмена" : "Назад"}
             </button>
-            {step < 4 ? (
+            {step < STEP_TITLES.length ? (
               <button
                 type="button"
                 disabled={!canAdvanceStep(step)}
                 onClick={() => canAdvanceStep(step) && setStep((s) => s + 1)}
                 className={cn(
                   "flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold transition-colors",
-                  tabletLayout && "h-14 flex-none min-w-[300px] text-[16px]",
+                  tabletLayout && "h-16 flex-none min-w-[320px] rounded-2xl text-[19px]",
                   canAdvanceStep(step)
                     ? "bg-blue-600 text-white active:bg-blue-700"
                     : "cursor-not-allowed bg-surface-soft text-muted-2",
                 )}
               >
-                Далее <ArrowRight size={16} />
+                Далее <ArrowRight size={tabletLayout ? 22 : 16} />
               </button>
             ) : (
               <button
@@ -1483,7 +1656,7 @@ export function NewRentalModal({
                 onClick={() => void handleSave()}
                 className={cn(
                   "flex min-h-[48px] flex-1 items-center justify-center rounded-xl text-[14px] font-bold transition-colors",
-                  tabletLayout && "h-14 flex-none min-w-[300px] text-[16px]",
+                  tabletLayout && "h-16 flex-none min-w-[320px] rounded-2xl text-[19px]",
                   canSave && !saving
                     ? "bg-blue-600 text-white active:bg-blue-700"
                     : "cursor-not-allowed bg-surface-soft text-muted-2",
@@ -1542,10 +1715,13 @@ export function NewRentalModal({
       {newClientOpen && (
         <AddClientModal
           onClose={() => setNewClientOpen(false)}
+          // 22.10: анкета по шагам, а после неё — сразу к выбору скутера.
+          saveLabel={tabletLayout ? "Сохранить и выбрать скутер →" : stepMode ? "Сохранить →" : undefined}
           onCreated={(c) => {
             setClientId(c.id);
             setClientQuery("");
             setNewClientOpen(false);
+            if (stepMode && !c.blacklisted) setStep(2);
           }}
         />
       )}
@@ -1610,6 +1786,199 @@ export function NewRentalModal({
   );
 }
 
+/* ───────── Экипировка плитками (телефон и планшет, 22.10) ───────── */
+
+function EquipmentTile({
+  item,
+  on,
+  tablet,
+  onToggle,
+}: {
+  item: ApiEquipmentItem;
+  on: boolean;
+  tablet: boolean;
+  onToggle: () => void;
+}) {
+  const src = fileUrl(item.avatarThumbKey ?? item.avatarKey ?? null, { variant: "view" });
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={on}
+      className={cn(
+        "relative flex shrink-0 snap-start flex-col overflow-hidden rounded-2xl border-2 text-left transition-colors active:scale-[0.98]",
+        tablet ? "w-auto" : "w-[132px]",
+        on ? "border-blue-600 bg-blue-50" : "border-border bg-surface",
+      )}
+    >
+      {/* планшет лёжа: плитка пониже — вместе с залогом шаг помещается на экран */}
+      <span className={cn("relative flex w-full items-center justify-center bg-white p-2", tablet ? "h-[112px]" : "aspect-square")}>
+        {src ? (
+          <img src={src} alt={item.name} className="h-full w-full object-contain" />
+        ) : (
+          <Package size={tablet ? 44 : 34} strokeWidth={1.4} className="text-muted-2" />
+        )}
+        <span
+          // размер — стилем: шкала .tab-xl поднимает h-8, и круг сплющивался
+          style={{ width: tablet ? 34 : 28, height: tablet ? 34 : 28 }}
+          className={cn(
+            "absolute right-2 top-2 flex items-center justify-center rounded-full border-2 transition-colors",
+            on ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-white/90 text-transparent",
+          )}
+        >
+          <Check size={tablet ? 18 : 15} strokeWidth={3} />
+        </span>
+      </span>
+      <span className={cn("flex flex-col gap-0.5 px-3 pb-3 pt-2", tablet && "px-3.5")}>
+        <span className={"line-clamp-2 text-[13.5px] font-bold leading-tight text-ink"}>
+          {item.name}
+        </span>
+        <span
+          className={cn(
+            // на планшете .tab-xl сам поднимет до 16.5 / 15.5px
+            "text-[12.5px] font-semibold tabular-nums",
+            item.isFree ? "text-green-ink" : "text-blue-700",
+          )}
+        >
+          {item.isFree ? "бесплатно" : `+${item.price} ₽/сут`}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/* ───────── Планшет: шапка с шагами и сводка заказа (22.10) ───────── */
+
+function TabletWizardHeader({
+  title,
+  step,
+  steps,
+  canOpen,
+  onStep,
+  onClose,
+}: {
+  title: string;
+  step: number;
+  steps: { title: string; value: string | null }[];
+  /** Можно ли открыть шаг n (все предыдущие заполнены). */
+  canOpen: (n: number) => boolean;
+  onStep: (n: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="shrink-0 border-b border-border bg-surface px-10 pb-5 pt-6">
+      <div className="flex items-center gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-semibold text-muted-2">
+            Шаг {step} из {steps.length}
+          </div>
+          <div className="font-display text-[26px] font-extrabold leading-tight text-ink">{title}</div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Закрыть"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-soft text-muted active:bg-border"
+        >
+          <X size={22} />
+        </button>
+      </div>
+      {/* Шаги: нажимаются — можно вернуться к любому заполненному. */}
+      <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+        {steps.map((st, i) => {
+          const n = i + 1;
+          const cur = n === step;
+          const done = !cur && st.value != null && canOpen(n);
+          const open = canOpen(n);
+          return (
+            <button
+              key={st.title}
+              type="button"
+              disabled={!open}
+              onClick={() => onStep(n)}
+              className={cn(
+                "flex min-w-0 items-center gap-3 rounded-2xl px-3.5 py-3 text-left transition-colors",
+                cur
+                  ? "bg-blue-600 text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]"
+                  : open
+                    ? "bg-surface-soft text-ink active:bg-border"
+                    : "bg-surface-soft/60 text-muted-2",
+              )}
+            >
+              <span
+                className={cn(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[16px] font-extrabold",
+                  cur ? "bg-white/20 text-white" : done ? "bg-green-ink text-white" : "bg-white text-muted",
+                )}
+              >
+                {done ? <Check size={18} strokeWidth={3} /> : n}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[16px] font-bold leading-tight">{st.title}</span>
+                <span
+                  className={cn(
+                    "block truncate text-[13.5px] leading-tight",
+                    cur ? "text-white/75" : "text-muted",
+                  )}
+                >
+                  {st.value ?? (cur ? "сейчас" : "—")}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TabletOrderAside({
+  rows,
+  total,
+  canOpen,
+  onStep,
+}: {
+  rows: { step: number; label: string; value: ReactNode | null }[];
+  total: number | null;
+  canOpen: (n: number) => boolean;
+  onStep: (n: number) => void;
+}) {
+  return (
+    <aside className="hidden w-[380px] shrink-0 flex-col border-l border-border bg-surface-soft/60 landscape:flex">
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-7 py-8">
+        <div className="text-[13px] font-bold uppercase tracking-[0.12em] text-muted-2">Сводка заказа</div>
+        <div className="mt-4 flex flex-col">
+          {rows.map((r, i) => (
+            <button
+              key={i}
+              type="button"
+              disabled={!canOpen(r.step)}
+              onClick={() => onStep(r.step)}
+              className="flex min-h-[46px] items-center justify-between gap-3 border-b border-border/70 py-1.5 text-left last:border-0 active:opacity-70 disabled:active:opacity-100"
+            >
+              <span className="shrink-0 text-[15px] text-muted">{r.label}</span>
+              <span
+                className={cn(
+                  "min-w-0 truncate text-right text-[16px] font-semibold",
+                  r.value == null ? "text-muted-2" : "text-ink",
+                )}
+              >
+                {r.value ?? "—"}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="shrink-0 border-t border-border bg-surface px-7 py-5">
+        <div className="text-[14px] font-semibold text-muted-2">Итого к оплате</div>
+        <div className="mt-0.5 font-display text-[38px] font-extrabold leading-none tabular-nums text-ink">
+          {total != null ? `${total.toLocaleString("ru-RU")} ₽` : "—"}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 function Section({
   num,
   title,
@@ -1617,6 +1986,9 @@ function Section({
   mobile,
   current,
   className,
+  big,
+  bigTablet,
+  headless,
 }: {
   num: number;
   title: string;
@@ -1626,10 +1998,36 @@ function Section({
   current?: number;
   /** Планшет: блок живёт в своей клетке сетки и прокручивается сам. */
   className?: string;
+  /** Мастер (телефон и планшет): шаг — вопрос крупным заголовком. */
+  big?: boolean;
+  bigTablet?: boolean;
+  /** Продолжение предыдущего блока на компьютере: без заголовка и отступа. */
+  headless?: boolean;
 }) {
   if (mobile && current != null && current !== num) return null;
+  if (headless) return <section className={cn("-mt-5 mb-5 last:mb-0", className)}>{children}</section>;
   return (
     <section className={cn("mb-5 last:mb-0", className)}>
+      {big && (
+        <div className={cn("mb-4 flex items-center gap-3.5", bigTablet && "mb-6 gap-4")}>
+          {STEP_ICONS[num - 1] && (() => {
+            const { Icon, tone } = STEP_ICONS[num - 1]!;
+            return (
+              <span className={cn("flex shrink-0 items-center justify-center rounded-2xl", bigTablet ? "h-14 w-14" : "h-11 w-11", tone)}>
+                <Icon size={bigTablet ? 27 : 21} strokeWidth={1.9} />
+              </span>
+            );
+          })()}
+          <h2
+            className={cn(
+              "font-display text-[23px] font-extrabold leading-tight tracking-tight text-ink",
+              bigTablet && "text-[30px]",
+            )}
+          >
+            {STEP_QUESTIONS[num - 1]}
+          </h2>
+        </div>
+      )}
       {/* На мобиле номер-шага дублируется в прогресс-баре сверху — здесь скрываем. */}
       <header className={cn("mb-2 flex items-center gap-2", mobile && "hidden")}>
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-50 text-[11px] font-bold text-blue-700">
@@ -1747,8 +2145,8 @@ function MobileClientPicker({
         type="button"
         onClick={onNew}
         className={cn(
-          "flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-ink text-[14px] font-bold text-white active:bg-ink-2",
-          tablet && "h-12 shrink-0 px-6 text-[15px]",
+          "mt-2.5 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-ink px-4 text-[14px] font-bold text-white active:bg-ink-2",
+          tablet && "mt-0 h-12 w-auto shrink-0 px-6 text-[15px]",
         )}
       >
         <UserPlus size={16} /> Новый клиент
@@ -1757,10 +2155,9 @@ function MobileClientPicker({
       <div
         className={cn(
           "flex flex-col gap-1.5",
-          // Планшет: список живёт в своей половине экрана и прокручивается
-          // сам — прокрутки всего окна при этом нет.
-          // высоту задаёт клетка сетки — своего потолка списку не нужно
-          tablet && "portrait:max-h-[360px] portrait:overflow-y-auto",
+          // Планшет: шаг во весь экран — клиенты плитками в две колонки,
+          // прокручивается сам шаг.
+          tablet && "grid grid-cols-2 gap-3",
         )}
       >
         {clients.length === 0 ? (
@@ -1775,9 +2172,17 @@ function MobileClientPicker({
                 key={c.id}
                 type="button"
                 onClick={() => onPick(c.id)}
-                className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3 text-left active:bg-surface-soft"
+                className={cn(
+                  "flex items-center gap-3 rounded-xl border border-border bg-surface p-3 text-left active:bg-surface-soft",
+                  tablet && "min-h-[84px] gap-4 rounded-2xl px-4 active:border-blue-600 active:bg-blue-50",
+                )}
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-soft text-[12px] font-bold text-ink-2">
+                <span
+                  className={cn(
+                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-soft text-[12px] font-bold text-ink-2",
+                    tablet && "h-12 w-12",
+                  )}
+                >
                   {initialsOf(c.name)}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -1894,17 +2299,17 @@ function MobileScooterPicker({
         </div>
       ) : (
         <div
-          className={cn(
-            "grid grid-cols-2 gap-2",
-            tablet && "portrait:max-h-[360px] portrait:overflow-y-auto",
-          )}
+          className={cn("grid grid-cols-2 gap-2", tablet && "grid-cols-3 gap-3")}
         >
           {scooters.map((s) => (
             <button
               key={s.name}
               type="button"
               onClick={() => onPick(s.name)}
-              className="flex flex-col gap-0.5 rounded-xl border border-border bg-surface p-3 text-left active:bg-blue-50"
+              className={cn(
+                "flex flex-col gap-0.5 rounded-xl border border-border bg-surface p-3 text-left active:bg-blue-50",
+                tablet && "min-h-[96px] justify-center gap-1.5 rounded-2xl px-4 active:border-blue-600",
+              )}
             >
               <span className="flex items-center gap-1.5">
                 {s.electric && <ElectricMark size="sm" />}

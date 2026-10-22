@@ -376,6 +376,12 @@ function ActiveRepairCard({ job }: { job: ApiRepairJob }) {
             </button>
           )}
 
+          {/* 22.10: поломка, указанная при замене или сдаче в ремонт. */}
+          {job.breakdownReason && (
+            <div className="mt-2 text-[12.5px] font-semibold text-orange-ink">
+              Поломка: {job.breakdownReason}
+            </div>
+          )}
           <div className="mt-1 text-[11px] text-muted-2">
             Открыт {fmtRuDateTime(job.startedAt)}
           </div>
@@ -748,6 +754,11 @@ function JournalRow({ job }: { job: ApiRepairJob }) {
               </>
             )}
           </div>
+          {job.breakdownReason && (
+            <div className="mt-1 text-[12px] font-semibold text-orange-ink">
+              Поломка: {job.breakdownReason}
+            </div>
+          )}
           {job.progress.length > 0 && (
             <div className="mt-2 flex flex-col gap-1">
               {job.progress.map((p) => (

@@ -3,9 +3,10 @@ import { Check, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CheckBox } from "@/components/ui/picker";
 import {
-  DEFAULT_RETURN_REASONS,
-  useReturnReasons,
-  useSaveReturnReasons,
+  defaultReasons,
+  useReasonList,
+  useSaveReasonList,
+  type ReasonListKind,
 } from "@/lib/returnReasons";
 import { confirmDialog, toast } from "@/lib/toast";
 
@@ -21,14 +22,34 @@ export function ReturnReasonPicker({
   value,
   onChange,
   compact = false,
+  kind = "return",
 }: {
   value: string | null;
   onChange: (reason: string | null) => void;
   /** Плотный режим для мобильного мастера. */
   compact?: boolean;
+  /**
+   * 22.10: «breakdown» — справочник поломок (замена «Поломка», сдача в
+   * ремонт). Механика та же: чипы, «свой вариант» с сохранением в список.
+   */
+  kind?: ReasonListKind;
 }) {
-  const { reasons } = useReturnReasons();
-  const save = useSaveReturnReasons();
+  const { reasons } = useReasonList(kind);
+  const save = useSaveReasonList(kind);
+  const TXT =
+    kind === "breakdown"
+      ? {
+          title: "Что сломалось",
+          saved: "Появится в списке поломок при замене и сдаче в ремонт.",
+          removeMsg: (r: string) => `«${r}» больше не будет предлагаться в списке поломок.`,
+          placeholder: "Например: стучит двигатель",
+        }
+      : {
+          title: "Причина возврата",
+          saved: "Появится в списке при закрытии аренд.",
+          removeMsg: (r: string) => `«${r}» больше не будет предлагаться при закрытии аренды.`,
+          placeholder: "Например: переехал в другой город",
+        };
   const [customOpen, setCustomOpen] = useState(false);
   const [customText, setCustomText] = useState("");
   const [saveToList, setSaveToList] = useState(true);
@@ -39,7 +60,7 @@ export function ReturnReasonPicker({
     onChange(text);
     if (saveToList && !reasons.includes(text)) {
       save.mutate([...reasons, text]);
-      toast.success("Причина сохранена", "Появится в списке при закрытии аренд.");
+      toast.success(kind === "breakdown" ? "Поломка сохранена" : "Причина сохранена", TXT.saved);
     }
     setCustomOpen(false);
   };
@@ -47,7 +68,7 @@ export function ReturnReasonPicker({
   const removeReason = async (r: string) => {
     const ok = await confirmDialog({
       title: "Удалить причину из списка?",
-      message: `«${r}» больше не будет предлагаться при закрытии аренды.`,
+      message: TXT.removeMsg(r),
       confirmText: "Удалить",
     });
     if (!ok) return;
@@ -71,7 +92,7 @@ export function ReturnReasonPicker({
             compact ? "text-[10.5px]" : "text-[11px]",
           )}
         >
-          Причина возврата
+          {TXT.title}
         </span>
         <span className="rounded-full bg-red-soft px-1.5 py-px text-[9.5px] font-bold uppercase text-red-ink">
           обязательно
@@ -81,7 +102,7 @@ export function ReturnReasonPicker({
       <div className="flex flex-wrap gap-1.5">
         {reasons.map((r) => {
           const active = value === r;
-          const isCustomReason = !DEFAULT_RETURN_REASONS.includes(r);
+          const isCustomReason = !defaultReasons(kind).includes(r);
           return (
             <span key={r} className="group/chip relative inline-flex">
               <button
@@ -150,7 +171,7 @@ export function ReturnReasonPicker({
             value={customText}
             onChange={(e) => setCustomText(e.target.value.slice(0, 120))}
             onKeyDown={(e) => e.key === "Enter" && applyCustom()}
-            placeholder="Например: переехал в другой город"
+            placeholder={TXT.placeholder}
             className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-500"
           />
           <div className="flex items-center justify-between gap-2">

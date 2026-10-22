@@ -340,7 +340,7 @@ function pageList(current: number, total: number): (number | "…")[] {
   return out;
 }
 
-function FullJournalModal({
+export function FullJournalModal({
   compact,
   onClose,
 }: {

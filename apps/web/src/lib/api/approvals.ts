@@ -7,7 +7,8 @@ export type ApprovalRequest = {
   id: number;
   action: string;
   summary: string;
-  detailsJson: string[] | null;
+  /** Старые запросы — строки; с 22.10 — { facts, note } (см. OperationBrief). */
+  detailsJson: string[] | { facts?: unknown; note?: string[] } | null;
   status: "pending" | "approved" | "rejected" | "cancelled";
   requestedByUserId: number | null;
   requestedByName: string | null;
@@ -15,6 +16,15 @@ export type ApprovalRequest = {
   resolvedAt: string | null;
   resolvedByName: string | null;
   consumedAt: string | null;
+};
+
+/** keySet — защита включена (ключом или меняющимся кодом). */
+export type ApprovalsStatus = {
+  keySet: boolean;
+  mode?: "off" | "key" | "code";
+  /** Это аккаунт директора — подтверждает одним нажатием, видит код. */
+  isDirector?: boolean;
+  pending: number;
 };
 
 export const approvalsKeys = {
@@ -28,7 +38,7 @@ export function useApprovalsStatus() {
   return useQuery({
     queryKey: approvalsKeys.status,
     queryFn: () =>
-      api.get<{ keySet: boolean; pending: number }>("/api/approvals/status"),
+      api.get<ApprovalsStatus>("/api/approvals/status"),
     refetchInterval: 15_000,
   });
 }
@@ -46,10 +56,11 @@ export function usePendingApprovals(enabled = true) {
 export function useApproveRequest() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: number; key: string }) =>
-      api.post<ApprovalRequest>(`/api/approvals/${args.id}/approve`, {
-        key: args.key,
-      }),
+    mutationFn: (args: { id: number; key?: string }) =>
+      api.post<ApprovalRequest>(
+        `/api/approvals/${args.id}/approve`,
+        args.key ? { key: args.key } : {},
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: approvalsKeys.all }),
   });
 }
@@ -57,19 +68,18 @@ export function useApproveRequest() {
 export function useRejectRequest() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { id: number; key: string }) =>
-      api.post<ApprovalRequest>(`/api/approvals/${args.id}/reject`, {
-        key: args.key,
-      }),
+    mutationFn: (args: { id: number; key?: string }) =>
+      api.post<ApprovalRequest>(
+        `/api/approvals/${args.id}/reject`,
+        args.key ? { key: args.key } : {},
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: approvalsKeys.all }),
   });
 }
 
-export function useSetDirectorKey() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (args: { currentKey?: string; newKey: string }) =>
-      api.post<{ ok: true }>("/api/approvals/key", args),
-    onSuccess: () => qc.invalidateQueries({ queryKey: approvalsKeys.status }),
-  });
-}
+export type DirectorCode = {
+  code: string;
+  period: number;
+  serverNow: number;
+  endsAt: number;
+};

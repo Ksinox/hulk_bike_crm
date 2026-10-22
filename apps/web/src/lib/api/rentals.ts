@@ -153,6 +153,8 @@ export function useSwapScooter() {
       oldScooterStatus?: ScooterBaseStatus;
       reason?: string;
       reasonCategory?: "breakdown" | "client_request" | "maintenance" | "other";
+      /** 22.10: что сломалось (причина «Поломка») — в ремонт снятого скутера. */
+      breakdownReason?: string;
       /** 17.10: пробег снятого скутера (он возвращается в парк). */
       prevScooterMileage?: number;
       prevScooterMileageCorrection?: boolean;
@@ -162,6 +164,7 @@ export function useSwapScooter() {
         oldScooterStatus: args.oldScooterStatus ?? "repair",
         ...(args.reason ? { reason: args.reason } : {}),
         ...(args.reasonCategory ? { reasonCategory: args.reasonCategory } : {}),
+        ...(args.breakdownReason ? { breakdownReason: args.breakdownReason } : {}),
         ...(args.prevScooterMileage != null
           ? { prevScooterMileage: args.prevScooterMileage }
           : {}),

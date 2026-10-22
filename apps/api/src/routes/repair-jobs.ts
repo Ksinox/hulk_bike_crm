@@ -13,6 +13,8 @@ import {
   damageReportItems,
 } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
+import { requireDirectorApproval } from "./approvals.js";
+import { briefScooterStatus } from "../services/approvalBrief.js";
 import { makeFileKey, removeObject } from "../storage/index.js";
 import { putObjectWithImageVariants } from "../storage/image.js";
 
@@ -134,7 +136,10 @@ export async function ensureRepairJobForScooter(opts: {
   rentalId?: number | null;
   damageReportId?: number | null;
   createdByUserId?: number | null;
+  /** 22.10: причина поломки (замена «Поломка», сдача в ремонт). */
+  breakdownReason?: string | null;
 }): Promise<number> {
+  const breakdown = opts.breakdownReason?.trim() || null;
   const [existing] = await db
     .select()
     .from(repairJobs)
@@ -145,6 +150,19 @@ export async function ensureRepairJobForScooter(opts: {
       ),
     );
   if (existing) {
+    // Новая поломка у уже открытого ремонта — дописываем, а не теряем.
+    if (breakdown && !(existing.breakdownReason ?? "").includes(breakdown)) {
+      await db
+        .update(repairJobs)
+        .set({
+          breakdownReason: existing.breakdownReason
+            ? `${existing.breakdownReason}; ${breakdown}`
+            : breakdown,
+          rentalId: opts.rentalId ?? existing.rentalId,
+          updatedAt: new Date(),
+        })
+        .where(eq(repairJobs.id, existing.id));
+    }
     // Если уже есть открытый job — обновляем damageReportId если он
     // привязан к более свежему акту. Так оператор видит чек-лист по
     // последнему ущербу даже если предыдущий ремонт не закрыли.
@@ -171,6 +189,7 @@ export async function ensureRepairJobForScooter(opts: {
       damageReportId: opts.damageReportId ?? null,
       status: "in_progress",
       createdByUserId: opts.createdByUserId ?? null,
+      breakdownReason: breakdown,
     })
     .returning();
   // Если есть damageReport — наполняем чек-лист его позициями.
@@ -486,6 +505,22 @@ export async function repairJobsRoutes(app: FastifyInstance) {
           error: "already_completed",
           message: "Этот ремонт уже закрыт.",
         });
+      }
+      // 22.10 (обходы ключа): закрытие ремонта переводило скутер в любую
+      // категорию без ключа — тогда как в карточке скутера это с ключом.
+      {
+        const [sc] = await db
+          .select({ baseStatus: scooters.baseStatus })
+          .from(scooters)
+          .where(eq(scooters.id, job.scooterId));
+        if (
+          sc &&
+          sc.baseStatus !== parsed.data.newScooterStatus &&
+          !(await requireDirectorApproval(app, req, reply, "scooter_status_change", () =>
+            briefScooterStatus(job.scooterId, parsed.data.newScooterStatus, "Закрытие ремонта"),
+          ))
+        )
+          return;
       }
       const userId = getUserId(req);
       await db.transaction(async (tx) => {

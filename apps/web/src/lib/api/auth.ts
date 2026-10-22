@@ -111,3 +111,31 @@ export function useChangePassword() {
       api.post<{ ok: true }>("/api/auth/change-password", input),
   });
 }
+
+/** 22.10: коды восстановления пароля директора («как на GitHub»). */
+export function useRecoveryCodesStatus(enabled = true) {
+  return useQuery({
+    queryKey: ["auth", "recovery-codes"],
+    queryFn: () =>
+      api.get<{ createdAt: string | null; total: number; left: number }>(
+        "/api/auth/recovery-codes",
+      ),
+    enabled,
+  });
+}
+
+export function useCreateRecoveryCodes() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (password: string) =>
+      api.post<{ codes: string[] }>("/api/auth/recovery-codes", { password }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["auth", "recovery-codes"] }),
+  });
+}
+
+export function useRecoverPassword() {
+  return useMutation({
+    mutationFn: (input: { login: string; code: string; newPassword: string }) =>
+      api.post<{ ok: true; left: number }>("/api/auth/recover", input),
+  });
+}

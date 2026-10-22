@@ -50,6 +50,7 @@ import {
   type ReturnItem,
 } from "@/pages/dashboard/useDashboardMetrics";
 import { TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
+import { TabletHome } from "./TabletHome";
 
 /**
  * Мобильный дашборд. Переиспользует тот же data-хук, что и десктоп
@@ -100,6 +101,22 @@ export function MobileDashboard({
       : null;
   return (
     <div className="flex flex-col gap-4">
+      {/* 22.10: у планшета своя главная — TabletHome (крупно, одна очередь
+          звонков, парк с номерами). Ниже — телефонная. Окна (карточка
+          аренды, все просрочки, выручка, сделка) общие. */}
+      {tabletLayout ? (
+        <TabletHome
+          m={m}
+          meName={me?.name}
+          revenue={{ total: rev.total, count: rev.count, label: rev.period.label }}
+          reminders={reminders}
+          onRevenue={() => setRevenueOpen(true)}
+          onOpenRental={setOpenRentalId}
+          onCall={(name, phones) => callClient(name, phones)}
+          onSelect={onSelect}
+        />
+      ) : (
+      <>
       {/* Приветствие */}
       <div>
         <div className="text-[13px] font-medium text-muted">
@@ -159,6 +176,10 @@ export function MobileDashboard({
           Деньги переехали под них во всю ширину. Если электротранспорта нет,
           пара как раньше: парк + деньги. */}
       <div
+        // 22.10: у карточек кругов на планшете высота «авто» (h-auto) — старый
+        // Safari (iPad Pro 2017) считал их h-full не от ряда сетки, а от всего
+        // контейнера (баги WebKit 260499 / 137730): круги вырастали до 600px
+        // и наезжали на блоки ниже. Растягивает их по ряду сама сетка.
         className={cn(
           "grid grid-cols-2 items-stretch gap-3",
           tabletLayout && "contents",
@@ -172,7 +193,7 @@ export function MobileDashboard({
           onClick={() => onSelect("fleet")}
           size={tabletLayout ? 118 : 92}
           layout={tabletLayout ? "row" : "stack"}
-          className={cn("rounded-2xl p-3.5", tabletLayout && "portrait:order-3 p-4")}
+          className={cn("rounded-2xl p-3.5", tabletLayout && "portrait:order-3 h-auto p-4")}
         />
         {hasElectro ? (
           <ParkLoadGauge
@@ -184,7 +205,7 @@ export function MobileDashboard({
             onClick={() => onSelect("partners")}
             size={tabletLayout ? 118 : 92}
             layout={tabletLayout ? "row" : "stack"}
-            className={cn("rounded-2xl p-3.5", tabletLayout && "portrait:order-4 p-4")}
+            className={cn("rounded-2xl p-3.5", tabletLayout && "portrait:order-4 h-auto p-4")}
           />
         ) : (
           <KpiTile
@@ -372,11 +393,13 @@ export function MobileDashboard({
       {/* Последние действия — лента журнала (как в десктоп-CRM). */}
       <ActivityFeed compact />
 
+      </div>
+      </>
+      )}
+
       {revenueOpen && (
         <MobileRevenueScreen scope="all" onClose={() => setRevenueOpen(false)} />
       )}
-
-      </div>
 
       {/* Полный список просрочек («Все →»): ВСЕ должники, у каждого — звонок
           (кнопка справа) и тап по строке → карточка аренды. Модуль «Должники»

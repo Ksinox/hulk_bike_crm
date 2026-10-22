@@ -31,6 +31,7 @@ import { useMe } from "@/lib/api/auth";
 import { usePerms } from "@/lib/permissions";
 import { useUnreadChangelog } from "@/pages/whats-new/useUnreadChangelog";
 import { countFreshProgress } from "@/pages/progress/useFreshProgress";
+import { PROGRESS_SEEN_EVENT } from "@/pages/progress/useProgressSeen";
 import { useApplications } from "@/lib/api/clientApplications";
 
 type NavItem = {
@@ -135,7 +136,12 @@ export function Sidebar({
     const recount = () => setFreshProgress(countFreshProgress());
     recount();
     window.addEventListener("focus", recount);
-    return () => window.removeEventListener("focus", recount);
+    // зашли в «Развитие» — всё прочитано, значок гаснет сразу
+    window.addEventListener(PROGRESS_SEEN_EVENT, recount);
+    return () => {
+      window.removeEventListener("focus", recount);
+      window.removeEventListener(PROGRESS_SEEN_EVENT, recount);
+    };
   }, [activeId]);
   const [tooltip, setTooltip] = useState<{
     label: string;
