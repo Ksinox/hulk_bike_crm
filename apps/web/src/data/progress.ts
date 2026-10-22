@@ -7041,7 +7041,6 @@ export const progressItems: ProgressItem[] = [
     ],
   },
   {
-<<<<<<< HEAD
     id: "bug-6",
     num: "6",
     updatedAt: "2026-10-22",
@@ -7139,7 +7138,10 @@ export const progressItems: ProgressItem[] = [
         tag: "fix",
         text: "Стикеры аренд клиента — в его «Заметках», с пометкой, из какой аренды.",
         imgs: [{ src: "/progress/v2011-notes-now.jpg", label: "СТАЛО: «из аренды #0057» — и остаётся после удаления в аренде" }],
-=======
+      },
+    ],
+  },
+  {
     id: "bug-11",
     num: "11",
     updatedAt: "2026-10-22",
@@ -7159,7 +7161,6 @@ export const progressItems: ProgressItem[] = [
         tag: "fix",
         text: "Карточки по высоте ряда, блоки ниже на своих местах.",
         imgs: [{ src: "/progress/v2011-ipad-now.jpg", label: "СТАЛО: та же главная в старом Safari" }],
->>>>>>> fix/ipad-old-safari
       },
     ],
   },
