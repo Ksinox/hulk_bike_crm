@@ -10,8 +10,8 @@ ALTER TABLE "note_stickers" ADD COLUMN IF NOT EXISTS "source_rental_id" bigint;
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "note_stickers_source_idx" ON "note_stickers" ("source_sticker_id");
 --> statement-breakpoint
--- Разовый перенос уже существующих стикеров аренд (заметки и связь; паркинг —
--- служебный, про аренду). Состояние сохраняется: прикреплённый — прикреплён,
+-- Разовый перенос уже существующих стикеров аренд (заметки и связь, которые
+-- прикрепил человек; паркинг и служебные пометки системы — про аренду). Состояние сохраняется: прикреплённый — прикреплён,
 -- откреплённый — в истории. Флаг в app_settings — чтобы при следующих
 -- запусках (миграции применяются каждый старт) не вернуть копии, которые
 -- позже удалили у клиента.
@@ -21,6 +21,10 @@ FROM "note_stickers" s
 JOIN "rentals" r ON r."id" = s."entity_id"
 WHERE s."entity" = 'rental'
   AND s."kind" IN ('note', 'contact')
+  -- Служебные пометки («замена скутера: …» и т.п.) ставит система — они про
+  -- аренду, не про клиента; переносим только то, что прикрепил человек.
+  AND COALESCE(s."created_by_name", '') <> 'система'
+
   AND r."client_id" IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM "app_settings" WHERE "key" = 'stickers_client_copy_backfill')
   AND NOT EXISTS (SELECT 1 FROM "note_stickers" c WHERE c."source_sticker_id" = s."id");
