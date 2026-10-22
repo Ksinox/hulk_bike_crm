@@ -22,6 +22,8 @@ export type PermissionDef = {
   /** Где человек это видит — чтобы директор понимал, что выключает. */
   where: string;
   byDefault: boolean;
+  /** Умолчание для роли (22.10: «Финансы» — администратору включены). */
+  byRole?: Partial<Record<string, boolean>>;
 };
 
 export const PERMISSION_DEFS: PermissionDef[] = [
@@ -50,13 +52,16 @@ export const PERMISSION_DEFS: PermissionDef[] = [
     where:
       "Раздел «Финансы»: приход и расход по статьям, постоянные издержки, ФОТ, прибыль за период. Нет права — раздела в меню нет.",
     byDefault: false,
+    byRole: { admin: true },
   },
 ];
 
 export type Perms = Record<PermissionKey, boolean>;
 
-export function defaultPerms(): Perms {
-  return Object.fromEntries(PERMISSION_DEFS.map((d) => [d.key, d.byDefault])) as Perms;
+export function defaultPerms(role?: string): Perms {
+  return Object.fromEntries(
+    PERMISSION_DEFS.map((d) => [d.key, (role ? d.byRole?.[role] : undefined) ?? d.byDefault]),
+  ) as Perms;
 }
 
 export function isFullAccess(role: AuthUser["role"] | undefined): boolean {
@@ -69,7 +74,7 @@ export function permsOf(me: AuthUser | undefined | null): Perms {
   if (isFullAccess(me.role)) {
     return Object.fromEntries(PERMISSION_DEFS.map((d) => [d.key, true])) as Perms;
   }
-  return { ...defaultPerms(), ...(me.permissions ?? {}) };
+  return { ...defaultPerms(me.role), ...(me.permissions ?? {}) };
 }
 
 export function usePerms(): Perms {

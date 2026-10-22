@@ -24,12 +24,17 @@ export const PERMISSIONS = {
     label: "Доли партнёров",
     byDefault: false,
   },
-  /** Блок «Финансы» (20.09): приход, расход, прибыль, ФОТ. */
+  /**
+   * Блок «Финансы» (20.09): приход, расход, прибыль, ФОТ.
+   * 22.10 (заказчик): «вывести финансы в функционал администратора» —
+   * администратору включено по умолчанию, директор может выключить.
+   */
   "data.finance": {
     label: "Финансы: приход, расход, прибыль",
     byDefault: false,
+    byRole: { admin: true },
   },
-} as const;
+} as const satisfies Record<string, { label: string; byDefault: boolean; byRole?: Partial<Record<string, boolean>> }>;
 
 export type PermissionKey = keyof typeof PERMISSIONS;
 export type Perms = Record<PermissionKey, boolean>;
@@ -41,10 +46,13 @@ export function isFullAccessRole(role: string): boolean {
   return role === "creator" || role === "director";
 }
 
-/** Права по умолчанию для нового аккаунта. */
-export function defaultPermissions(): Perms {
+/** Права по умолчанию для аккаунта с этой ролью. */
+export function defaultPermissions(role?: string): Perms {
   return Object.fromEntries(
-    PERMISSION_KEYS.map((k) => [k, PERMISSIONS[k].byDefault]),
+    PERMISSION_KEYS.map((k) => {
+      const def = PERMISSIONS[k] as { byDefault: boolean; byRole?: Partial<Record<string, boolean>> };
+      return [k, (role ? def.byRole?.[role] : undefined) ?? def.byDefault];
+    }),
   ) as Perms;
 }
 
@@ -53,7 +61,7 @@ export function effectivePermissions(role: string, stored: unknown): Perms {
   if (isFullAccessRole(role)) {
     return Object.fromEntries(PERMISSION_KEYS.map((k) => [k, true])) as Perms;
   }
-  const base = defaultPermissions();
+  const base = defaultPermissions(role);
   if (stored && typeof stored === "object") {
     for (const k of PERMISSION_KEYS) {
       const v = (stored as Record<string, unknown>)[k];

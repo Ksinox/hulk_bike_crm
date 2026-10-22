@@ -128,7 +128,7 @@ export async function usersRoutes(app: FastifyInstance) {
     const hash = await bcrypt.hash(plainPassword, 12);
     // Права сохраняем явно — выбор директора не должен меняться, если
     // позже поменяются умолчания.
-    const perms = { ...defaultPermissions(), ...(data.permissions ?? {}) };
+    const perms = { ...defaultPermissions(data.role), ...(data.permissions ?? {}) };
 
     const [row] = await db
       .insert(users)
