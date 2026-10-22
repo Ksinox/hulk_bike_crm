@@ -1,7 +1,7 @@
 /**
- * Аренда → «Новый клиент» → анкета по шагам (22.10). Клиента НЕ сохраняет:
- * доходит до последнего шага и снимает кадры.
- *   VP=land|port|phone PREFIX=newcli node scripts/shots/shot.mjs scripts/shots/scenarios/tab-client-wizard.mjs
+ * Аренда → «Новый клиент» → анкета микрошагами (22.10): одно поле — один
+ * экран, Enter — дальше. Клиента НЕ сохраняет: доходит до «Проверьте данные».
+ *   VP=land|port|phone PREFIX=micro node scripts/shots/shot.mjs scripts/shots/scenarios/tab-client-wizard.mjs
  */
 const IPAD_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
@@ -10,7 +10,7 @@ const PHONE_UA =
 
 export async function run(page, ctx) {
   const vp = process.env.VP ?? "land";
-  const prefix = process.env.PREFIX ?? "newcli";
+  const prefix = process.env.PREFIX ?? "micro";
   await page.setUserAgent(vp === "phone" ? PHONE_UA : IPAD_UA);
   await page.setViewport(
     vp === "phone"
@@ -32,13 +32,20 @@ export async function run(page, ctx) {
           const b = x.getBoundingClientRect();
           return b.width > 0 && b.height > 0 && r.test((x.textContent || "").trim());
         })
-        .sort((a, b) => a.textContent.length - b.textContent.length)[0];
+        // анкета открыта поверх мастера аренды — берём верхнее окно (последнее в DOM)
+        .pop();
       el?.click();
       return el ? (el.textContent || "").trim().slice(0, 40) : null;
     }, src);
-  const type = async (id, text) => {
-    await page.click(`#${id}`);
-    await page.keyboard.type(text, { delay: 15 });
+  const active = () =>
+    page.evaluate(() => {
+      const a = document.activeElement;
+      return a ? `${a.tagName}#${a.id || ""}` : "—";
+    });
+  const step = async (name, text) => {
+    if (text != null) await page.keyboard.type(text, { delay: 12 });
+    await ctx.sleep(300);
+    await ctx.shot(`${prefix}-${name}-${vp}`, { jpeg: true });
   };
 
   await ctx.gotoRoute("rentals");
@@ -47,20 +54,55 @@ export async function run(page, ctx) {
   await ctx.sleep(1500);
   console.log("новый клиент:", await click("Новый клиент$"));
   await ctx.sleep(1500);
-  await ctx.shot(`${prefix}-1-${vp}`, { jpeg: true });
-  // «Далее» без данных — подсветка обязательных полей шага
-  await click("^Далее");
-  await ctx.sleep(600);
-  await ctx.shot(`${prefix}-1b-${vp}`, { jpeg: true });
-  await type("f-name", "ТЕСТ Тестов Мастер");
-  await type("f-phone", "79990001122");
-  await type("f-birth", "01.02.1990");
+  await step("01-photo");
+  console.log("пропустить:", await click("^Пропустить"));
+  await ctx.sleep(400);
+  console.log("фокус на ФИО:", await active());
+  await step("02-name", "ТЕСТ Тестов Микрошаг");
+  await page.keyboard.press("Enter");
+  await ctx.sleep(400);
+  console.log("фокус на телефоне:", await active());
+  await step("03-phone", "79990001133");
+  await page.keyboard.press("Enter");
+  await ctx.sleep(400);
+  await click("^Пропустить");
+  await ctx.sleep(400);
+  await step("05-birth", "01021990");
+  await page.keyboard.press("Enter");
+  await ctx.sleep(400);
+  await step("06-source");
   await click("^Авито$");
-  await ctx.sleep(500);
-  console.log("далее 1:", await click("^Далее"));
-  await ctx.sleep(900);
-  await ctx.shot(`${prefix}-2-${vp}`, { jpeg: true });
-  console.log("шаги наверху:", await click("^1\\.? ?Клиент$|^Клиент$"));
   await ctx.sleep(700);
-  await ctx.shot(`${prefix}-3-${vp}`, { jpeg: true });
+  await step("07-doc");
+  await click("^Далее");
+  await ctx.sleep(400);
+  await step("08-passport", "1234567890");
+  await page.keyboard.press("Enter");
+  await ctx.sleep(300);
+  await click("^Пропустить");
+  await ctx.sleep(300);
+  await click("^Пропустить");
+  await ctx.sleep(300);
+  await step("11-pcode", "230001");
+  await page.keyboard.press("Enter");
+  await ctx.sleep(300);
+  await step("12-scans");
+  await click("^Пропустить");
+  await ctx.sleep(300);
+  await step("13-reg", "Краснодар, ул. Тестовая, 1");
+  await click("^Далее");
+  await ctx.sleep(300);
+  await click("^Пропустить|^Далее");
+  await ctx.sleep(300);
+  await step("15-license");
+  console.log("кнопки на шаге:", await page.evaluate(() => [...document.querySelectorAll("button")].filter((b) => b.getBoundingClientRect().width > 0).map((b) => (b.textContent || "").trim()).filter(Boolean).join(" | ")));
+  await click("^Пропустить");
+  await ctx.sleep(300);
+  for (let i = 0; i < 4; i++) {
+    const onReview = await page.evaluate(() => /Проверьте данные/.test(document.body.innerText));
+    if (onReview) break;
+    await click("^Пропустить|^Далее");
+    await ctx.sleep(500);
+  }
+  await step("17-review");
 }

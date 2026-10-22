@@ -565,3 +565,26 @@
 .tab-xl .mt-3 { margin-top: 26px; }
 .tab-xl .mb-1 { margin-bottom: 10px; }
 .tab-xl .mb-2 { margin-bottom: 12px; }
+
+/*
+ * 22.10 — микрошаги анкеты (телефон и планшет): «одно поле — один экран».
+ * Поле крупное, подпись поля не дублирует вопрос шага (data-micro-single).
+ */
+.micro-xl input:not([type="checkbox"]):not([type="file"]):not([type="radio"]),
+.micro-xl textarea {
+  /* !important: планшетная шкала .tab-xl висит на том же теле и иначе
+     перебивает размер поля своим text-[13px] → 16px */
+  height: 64px !important;
+  font-size: 21px !important;
+  border-radius: 16px;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+.micro-xl textarea { height: auto !important; min-height: 132px; padding-top: 14px; line-height: 1.4; }
+/* подсказка поля повторяет подсказку под вопросом шага — прячем (ошибки остаются) */
+.micro-xl [data-micro-single] .mt-1.text-muted-2 { display: none; }
+.micro-xl [data-micro-single] label { display: none; }
+.micro-xl label { font-size: 15px; margin-bottom: 8px; }
+.micro-xl .text-\[11px\] { font-size: 14px; }
+.micro-xl .text-\[10px\] { font-size: 13px; }
+.micro-xl [data-micro-active] button.py-1\.5 { padding-top: 16px; padding-bottom: 16px; font-size: 17px; }

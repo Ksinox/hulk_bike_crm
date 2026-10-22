@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { usePersistedFormState } from "@/lib/usePersistedState";
-import { ArrowRight, Check, ChevronLeft, X } from "lucide-react";
+import { ArrowRight, Camera, ChevronLeft, Image as ImageIcon, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { CheckBox, Picker } from "@/components/ui/picker";
@@ -577,28 +578,61 @@ export function AddClientModal({
   const tabletLayout = useTabletLayout();
   const stepMode = useIsMobile();
   const colCls = "contents";
-  const [step, setStep] = useState(1);
-  const STEPS = [
-    { title: "Клиент", question: "Кто клиент?", ok: !errors.name && !errors.phone && !errors.birth && !errors.source && !errors.sourceCustom && !duplicate },
-    { title: "Паспорт", question: "Паспортные данные", ok: !errors.passSer && !errors.passNum && !errors.passCode && !errors.passportRaw },
-    { title: "Адрес", question: "Где живёт?", ok: !errors.regAddr },
-    { title: "Документы", question: "Документы и статус", ok: !errors.blReason },
-  ];
-  const stepCls = (n: number) => (!stepMode || step === n ? "contents" : "hidden");
-  const canOpenStep = (n: number) => STEPS.slice(0, n - 1).every((x) => x.ok);
-  // Проверка шага: показать ошибки полей текущего шага, если «Далее» рано.
-  const STEP_FIELDS: string[][] = [
-    ["name", "phone", "birth", "source", "sourceCustom"],
-    ["passSer", "passNum", "passCode", "passportRaw"],
-    ["regAddr"],
-    ["blReason"],
-  ];
+  /**
+   * 22.10 (заказчик, ЖЕЛЕЗНО): «одно поле — один экран». Микрошаг: крупный
+   * вопрос, одно поле, клавиатура сразу открыта, Enter — дальше; у
+   * необязательного — «Пропустить»; в конце — экран проверки всех данных.
+   */
+  const microMode = stepMode && !isEdit;
+  const MICROS = microList(f.isForeigner);
+  const [micro, setMicro] = useState<MicroId>("photo");
+  const microIdx = Math.max(0, MICROS.indexOf(micro));
+  const M = (id: MicroId) => (!microMode || micro === id ? "contents" : "hidden");
+  const microErrors = (id: MicroId): string[] =>
+    (MICRO_META[id].keys as readonly string[]).filter(
+      (k) => !!errors[k as keyof typeof errors],
+    );
+  const microFilled = (id: MicroId): boolean => {
+    switch (id) {
+      case "photo": return !!f.photoFile;
+      case "phone2": return !!f.phone2.trim();
+      case "issuer": return !!f.passIssuer.trim();
+      case "pdate": return !!f.passDate.trim();
+      case "scans": return !!(f.passportMainFile || f.passportRegFile);
+      case "live": return !f.sameAddr && !!f.liveAddr.trim();
+      case "license": return !!f.licenseFile;
+      case "other": return f.otherDocs.length > 0;
+      default: return true;
+    }
+  };
+  const focusMicro = () => {
+    // Клавиатура на iPhone/iPad открывается, только если фокус дан прямо в
+    // обработчике нажатия, — поэтому flushSync, а не эффект после рендера.
+    const el = document.querySelector<HTMLElement>(
+      "[data-micro-active] input:not([type=file]):not([type=checkbox]), [data-micro-active] textarea",
+    );
+    if (el) {
+      el.setAttribute("enterkeyhint", "next");
+      el.focus();
+    }
+  };
+  const goTo = (id: MicroId) => {
+    flushSync(() => setMicro(id));
+    focusMicro();
+  };
   const goNext = () => {
-    if (!STEPS[step - 1]!.ok) {
-      setTouched((prev) => ({ ...prev, ...Object.fromEntries(STEP_FIELDS[step - 1]!.map((k) => [k, true])) }));
+    const errs = microErrors(micro);
+    if (errs.length > 0 || (micro === "phone" && duplicate)) {
+      setTouched((prev) => ({ ...prev, ...Object.fromEntries(errs.map((k) => [k, true])) }));
       return;
     }
-    setStep((x) => Math.min(STEPS.length, x + 1));
+    const nx = MICROS[microIdx + 1];
+    if (nx) goTo(nx);
+  };
+  const goBack = () => {
+    const pv = MICROS[microIdx - 1];
+    if (pv) goTo(pv);
+    else requestClose();
   };
 
   return (
@@ -620,14 +654,13 @@ export function AddClientModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        {stepMode && !isEdit ? (
-          <ClientStepsHeader
-            title="Новый клиент"
-            step={step}
-            steps={STEPS}
+        {microMode ? (
+          <MicroHeader
+            micros={MICROS}
+            current={micro}
             tablet={tabletLayout}
-            canOpen={canOpenStep}
-            onStep={setStep}
+            onGroup={(id) => goTo(id)}
+            canOpen={(id) => MICROS.slice(0, MICROS.indexOf(id)).every((m) => microErrors(m).length === 0)}
             onClose={requestClose}
           />
         ) : (
@@ -664,17 +697,41 @@ export function AddClientModal({
             // в одну строку, а форма уходит в долгую прокрутку.
             // Планшет: анкета в две колонки, каждая прокручивается сама —
             // окно целиком не едет, а поля не растягиваются на 1180px.
-            stepMode && !isEdit && "!max-h-none min-h-0 flex-1",
+            microMode && "micro-xl !max-h-none min-h-0 w-full flex-1 px-5 py-6",
             tabletLayout &&
-              (stepMode && !isEdit
-                ? "tab-xl scrollbar-thin mx-auto w-full max-w-[860px] px-10 py-8"
+              (microMode
+                ? "tab-xl mx-auto max-w-[760px] px-10 py-10"
                 : "!max-h-none grid min-h-0 flex-1 grid-cols-2 items-start gap-x-8 overflow-hidden px-7 py-5"),
           )}
+          onKeyDown={(e) => {
+            if (!microMode || e.key !== "Enter" || e.shiftKey) return;
+            e.preventDefault();
+            if (micro !== "review") goNext();
+          }}
         >
+          {microMode && (
+            <MicroQuestion id={micro} tablet={tabletLayout} />
+          )}
+          {microMode && micro === "review" && (
+            <MicroReview
+              f={f}
+              micros={MICROS}
+              duplicateName={duplicate?.name ?? null}
+              onEdit={(id) => goTo(id)}
+            />
+          )}
           <div className={colCls}>
-          <div className={stepCls(1)}>
-          {stepMode && !isEdit && <StepQuestion text={STEPS[0]!.question} tablet={tabletLayout} />}
+          <div className="contents">
           {/* Photo (optional) */}
+          <div className={M("photo")} {...(micro === "photo" && microMode ? { "data-micro-active": "" } : {})}>
+          {microMode ? (
+            <MicroCapture
+              file={f.photoFile}
+              onChange={(v) => set("photoFile", v)}
+              selfie
+              tablet={tabletLayout}
+            />
+          ) : (
           <div className="mb-6 flex items-center gap-4">
             <PhotoSlot
               file={f.photoFile}
@@ -690,6 +747,8 @@ export function AddClientModal({
                 проблемных клиентов особенно полезно.
               </div>
             </div>
+          </div>
+          )}
           </div>
 
           {matchedApp && !isFromApplication && (
@@ -733,6 +792,7 @@ export function AddClientModal({
 
           {/* Section 1 — Основные */}
           <Section bare={stepMode && !isEdit} num={1} title="Основные" badge="обязательно">
+<div className={M("name")} data-micro-single {...(micro === "name" && microMode ? { "data-micro-active": "" } : {})}>
             <Field
               label="ФИО"
               required
@@ -749,7 +809,9 @@ export function AddClientModal({
                 className={inputClass(showErr("name"))}
               />
             </Field>
+</div>
 
+<div className={M("phone")} data-micro-single {...(micro === "phone" && microMode ? { "data-micro-active": "" } : {})}>
             <Field
               label="Телефон"
               required
@@ -771,7 +833,9 @@ export function AddClientModal({
                   Дубль ловим на сохранении и блокируем со стилизованной
                   ошибкой, чтобы не было случайных дублей. */}
             </Field>
+</div>
 
+<div className={M("phone2")} data-micro-single {...(micro === "phone2" && microMode ? { "data-micro-active": "" } : {})}>
             <Field
               label="Доп. контакт"
               hint="Родственник, жена, водитель — тот кто ответит если основной недоступен"
@@ -786,8 +850,10 @@ export function AddClientModal({
                 className={inputClass(null)}
               />
             </Field>
+</div>
 
-            <Row>
+            <Row micro={microMode}>
+<div className={M("birth")} data-micro-single {...(micro === "birth" && microMode ? { "data-micro-active": "" } : {})}>
               <Field
                 label="Дата рождения"
                 required
@@ -804,14 +870,40 @@ export function AddClientModal({
                   defaultMonth={birthDefaultMonthIso()}
                   maxDate={todayIso()}
                   clearable={false}
+                  typeOnly={microMode}
                 />
               </Field>
+</div>
+<div className={M("source")} data-micro-single {...(micro === "source" && microMode ? { "data-micro-active": "" } : {})}>
               <Field
                 label="Источник"
                 required
                 error={showErr("source")}
                 htmlFor="f-source"
               >
+                {microMode ? (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {[...SOURCE_OPTIONS.map((x) => ({ value: x.id as SourceChoice, label: x.label })), { value: "custom" as SourceChoice, label: "Свой вариант" }].map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        onClick={() => {
+                          set("source", o.value);
+                          // выбор сделан — сразу следующий шаг (проверка
+                          // здесь не нужна: источник только что выбран)
+                          const nx = MICROS[microIdx + 1];
+                          if (o.value !== "custom" && nx) window.setTimeout(() => goTo(nx), 150);
+                        }}
+                        className={cn(
+                          "min-h-[60px] rounded-2xl border-2 px-4 text-left text-[17px] font-bold transition-colors",
+                          f.source === o.value ? "border-blue-600 bg-blue-50 text-blue-700" : "border-border bg-surface text-ink active:bg-surface-soft",
+                        )}
+                      >
+                        {o.label.charAt(0).toUpperCase() + o.label.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
                 <Picker
                   id="f-source"
                   value={f.source === "" ? null : (f.source as SourceChoice)}
@@ -823,6 +915,7 @@ export function AddClientModal({
                     { value: "custom" as SourceChoice, label: "Свой вариант…" },
                   ]}
                 />
+                )}
                 {f.source === "custom" && (
                   <input
                     type="text"
@@ -836,14 +929,15 @@ export function AddClientModal({
                   />
                 )}
               </Field>
+</div>
             </Row>
           </Section>
           </div>
 
           {/* Section 2 — Паспорт */}
-          <div className={stepCls(2)}>
-          {stepMode && !isEdit && <StepQuestion text={STEPS[1]!.question} tablet={tabletLayout} />}
+          <div className="contents">
           <Section bare={stepMode && !isEdit} num={2} title="Паспортные данные" badge="для договора">
+            <div className={M("doc")} {...(micro === "doc" && microMode ? { "data-micro-active": "" } : {})}>
             <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-border bg-surface-soft p-2">
               <button
                 type="button"
@@ -871,7 +965,7 @@ export function AddClientModal({
               </button>
             </div>
 
-            {f.isForeigner ? (
+            {f.isForeigner && (
               <Field
                 label="Документ удостоверяющий личность"
                 hint={
@@ -891,8 +985,11 @@ export function AddClientModal({
                   className="w-full resize-y rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] outline-none focus:border-blue-600"
                 />
               </Field>
-            ) : (
+            )}
+            </div>
+            {!f.isForeigner && (
             <>
+            <div className={M("passSerNum")} {...(micro === "passSerNum" && microMode ? { "data-micro-active": "" } : {})}>
             <Row>
               <Field
                 label="Серия"
@@ -936,7 +1033,7 @@ export function AddClientModal({
                     const v = e.target.value.replace(/\D/g, "").slice(0, 6);
                     set("passNum", v);
                     // v0.3.7: автопереход на «Кем выдан», когда номер заполнен
-                    if (v.length === 6) {
+                    if (v.length === 6 && !microMode) {
                       document.getElementById("f-pissuer")?.focus();
                     }
                   }}
@@ -945,6 +1042,8 @@ export function AddClientModal({
                 />
               </Field>
             </Row>
+            </div>
+<div className={M("issuer")} data-micro-single {...(micro === "issuer" && microMode ? { "data-micro-active": "" } : {})}>
             <Field label="Кем выдан" htmlFor="f-pissuer">
               <input
                 id="f-pissuer"
@@ -955,7 +1054,9 @@ export function AddClientModal({
                 className={inputClass(null)}
               />
             </Field>
-            <Row>
+</div>
+            <Row micro={microMode}>
+<div className={M("pdate")} data-micro-single {...(micro === "pdate" && microMode ? { "data-micro-active": "" } : {})}>
               <Field label="Дата выдачи" htmlFor="f-pdate">
                 <DatePicker
                   id="f-pdate"
@@ -966,9 +1067,12 @@ export function AddClientModal({
                   maxDate={todayIso()}
                   // После полного ввода (DD.MM.YYYY) — фокус на «Код
                   // подразделения», как было в старой паспортной форме.
-                  nextFieldId="f-pcode"
+                  nextFieldId={microMode ? undefined : "f-pcode"}
+                  typeOnly={microMode}
                 />
               </Field>
+</div>
+<div className={M("pcode")} data-micro-single {...(micro === "pcode" && microMode ? { "data-micro-active": "" } : {})}>
               <Field
                 label="Код подразделения"
                 required
@@ -987,7 +1091,7 @@ export function AddClientModal({
                     set("passCode", v);
                     // v0.4.46: автопереход на «Адрес регистрации» когда
                     // код подразделения заполнен (000-000 = 7 символов).
-                    if (v.length === 7) {
+                    if (v.length === 7 && !microMode) {
                       document.getElementById("f-regaddr")?.focus();
                     }
                   }}
@@ -995,7 +1099,15 @@ export function AddClientModal({
                   className={inputClass(showErr("passCode"))}
                 />
               </Field>
+</div>
             </Row>
+<div className={M("scans")} {...(micro === "scans" && microMode ? { "data-micro-active": "" } : {})}>
+            {microMode ? (
+              <div className="grid grid-cols-2 gap-3">
+                <MicroCapture label="Разворот с фото" file={f.passportMainFile} onChange={(v) => set("passportMainFile", v)} tablet={tabletLayout} />
+                <MicroCapture label="Прописка" file={f.passportRegFile} onChange={(v) => set("passportRegFile", v)} tablet={tabletLayout} />
+              </div>
+            ) : (
             <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <DocUpload
                 label="Скан паспорта (основной разворот)"
@@ -1010,6 +1122,8 @@ export function AddClientModal({
                 onChange={(v) => set("passportRegFile", v)}
               />
             </div>
+            )}
+</div>
             </>
             )}
           </Section>
@@ -1018,9 +1132,9 @@ export function AddClientModal({
           {/* Section 3 — Адрес */}
           </div>
           <div className={colCls}>
-          <div className={stepCls(3)}>
-          {stepMode && !isEdit && <StepQuestion text={STEPS[2]!.question} tablet={tabletLayout} />}
+          <div className="contents">
           <Section bare={stepMode && !isEdit} num={3} title="Адрес" badge="регистрация и проживание">
+<div className={M("reg")} data-micro-single {...(micro === "reg" && microMode ? { "data-micro-active": "" } : {})}>
             <Field
               label="Адрес регистрации (по паспорту)"
               required={!f.isForeigner}
@@ -1037,6 +1151,8 @@ export function AddClientModal({
                 className={cn(inputClass(showErr("regAddr")), "min-h-[56px] resize-y")}
               />
             </Field>
+</div>
+<div className={M("live")} {...(micro === "live" && microMode ? { "data-micro-active": "" } : {})}>
             <CheckBox
               checked={f.sameAddr}
               onChange={(v) => set("sameAddr", v)}
@@ -1053,20 +1169,26 @@ export function AddClientModal({
                 />
               </Field>
             )}
+</div>
           </Section>
           </div>
 
           {/* Section 4 — Водительское */}
-          <div className={stepCls(4)}>
-          {stepMode && !isEdit && <StepQuestion text={STEPS[3]!.question} tablet={tabletLayout} />}
-          <Section num={4} title="Водительское" badge="если есть">
+          <div className="contents">
+          <div className={M("license")} {...(micro === "license" && microMode ? { "data-micro-active": "" } : {})}>
+          <Section bare={microMode} num={4} title="Водительское" badge="если есть">
+            {microMode ? (
+              <MicroCapture label="Водительское (обе стороны)" file={f.licenseFile} onChange={(v) => set("licenseFile", v)} tablet={tabletLayout} wide />
+            ) : (
             <DocUpload
               label="Скан водительского"
               hint="обе стороны одним файлом или PDF. Если ВУ нет — оставьте пустым (клиент сможет взять только скутеры до 50 куб.см)"
               file={f.licenseFile}
               onChange={(v) => set("licenseFile", v)}
             />
+            )}
           </Section>
+          </div>
 
           {/* Section 5 — Доп. документы (паспорт, ВУ — выше; здесь
               остальное: справки, расписки и т.п.). Договоры в карточку
@@ -1074,7 +1196,8 @@ export function AddClientModal({
               рассрочке/выкупе), там и видны. Раньше тут был «Скан
               подписанного договора» — убран, чтобы не возникало
               двух разных мест для одного и того же файла. */}
-          <Section num={5} title="Прочие документы" badge="опционально">
+          <div className={M("other")} {...(micro === "other" && microMode ? { "data-micro-active": "" } : {})}>
+          <Section bare={microMode} num={5} title="Прочие документы" badge="опционально">
             <DocUploadMulti
               label="Справки, расписки и прочее"
               hint="акты, расписки, чеки — можно несколько файлов"
@@ -1082,8 +1205,12 @@ export function AddClientModal({
               onChange={(v) => set("otherDocs", v)}
             />
           </Section>
+          </div>
 
           {/* Section 6 — Статус */}
+          {/* Чёрный список при заведении нового клиента — редкость: в
+              микрошагах его нет, ставится в карточке клиента. */}
+          <div className={microMode ? "hidden" : "contents"}>
           <Section num={6} title="Статус">
             <label className="flex cursor-pointer items-center justify-between gap-3 rounded-[12px] border border-border p-3">
               <div>
@@ -1123,10 +1250,11 @@ export function AddClientModal({
           </Section>
           </div>
           </div>
+          </div>
         </div>
 
         {/* Footer: мастер — Назад / Далее, на последнем шаге — сохранить */}
-        {stepMode && !isEdit && step < STEPS.length ? (
+        {microMode && micro !== "review" ? (
           <div
             className={cn(
               "flex items-center gap-2 border-t border-border bg-surface px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]",
@@ -1135,14 +1263,14 @@ export function AddClientModal({
           >
             <button
               type="button"
-              onClick={() => (step === 1 ? requestClose() : setStep((x) => x - 1))}
+              onClick={goBack}
               className={cn(
                 "flex min-h-[48px] items-center justify-center gap-1 rounded-xl border border-border px-4 text-[14px] font-semibold text-muted active:bg-surface-soft",
                 tabletLayout && "h-16 min-w-[190px] rounded-2xl text-[18px]",
               )}
             >
               <ChevronLeft size={tabletLayout ? 22 : 18} />
-              {step === 1 ? "Отмена" : "Назад"}
+              {microIdx === 0 ? "Отмена" : "Назад"}
             </button>
             <button
               type="button"
@@ -1150,10 +1278,15 @@ export function AddClientModal({
               className={cn(
                 "flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold transition-colors",
                 tabletLayout && "h-16 flex-none min-w-[320px] rounded-2xl text-[19px]",
-                STEPS[step - 1]!.ok ? "bg-blue-600 text-white active:bg-blue-700" : "bg-surface-soft text-muted-2",
+                MICRO_META[micro].optional && !microFilled(micro)
+                  ? "bg-surface-soft text-ink active:bg-border"
+                  : microErrors(micro).length === 0
+                    ? "bg-blue-600 text-white active:bg-blue-700"
+                    : "bg-surface-soft text-muted-2",
               )}
             >
-              Далее <ArrowRight size={tabletLayout ? 22 : 16} />
+              {MICRO_META[micro].optional && !microFilled(micro) ? "Пропустить" : "Далее"}
+              <ArrowRight size={tabletLayout ? 22 : 16} />
             </button>
           </div>
         ) : (
@@ -1188,7 +1321,7 @@ export function AddClientModal({
             <div className={cn("flex gap-2", stepMode && !isEdit && "flex-1 justify-end", tabletLayout && stepMode && !isEdit && "gap-4")}>
               <button
                 type="button"
-                onClick={stepMode && !isEdit ? () => setStep((x) => x - 1) : requestClose}
+                onClick={microMode ? goBack : requestClose}
                 className={cn(
                   "rounded-full border border-border px-4 py-1.5 text-[12px] font-semibold text-muted hover:bg-surface-soft",
                   stepMode && !isEdit && "flex min-h-[48px] items-center gap-1 rounded-xl text-[14px]",
@@ -1525,120 +1658,6 @@ export function AddClientModal({
   );
 }
 
-/* ───────── Шаги анкеты на телефоне и планшете (22.10) ───────── */
-
-function StepQuestion({ text, tablet }: { text: string; tablet: boolean }) {
-  return (
-    <h2
-      className={cn(
-        "mb-4 font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink",
-        tablet && "mb-6 text-[30px]",
-      )}
-    >
-      {text}
-    </h2>
-  );
-}
-
-function ClientStepsHeader({
-  title,
-  step,
-  steps,
-  tablet,
-  canOpen,
-  onStep,
-  onClose,
-}: {
-  title: string;
-  step: number;
-  steps: { title: string; ok: boolean }[];
-  tablet: boolean;
-  canOpen: (n: number) => boolean;
-  onStep: (n: number) => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className={cn("shrink-0 border-b border-border bg-surface px-4 pb-3 pt-3", tablet && "px-10 pb-5 pt-6")}>
-      <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <div className={cn("text-[12px] font-semibold text-muted-2", tablet && "text-[14px]")}>
-            Шаг {step} из {steps.length}
-          </div>
-          <div className={cn("font-display text-[18px] font-extrabold leading-tight text-ink", tablet && "text-[26px]")}>
-            {title}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Закрыть"
-          className={cn(
-            "flex h-10 w-10 items-center justify-center rounded-full bg-surface-soft text-muted active:bg-border",
-            tablet && "h-12 w-12",
-          )}
-        >
-          <X size={tablet ? 22 : 18} />
-        </button>
-      </div>
-      <div
-        className={cn("mt-3 grid gap-1.5", tablet && "mt-5 gap-3")}
-        style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}
-      >
-        {steps.map((st, i) => {
-          const n = i + 1;
-          const cur = n === step;
-          const open = canOpen(n);
-          const done = !cur && st.ok && open;
-          return tablet ? (
-            <button
-              key={st.title}
-              type="button"
-              disabled={!open}
-              onClick={() => onStep(n)}
-              className={cn(
-                "flex min-w-0 items-center gap-3 rounded-2xl px-3.5 py-3 text-left transition-colors",
-                cur
-                  ? "bg-blue-600 text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]"
-                  : open
-                    ? "bg-surface-soft text-ink active:bg-border"
-                    : "bg-surface-soft/60 text-muted-2",
-              )}
-            >
-              <span
-                className={cn(
-                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[16px] font-extrabold",
-                  cur ? "bg-white/20 text-white" : done ? "bg-green-ink text-white" : "bg-white text-muted",
-                )}
-              >
-                {done ? <Check size={18} strokeWidth={3} /> : n}
-              </span>
-              <span className="truncate text-[16px] font-bold">{st.title}</span>
-            </button>
-          ) : (
-            <button
-              key={st.title}
-              type="button"
-              disabled={!open}
-              onClick={() => onStep(n)}
-              className="flex min-w-0 flex-col items-center gap-1"
-            >
-              <span className={cn("h-1.5 w-full rounded-full", n <= step ? "bg-blue-600" : "bg-surface-soft")} />
-              <span
-                className={cn(
-                  "truncate text-[10.5px] font-semibold",
-                  cur ? "text-blue-600" : done ? "text-ink-2" : "text-muted-2",
-                )}
-              >
-                {n}. {st.title}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /* =================== Helpers =================== */
 
 function Section({
@@ -1675,8 +1694,9 @@ function Section({
   );
 }
 
-function Row({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{children}</div>;
+function Row({ children, micro }: { children: React.ReactNode; micro?: boolean }) {
+  // Микрошаг: в ряду видно одно поле — оно во всю ширину.
+  return <div className={micro ? "contents" : "grid grid-cols-1 gap-3 sm:grid-cols-2"}>{children}</div>;
 }
 
 function Field({
@@ -1848,6 +1868,310 @@ function ApplicationMatchHint({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════ Микрошаги анкеты (телефон и планшет, 22.10) ═══════════════ */
+
+type MicroId =
+  | "photo" | "name" | "phone" | "phone2" | "birth" | "source"
+  | "doc" | "passSerNum" | "issuer" | "pdate" | "pcode" | "scans"
+  | "reg" | "live" | "license" | "other" | "review";
+
+type MicroGroup = "Клиент" | "Паспорт" | "Адрес" | "Документы" | "Проверка";
+
+const MICRO_META: Record<
+  MicroId,
+  { group: MicroGroup; q: string; hint?: string; optional?: boolean; keys: readonly string[]; label: string }
+> = {
+  photo: { group: "Клиент", q: "Сфотографируйте клиента", hint: "Так его проще узнать в лицо. Можно пропустить.", optional: true, keys: [], label: "Фото" },
+  name: { group: "Клиент", q: "Как зовут клиента?", hint: "Фамилия, имя и отчество", keys: ["name"], label: "ФИО" },
+  phone: { group: "Клиент", q: "Номер телефона", keys: ["phone"], label: "Телефон" },
+  phone2: { group: "Клиент", q: "Запасной контакт", hint: "Родственник или друг — кто ответит, если клиент недоступен", optional: true, keys: [], label: "Запасной контакт" },
+  birth: { group: "Клиент", q: "Дата рождения", keys: ["birth"], label: "Дата рождения" },
+  source: { group: "Клиент", q: "Откуда узнал о нас?", keys: ["source", "sourceCustom"], label: "Откуда узнал" },
+  doc: { group: "Паспорт", q: "Какой документ?", keys: ["passportRaw"], label: "Документ" },
+  passSerNum: { group: "Паспорт", q: "Серия и номер паспорта", keys: ["passSer", "passNum"], label: "Серия и номер" },
+  issuer: { group: "Паспорт", q: "Кем выдан паспорт?", optional: true, keys: [], label: "Кем выдан" },
+  pdate: { group: "Паспорт", q: "Дата выдачи паспорта", optional: true, keys: [], label: "Дата выдачи" },
+  pcode: { group: "Паспорт", q: "Код подразделения", hint: "Шесть цифр, например 230-001", keys: ["passCode"], label: "Код подразделения" },
+  scans: { group: "Паспорт", q: "Фото паспорта", hint: "Разворот с фото и страница с пропиской", optional: true, keys: [], label: "Фото паспорта" },
+  reg: { group: "Адрес", q: "Адрес регистрации", hint: "Как в паспорте на странице «прописка»", keys: ["regAddr"], label: "Регистрация" },
+  live: { group: "Адрес", q: "Где живёт сейчас?", optional: true, keys: [], label: "Фактический адрес" },
+  license: { group: "Документы", q: "Водительское удостоверение", hint: "Если прав нет — пропустите: тогда доступны скутеры до 50 куб.см", optional: true, keys: [], label: "Водительское" },
+  other: { group: "Документы", q: "Другие документы", hint: "Справки, расписки — если есть", optional: true, keys: [], label: "Другие документы" },
+  review: { group: "Проверка", q: "Проверьте данные", hint: "Нажмите на строку, чтобы исправить", keys: [], label: "Проверка" },
+};
+
+function microList(foreigner: boolean): MicroId[] {
+  return foreigner
+    ? ["photo", "name", "phone", "phone2", "birth", "source", "doc", "reg", "live", "license", "other", "review"]
+    : ["photo", "name", "phone", "phone2", "birth", "source", "doc", "passSerNum", "issuer", "pdate", "pcode", "scans", "reg", "live", "license", "other", "review"];
+}
+
+function MicroQuestion({ id, tablet }: { id: MicroId; tablet: boolean }) {
+  const m = MICRO_META[id];
+  return (
+    <div className={cn("mb-6", tablet && "mb-8")}>
+      <h2 className={cn("font-display text-[26px] font-extrabold leading-tight tracking-tight text-ink", tablet && "text-[34px]")}>
+        {m.q}
+      </h2>
+      {m.hint && <p className={cn("mt-1.5 text-[15px] leading-snug text-muted", tablet && "text-[18px]")}>{m.hint}</p>}
+    </div>
+  );
+}
+
+function MicroHeader({
+  micros,
+  current,
+  tablet,
+  canOpen,
+  onGroup,
+  onClose,
+}: {
+  micros: MicroId[];
+  current: MicroId;
+  tablet: boolean;
+  canOpen: (id: MicroId) => boolean;
+  onGroup: (id: MicroId) => void;
+  onClose: () => void;
+}) {
+  const groups: MicroGroup[] = ["Клиент", "Паспорт", "Адрес", "Документы", "Проверка"];
+  const idx = micros.indexOf(current);
+  const curGroup = MICRO_META[current].group;
+  return (
+    <div className={cn("shrink-0 bg-surface px-5 pb-3 pt-4", tablet && "px-10 pb-5 pt-6")}>
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className={cn("font-display text-[18px] font-extrabold text-ink", tablet && "text-[24px]")}>Новый клиент</div>
+          <div className={cn("text-[13px] font-semibold text-muted-2", tablet && "text-[15px]")}>
+            {idx + 1} из {micros.length}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Закрыть"
+          className={cn("flex h-11 w-11 items-center justify-center rounded-full bg-surface-soft text-muted active:bg-border", tablet && "h-12 w-12")}
+        >
+          <X size={tablet ? 22 : 19} />
+        </button>
+      </div>
+      {/* Прогресс: тонкая полоса по микрошагам + разделы (нажимаются) */}
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-soft">
+        <div className="h-full rounded-full bg-blue-600 transition-all duration-300" style={{ width: `${((idx + 1) / micros.length) * 100}%` }} />
+      </div>
+      <div className={cn("mt-2 flex justify-between gap-1", tablet && "mt-3")}>
+        {groups.map((g) => {
+          const first = micros.find((m) => MICRO_META[m].group === g)!;
+          const open = canOpen(first);
+          return (
+            <button
+              key={g}
+              type="button"
+              disabled={!open}
+              onClick={() => onGroup(first)}
+              className={cn(
+                "whitespace-nowrap rounded-lg py-1 text-center text-[11.5px] font-bold",
+                tablet && "text-[14px]",
+                g === curGroup ? "text-blue-600" : open ? "text-ink-2" : "text-muted-2",
+              )}
+            >
+              {g}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Фото с камеры устройства или из галереи — крупно, под палец. */
+function MicroCapture({
+  file,
+  onChange,
+  label,
+  selfie = false,
+  tablet,
+  wide = false,
+}: {
+  file: UploadedFile | null;
+  onChange: (v: UploadedFile | null) => void;
+  label?: string;
+  selfie?: boolean;
+  tablet: boolean;
+  wide?: boolean;
+}) {
+  // две плитки в ряд (разворот + прописка) — узко, всё компактнее
+  const compact = !selfie && !wide;
+  const cam = useRef<HTMLInputElement>(null);
+  const gal = useRef<HTMLInputElement>(null);
+  const take = (fl: File | undefined) => {
+    if (!fl) return;
+    onChange({
+      name: fl.name,
+      size: fl.size,
+      thumbUrl: fl.type.startsWith("image/") ? URL.createObjectURL(fl) : undefined,
+      file: fl,
+    });
+  };
+  return (
+    <div className="flex flex-col gap-2.5">
+      {label && <div className={cn("text-[14px] font-bold text-ink", tablet && "text-[16px]")}>{label}</div>}
+      <div
+        className={cn(
+          "relative flex items-center justify-center overflow-hidden border-2 border-dashed border-border bg-surface-soft",
+          // высота ограничена — вместе с кнопками шаг помещается на экран
+          selfie
+            ? "mx-auto aspect-square w-[min(52vw,220px)] rounded-full"
+            : wide
+              ? "mx-auto aspect-[16/10] max-h-[30vh] w-full rounded-3xl"
+              : "aspect-[4/3] max-h-[26vh] w-full rounded-3xl",
+        )}
+      >
+        {file?.thumbUrl ? (
+          <img src={file.thumbUrl} alt="" className="h-full w-full object-cover" />
+        ) : file ? (
+          <span className="px-3 text-center text-[14px] font-semibold text-ink">{file.name}</span>
+        ) : (
+          <Camera size={selfie ? 52 : 38} strokeWidth={1.4} className="text-muted-2" />
+        )}
+        {file && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            aria-label="Убрать"
+            className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-ink/70 text-white"
+          >
+            <X size={17} />
+          </button>
+        )}
+      </div>
+      {/* Две плитки рядом (паспорт) — подписи короче, кнопки друг под другом;
+          одна плитка — кнопки рядом на планшете, столбиком на телефоне. */}
+      <div
+        className={cn(
+          "grid gap-2",
+          compact ? "grid-cols-1" : tablet ? "mx-auto w-full max-w-[520px] grid-cols-2" : "grid-cols-1",
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => cam.current?.click()}
+          className={cn(
+            "flex items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-ink px-3 font-bold text-white active:scale-[0.98]",
+            compact ? "h-12 text-[15px]" : "h-14 text-[16px]",
+          )}
+        >
+          <Camera size={19} /> {file ? "Переснять" : compact ? "Снять" : "Сфотографировать"}
+        </button>
+        <button
+          type="button"
+          onClick={() => gal.current?.click()}
+          className={cn(
+            "flex items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-surface-soft px-3 font-bold text-ink active:bg-border",
+            compact ? "h-12 text-[15px]" : "h-14 text-[16px]",
+          )}
+        >
+          <ImageIcon size={19} /> {compact ? "Галерея" : "Из галереи"}
+        </button>
+      </div>
+      {/* capture — сразу камера телефона/планшета (фронтальная для клиента) */}
+      <input ref={cam} type="file" accept="image/*" capture={selfie ? "user" : "environment"} className="hidden" onChange={(e) => take(e.target.files?.[0])} />
+      <input ref={gal} type="file" accept={selfie ? "image/*" : "image/*,application/pdf"} className="hidden" onChange={(e) => take(e.target.files?.[0])} />
+    </div>
+  );
+}
+
+/** Экран проверки: все введённые данные; нажал строку — вернулся к шагу. */
+function MicroReview({
+  f,
+  micros,
+  duplicateName,
+  onEdit,
+}: {
+  f: Form;
+  micros: MicroId[];
+  duplicateName: string | null;
+  onEdit: (id: MicroId) => void;
+}) {
+  const val = (id: MicroId): string | null => {
+    switch (id) {
+      case "photo": return f.photoFile ? "есть" : null;
+      case "name": return f.name.trim() || null;
+      case "phone": return f.phone || null;
+      case "phone2": return f.phone2 || null;
+      case "birth": return f.birth || null;
+      case "source":
+        if (f.source === "custom") return f.sourceCustom.trim() || null;
+        return SOURCE_OPTIONS.find((x) => x.id === f.source)?.label ?? null;
+      case "doc": return f.isForeigner ? `Иностранный · ${f.passportRaw.trim()}` : "Паспорт РФ";
+      case "passSerNum": return f.passSer || f.passNum ? `${f.passSer} ${f.passNum}`.trim() : null;
+      case "issuer": return f.passIssuer.trim() || null;
+      case "pdate": return f.passDate || null;
+      case "pcode": return f.passCode || null;
+      case "scans": {
+        const n = [f.passportMainFile, f.passportRegFile].filter(Boolean).length;
+        return n ? `${n} из 2` : null;
+      }
+      case "reg": return f.regAddr.trim() || null;
+      case "live": return f.sameAddr ? "совпадает с регистрацией" : f.liveAddr.trim() || null;
+      case "license": return f.licenseFile ? "есть" : null;
+      case "other": return f.otherDocs.length ? `${f.otherDocs.length} шт.` : null;
+      default: return null;
+    }
+  };
+  const all = micros.filter((id) => id !== "review");
+  // длинные значения (адреса, документ иностранца) — строкой во всю ширину
+  const LONG = new Set<MicroId>(["reg", "live", "doc", "issuer"]);
+  const shown = all.filter((id) => !MICRO_META[id].optional || val(id) != null);
+  const skipped = all.filter((id) => MICRO_META[id].optional && val(id) == null);
+  return (
+    <div className="flex flex-col gap-3">
+      {duplicateName && (
+        <div className="rounded-2xl bg-red-soft px-4 py-3 text-[15px] font-semibold text-red-ink">
+          Клиент с этим телефоном уже есть: «{duplicateName}». Не создавайте дубль — откройте его карточку.
+        </div>
+      )}
+      {/* Заполненное и обязательное — строками; пропущенное — одной строкой
+          чипов, чтобы проверка помещалась на экран без прокрутки. */}
+      <div className="grid grid-cols-1 overflow-hidden rounded-2xl border border-border landscape:grid-cols-2 landscape:grid-flow-dense">
+        {shown.map((id) => {
+          const v = val(id);
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onEdit(id)}
+              className={cn(
+                "flex w-full flex-col gap-0.5 border-b border-border bg-surface px-4 py-2 text-left active:bg-surface-soft",
+                LONG.has(id) ? "landscape:col-span-2" : "landscape:border-r",
+              )}
+            >
+              <span className="text-[13px] text-muted">{MICRO_META[id].label}</span>
+              <span className={cn("break-words text-[16px] font-semibold leading-snug", v ? "text-ink" : "text-red-ink")}>
+                {v ?? "не заполнено"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {skipped.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[14px] text-muted">Пропущено:</span>
+          {skipped.map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onEdit(id)}
+              className="rounded-full bg-surface-soft px-3 py-1.5 text-[13.5px] font-semibold text-ink-2 active:bg-border"
+            >
+              {MICRO_META[id].label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

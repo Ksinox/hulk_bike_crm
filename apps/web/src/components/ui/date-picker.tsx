@@ -204,6 +204,11 @@ type DatePickerProps = {
   /** Максимальная допустимая дата (ISO). Позже — disabled. */
   maxDate?: string;
   /**
+   * 22.10: ввод с клавиатуры без всплывающего календаря при фокусе (микрошаги
+   * анкеты на телефоне/планшете: календарь закрывал поле). Календарь — по значку.
+   */
+  typeOnly?: boolean;
+  /**
    * id следующего поля для автофокуса после полного ввода даты.
    * Аналогично паре «серия → номер» в паспортных полях: ввёл DD.MM.YYYY
    * полностью → курсор сам уехал дальше, без mouse'а.
@@ -223,6 +228,7 @@ export function DatePicker({
   minDate,
   maxDate,
   nextFieldId,
+  typeOnly = false,
 }: DatePickerProps) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(isoToRu(value));
@@ -300,7 +306,7 @@ export function DatePicker({
             }
           }}
           onBlur={handleTextBlur}
-          onFocus={() => setOpen(true)}
+          onFocus={() => !typeOnly && setOpen(true)}
           className={cn(
             "h-9 w-full rounded-[10px] border border-border bg-surface px-3 pr-9 text-[13px] text-ink outline-none transition-colors placeholder:text-muted-2 focus:border-blue-600",
             disabled && "cursor-not-allowed bg-surface-soft text-muted",
