@@ -50,6 +50,7 @@ import {
   type ReturnItem,
 } from "@/pages/dashboard/useDashboardMetrics";
 import { TABLET_PAD_X, TABLET_PAD_X_HEADER } from "../tablet";
+import { TabletHome } from "./TabletHome";
 
 /**
  * Мобильный дашборд. Переиспользует тот же data-хук, что и десктоп
@@ -100,6 +101,22 @@ export function MobileDashboard({
       : null;
   return (
     <div className="flex flex-col gap-4">
+      {/* 22.10: у планшета своя главная — TabletHome (крупно, одна очередь
+          звонков, парк с номерами). Ниже — телефонная. Окна (карточка
+          аренды, все просрочки, выручка, сделка) общие. */}
+      {tabletLayout ? (
+        <TabletHome
+          m={m}
+          meName={me?.name}
+          revenue={{ total: rev.total, count: rev.count, label: rev.period.label }}
+          reminders={reminders}
+          onRevenue={() => setRevenueOpen(true)}
+          onOpenRental={setOpenRentalId}
+          onCall={(name, phones) => callClient(name, phones)}
+          onSelect={onSelect}
+        />
+      ) : (
+      <>
       {/* Приветствие */}
       <div>
         <div className="text-[13px] font-medium text-muted">
@@ -376,11 +393,13 @@ export function MobileDashboard({
       {/* Последние действия — лента журнала (как в десктоп-CRM). */}
       <ActivityFeed compact />
 
+      </div>
+      </>
+      )}
+
       {revenueOpen && (
         <MobileRevenueScreen scope="all" onClose={() => setRevenueOpen(false)} />
       )}
-
-      </div>
 
       {/* Полный список просрочек («Все →»): ВСЕ должники, у каждого — звонок
           (кнопка справа) и тап по строке → карточка аренды. Модуль «Должники»
