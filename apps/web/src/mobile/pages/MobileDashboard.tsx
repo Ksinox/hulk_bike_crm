@@ -159,6 +159,10 @@ export function MobileDashboard({
           Деньги переехали под них во всю ширину. Если электротранспорта нет,
           пара как раньше: парк + деньги. */}
       <div
+        // 22.10: у карточек кругов на планшете высота «авто» (h-auto) — старый
+        // Safari (iPad Pro 2017) считал их h-full не от ряда сетки, а от всего
+        // контейнера (баги WebKit 260499 / 137730): круги вырастали до 600px
+        // и наезжали на блоки ниже. Растягивает их по ряду сама сетка.
         className={cn(
           "grid grid-cols-2 items-stretch gap-3",
           tabletLayout && "contents",
@@ -172,7 +176,7 @@ export function MobileDashboard({
           onClick={() => onSelect("fleet")}
           size={tabletLayout ? 118 : 92}
           layout={tabletLayout ? "row" : "stack"}
-          className={cn("rounded-2xl p-3.5", tabletLayout && "portrait:order-3 p-4")}
+          className={cn("rounded-2xl p-3.5", tabletLayout && "portrait:order-3 h-auto p-4")}
         />
         {hasElectro ? (
           <ParkLoadGauge
@@ -184,7 +188,7 @@ export function MobileDashboard({
             onClick={() => onSelect("partners")}
             size={tabletLayout ? 118 : 92}
             layout={tabletLayout ? "row" : "stack"}
-            className={cn("rounded-2xl p-3.5", tabletLayout && "portrait:order-4 p-4")}
+            className={cn("rounded-2xl p-3.5", tabletLayout && "portrait:order-4 h-auto p-4")}
           />
         ) : (
           <KpiTile
