@@ -588,3 +588,8 @@
 .micro-xl .text-\[11px\] { font-size: 14px; }
 .micro-xl .text-\[10px\] { font-size: 13px; }
 .micro-xl [data-micro-active] button.py-1\.5 { padding-top: 16px; padding-bottom: 16px; font-size: 17px; }
+
+/* короткие значения — короткие поля: длина поля подсказывает, сколько вводить */
+.micro-xl #f-pser { max-width: 170px; }
+.micro-xl #f-pnum { max-width: 240px; }
+.micro-xl #f-pcode { max-width: 220px; }

@@ -52,7 +52,7 @@ export async function run(page, ctx) {
   // первый свободный скутер — плитка с подписью модели
   const picked = await page.evaluate(() => {
     const h = [...document.querySelectorAll("h2")].find((x) => /скутер выдаём/.test(x.textContent || ""));
-    const tiles = h ? [...h.parentElement.querySelectorAll("button")].filter((b) => b.querySelector("span span, span")) : [];
+    const tiles = h ? [...h.closest("section").querySelectorAll("button")].filter((b) => b.querySelector("span span, span")) : [];
     const t = tiles.find((b) => /Jog|Gear|AIMA|Honda/i.test(b.textContent || "") && !/^Все|\(\d+\)$/.test((b.textContent || "").trim()));
     t?.click();
     return t?.textContent?.trim().slice(0, 30) ?? null;
@@ -63,10 +63,7 @@ export async function run(page, ctx) {
   console.log("далее:", await click("^Далее"));
   await ctx.sleep(1200);
   await ctx.shot(`${prefix}-4-${vp}`, { jpeg: true });
-  console.log("экипировка → залог:", await click("^Далее"));
-  await ctx.sleep(900);
-  await ctx.shot(`${prefix}-4b-${vp}`, { jpeg: true });
-  console.log("залог → оплата:", await click("^Далее"));
+  console.log("выдача → оплата:", await click("^Далее"));
   await ctx.sleep(900);
   console.log("оплата:", await click("^Наличные$"));
   await ctx.sleep(800);
