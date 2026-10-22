@@ -1972,6 +1972,12 @@ export const noteStickers = pgTable(
       .defaultNow(),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     dismissedByName: text("dismissed_by_name"),
+    /**
+     * 22.10: копия стикера аренды в «Заметках» клиента — ссылка на исходный
+     * стикер и аренду. Копия живёт отдельно (история по клиенту).
+     */
+    sourceStickerId: bigint("source_sticker_id", { mode: "number" }),
+    sourceRentalId: bigint("source_rental_id", { mode: "number" }),
   },
   (t) => ({
     entityIdx: index("note_stickers_entity_idx").on(t.entity, t.entityId),

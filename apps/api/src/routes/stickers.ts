@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { noteStickers } from "../db/schema.js";
+import { noteStickers, rentals } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 
 /* ============================================================
@@ -94,6 +94,36 @@ export async function stickersRoutes(app: FastifyInstance) {
       summary: `${kindWord(kind)} добавлена: «${text}»`,
       meta: { kind, text },
     });
+
+    // 22.10 (заказчик): заметка в аренде чаще про клиента — копия уходит в
+    // «Заметки» клиента и остаётся там, даже если в аренде её открепят или
+    // удалят. Паркинг — служебный стикер аренды, его не копируем.
+    if (entity === "rental" && row && (kind === "note" || kind === "contact")) {
+      const [r] = await db
+        .select({ clientId: rentals.clientId })
+        .from(rentals)
+        .where(eq(rentals.id, entityId));
+      if (r?.clientId) {
+        await db.insert(noteStickers).values({
+          entity: "client",
+          entityId: r.clientId,
+          kind,
+          text,
+          color,
+          createdByUserId: req.user?.userId ?? null,
+          createdByName: req.user?.login ?? null,
+          sourceStickerId: row.id,
+          sourceRentalId: entityId,
+        });
+        await logActivity(req, {
+          entity: "client",
+          entityId: r.clientId,
+          action: "note_added",
+          summary: `${kindWord(kind)} из аренды #${String(entityId).padStart(4, "0")}: «${text}»`,
+          meta: { kind, text, rentalId: entityId },
+        });
+      }
+    }
     return reply.code(201).send(row);
   });
 
