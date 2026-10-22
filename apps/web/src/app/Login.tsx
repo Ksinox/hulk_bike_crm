@@ -415,7 +415,7 @@ function RecoverForm({
         autoComplete="one-time-code"
         autoCapitalize="none"
         spellCheck={false}
-        className={cn(inputCls, "font-mono text-[16px] tracking-wider")}
+        className={cn(inputCls, "font-mono text-[16px] tracking-wider placeholder:font-sans placeholder:text-[14px] placeholder:tracking-normal")}
       />
       <input
         type="password"
