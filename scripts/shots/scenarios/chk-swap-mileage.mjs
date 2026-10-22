@@ -124,6 +124,17 @@ export async function run(page, ctx) {
     console.log("плитка:", await pickTile());
     await ctx.sleep(700);
     await ctx.shot(`swap-${phase}-${tag}-5-ready`, { jpeg: true });
+    // GATE=1: нажать «Заменить» — при смене категории снятого сервер
+    // попросит ключ директора; снимаем окно ключа и закрываем его.
+    if (process.env.GATE === "1") {
+      await click(/^Заменить и распечатать акт$/);
+      await ctx.sleep(1800);
+      const gate = await page.evaluate(() => /Ключ директора|ключ директора|Перенос техники/.test(document.body.innerText));
+      console.log("окно ключа:", gate);
+      await ctx.shot(`swap-${phase}-${tag}-6-gate`, { jpeg: true });
+      await page.keyboard.press("Escape");
+      await ctx.sleep(800);
+    }
     return;
   }
   // Телефон / планшет: шаги мастера до проверки.
