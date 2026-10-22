@@ -159,7 +159,8 @@ export function TabletHome({
           onClick={onRevenue}
           className="relative flex h-[156px] flex-col justify-between overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 to-blue-700 p-5 text-left text-white shadow-card active:scale-[0.99]"
         >
-          <div className="flex items-center justify-between">
+          {/* w-full: старый Safari не растягивает строку внутри <button>-флекса */}
+          <div className="flex w-full items-center justify-between">
             <span className="text-[15px] font-semibold text-white/80">Выручка</span>
             <Maximize2 size={18} className="text-white/70" />
           </div>
