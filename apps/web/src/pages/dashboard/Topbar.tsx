@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
+import { DirectorCodeButton } from "@/components/DirectorCode";
 import { setRole, useRole, type UserRole } from "@/lib/role";
 import { useLogout, useMe } from "@/lib/api/auth";
 import { GlobalSearch } from "./GlobalSearch";
@@ -123,6 +124,8 @@ export function Topbar() {
 
       {/* Пункт 1: висящие подтверждения ключа директора (виден при запросах). */}
       <ApprovalsBell />
+      {/* 22.10: меняющийся код — кнопка только у директора. */}
+      <DirectorCodeButton />
 
       <div className="relative" ref={bellRef}>
         <IconBtn

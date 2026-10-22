@@ -14,6 +14,7 @@ import {
   setDirectorGateHandler,
   type ApprovalContext,
 } from "@/lib/directorGate";
+import { useApprovalsStatus } from "@/lib/api/approvals";
 
 /**
  * Пункт 1 — окно «Ключ директора».
@@ -23,6 +24,11 @@ import {
  * пути: ввести ключ на месте ИЛИ отправить запрос директору — тот увидит его
  * с телефона в «Подтверждениях», ознакомится и подтвердит своим ключом.
  * Пока запрос висит — окно ждёт (поллинг), оператор может отменить.
+ *
+ * 22.10: три вида окна —
+ *  · директор в своём аккаунте — одна кнопка «Подтвердить», без ключа;
+ *  · включён меняющийся код — 6 цифр, которые продиктует директор;
+ *  · иначе — постоянный ключ, как раньше.
  */
 
 type GateState = {
@@ -70,13 +76,16 @@ function DirectorKeyDialog({
     title: "Защищённое действие",
     generic: "Действие требует подтверждения ключом директора.",
   };
+  const { data: status } = useApprovalsStatus();
+  const isDirector = !!status?.isDirector;
+  const codeMode = status?.mode === "code";
   const [key, setKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Режим ожидания подтверждения директором (запрос отправлен).
   const [waitingId, setWaitingId] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => inputRef.current?.focus(), []);
+  useEffect(() => inputRef.current?.focus(), [codeMode, isDirector]);
 
   // Поллинг статуса отправленного запроса (3 с).
   useEffect(() => {
@@ -104,22 +113,25 @@ function DirectorKeyDialog({
     };
   }, [waitingId, onDone]);
 
-  const submitKey = async () => {
-    if (!key.trim() || busy) return;
+  const submitKey = async (value = key) => {
+    if (!value.trim() || busy) return;
     setBusy(true);
     setError(null);
     try {
       const r = await api.post<{ ok: boolean; pass: string }>(
         "/api/approvals/verify",
-        { key: key.trim(), action },
+        codeMode ? { code: value.trim(), action } : { key: value.trim(), action },
       );
       onDone(`pass:${r.pass}`);
     } catch (e) {
       setError(
-        e instanceof ApiError && e.status === 403
-          ? "Неверный ключ."
-          : "Не удалось проверить ключ.",
+        e instanceof ApiError && (e.status === 403 || e.status === 429)
+          ? e.message
+          : codeMode
+            ? "Не удалось проверить код."
+            : "Не удалось проверить ключ.",
       );
+      if (codeMode) setKey("");
       setBusy(false);
     }
   };
@@ -214,23 +226,61 @@ function DirectorKeyDialog({
             )}
           </div>
 
-          {waitingId == null ? (
+          {!status ? (
+            <div className="flex justify-center py-6 text-muted">
+              <Loader2 size={20} className="animate-spin" />
+            </div>
+          ) : isDirector ? (
             <>
-              {/* Ввод ключа на месте */}
+              {/* Директор в своём аккаунте — одно нажатие, без ключа. */}
+              <button
+                type="button"
+                onClick={() => onDone("self")}
+                autoFocus
+                className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-green-ink text-[16px] font-bold text-white shadow-[0_6px_20px_rgba(22,163,74,0.28)] transition-transform hover:brightness-110 active:scale-[0.98]"
+              >
+                <ShieldCheck size={19} />
+                Подтвердить
+              </button>
+              <p className="-mt-1 text-center text-[12px] leading-snug text-muted-2">
+                Вы вошли как директор — ключ не нужен.
+              </p>
+            </>
+          ) : waitingId == null ? (
+            <>
+              {/* Ввод кода / ключа на месте */}
               <div>
+                {codeMode && (
+                  <div className="mb-2 text-center text-[12.5px] font-semibold leading-snug text-muted">
+                    Код директора — 6 цифр. Директор видит его в своём
+                    аккаунте, код меняется каждые 30 секунд.
+                  </div>
+                )}
                 <input
                   ref={inputRef}
-                  type="password"
+                  type={codeMode ? "text" : "password"}
+                  inputMode={codeMode ? "numeric" : undefined}
+                  maxLength={codeMode ? 7 : undefined}
                   value={key}
                   onChange={(e) => {
+                    if (codeMode) {
+                      const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+                      setKey(digits);
+                      setError(null);
+                      if (digits.length === 6) submitKey(digits);
+                      return;
+                    }
                     setKey(e.target.value);
                     setError(null);
                   }}
                   onKeyDown={(e) => e.key === "Enter" && submitKey()}
-                  placeholder="Ключ директора"
+                  placeholder={codeMode ? "••• •••" : "Ключ директора"}
                   autoComplete="off"
                   className={cn(
-                    "h-13 w-full rounded-2xl border-2 bg-surface px-4 py-3.5 text-center text-[18px] font-bold tracking-[0.25em] text-ink outline-none transition-colors placeholder:text-[14px] placeholder:font-normal placeholder:tracking-normal",
+                    "h-13 w-full rounded-2xl border-2 bg-surface px-4 py-3.5 text-center font-bold text-ink outline-none transition-colors placeholder:font-normal placeholder:tracking-normal",
+                    codeMode
+                      ? "font-display text-[30px] tabular-nums tracking-[0.35em] placeholder:text-[24px] placeholder:tracking-[0.3em] placeholder:text-muted-2"
+                      : "text-[18px] tracking-[0.25em] placeholder:text-[14px]",
                     error
                       ? "border-red-300 bg-red-50/40"
                       : "border-border focus:border-blue-500",
@@ -244,8 +294,8 @@ function DirectorKeyDialog({
               </div>
               <button
                 type="button"
-                onClick={submitKey}
-                disabled={!key.trim() || busy}
+                onClick={() => submitKey()}
+                disabled={!key.trim() || busy || (codeMode && key.length !== 6)}
                 className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-ink text-[14px] font-bold text-white transition-colors hover:bg-blue-600 disabled:opacity-40"
               >
                 {busy ? (
@@ -276,7 +326,7 @@ function DirectorKeyDialog({
               </button>
               <p className="-mt-1 text-center text-[11.5px] leading-snug text-muted-2">
                 Директор увидит запрос в CRM (в том числе с телефона),
-                ознакомится с операцией и подтвердит своим ключом.
+                ознакомится с операцией и подтвердит одним нажатием.
               </p>
             </>
           ) : (

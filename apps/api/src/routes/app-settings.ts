@@ -24,7 +24,12 @@ import { logActivity } from "../services/activityLog.js";
  * любому вошедшему. Теперь служебное не читается, а писать через общий PUT
  * можно только то, что настраивается на экране «Настройки».
  */
-const HIDDEN_KEYS = new Set(["director_key_hash"]);
+const HIDDEN_KEYS = new Set([
+  "director_key_hash",
+  // 22.10: секрет меняющегося кода — кто его прочитает, тот сам считает коды.
+  "director_totp_secret",
+  "director_totp_used_step",
+]);
 const WRITABLE_KEYS = new Set(["work_hours_start", "work_hours_end", "return_reasons", "breakdown_reasons"]);
 
 export async function appSettingsRoutes(app: FastifyInstance) {
