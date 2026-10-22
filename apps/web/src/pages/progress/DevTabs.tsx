@@ -4,6 +4,7 @@ import { SectionTabs } from "@/components/SectionTabs";
 import { type DevTab } from "@/app/sectionTabs";
 import { useUnreadChangelog } from "@/pages/whats-new/useUnreadChangelog";
 import { countFreshProgress } from "./useFreshProgress";
+import { PROGRESS_SEEN_EVENT } from "./useProgressSeen";
 
 /**
  * Вкладки раздела «Развитие» (18.09): «Текущие работы» — доска того, что
@@ -13,7 +14,13 @@ import { countFreshProgress } from "./useFreshProgress";
 export function DevTabs({ tab, onTab, touch = false }: { tab: DevTab; onTab: (t: DevTab) => void; touch?: boolean }) {
   const { unreadCount } = useUnreadChangelog();
   const [fresh, setFresh] = useState(countFreshProgress);
-  useEffect(() => setFresh(countFreshProgress()), [tab]);
+  useEffect(() => {
+    const recount = () => setFresh(countFreshProgress());
+    recount();
+    // зашли в раздел — всё прочитано (22.10), счётчик на вкладке гаснет
+    window.addEventListener(PROGRESS_SEEN_EVENT, recount);
+    return () => window.removeEventListener(PROGRESS_SEEN_EVENT, recount);
+  }, [tab]);
   return (
     <SectionTabs<DevTab>
       attr="dev-tab"
