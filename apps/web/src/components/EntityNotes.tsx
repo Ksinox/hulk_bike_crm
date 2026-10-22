@@ -19,6 +19,7 @@ import {
   type StickerEntity,
 } from "@/lib/api/stickers";
 import { toast } from "@/lib/toast";
+import { navigate } from "@/app/navigationStore";
 
 function fmt(iso: string): string {
   try {
@@ -130,8 +131,21 @@ export function EntityNotes({
                   <div className="mt-0.5 whitespace-pre-wrap break-words text-[13px] text-ink-2">
                     {s.text}
                   </div>
-                  <div className="mt-0.5 text-[10px] text-muted-2">
-                    {s.createdByName ?? "—"} · {fmt(s.createdAt)}
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-muted-2">
+                    <span>
+                      {s.createdByName ?? "—"} · {fmt(s.createdAt)}
+                    </span>
+                    {/* 22.10: копия стикера аренды — из какой аренды. */}
+                    {s.sourceRentalId != null && (
+                      <button
+                        type="button"
+                        onClick={() => navigate({ route: "rentals", rentalId: s.sourceRentalId! })}
+                        className="font-semibold text-blue-600 hover:underline"
+                        title="Открыть аренду"
+                      >
+                        из аренды #{String(s.sourceRentalId).padStart(4, "0")}
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
