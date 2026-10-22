@@ -27,6 +27,7 @@ import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { TABLET_WIZARD_PANEL } from "@/mobile/tablet";
 import { useTabletLayout } from "@/lib/useIsMobile";
 import { setNextApprovalContext } from "@/lib/directorGate";
+import { ReturnReasonPicker } from "@/components/ReturnReasonPicker";
 import {
   MileageCorrectionBox,
   MileageField,
@@ -92,6 +93,10 @@ export function SwapScooterDialog({
     null,
   );
   const [categoryError, setCategoryError] = useState(false);
+  // 22.10: причина «Поломка» — что именно сломалось (растущий список,
+  // как причины возврата); уходит в ремонт снятого скутера.
+  const [breakdownReason, setBreakdownReason] = useState<string | null>(null);
+  const breakdownMissing = reasonCategory === "breakdown" && !breakdownReason;
   const [search, setSearch] = useState("");
   const [oldStatus, setOldStatus] = useState<OldStatus>("repair");
   const [oldStatusTouched, setOldStatusTouched] = useState(false);
@@ -266,6 +271,10 @@ export function SwapScooterDialog({
       toast.error(mp[0], mp[1]);
       return;
     }
+    if (breakdownMissing) {
+      toast.error("Что сломалось?", "Выберите поломку из списка или впишите свою");
+      return;
+    }
     // 22.10: снятый скутер меняет категорию — сервер спросит ключ
     // директора; в окне ключа — что именно происходит.
     if (currentScooter && currentScooter.baseStatus !== oldStatus) {
@@ -284,6 +293,7 @@ export function SwapScooterDialog({
         oldScooterStatus: oldStatus,
         reasonCategory,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
+        ...(reasonCategory === "breakdown" && breakdownReason ? { breakdownReason } : {}),
         prevScooterMileage: mileage.forApi,
         ...(mileage.correctionForApi ? { prevScooterMileageCorrection: true } : {}),
       });
@@ -316,9 +326,9 @@ export function SwapScooterDialog({
     const STEP_TITLES = ["Старый скутер", "Причина", "Новый скутер", "Проверка"];
     const stepValid = [
       !mileage.blocked,
-      !!reasonCategory,
+      !!reasonCategory && !breakdownMissing,
       !!selectedId,
-      !!selectedId && !!reasonCategory && !mileage.blocked,
+      !!selectedId && !!reasonCategory && !breakdownMissing && !mileage.blocked,
     ];
     const modelNameOf = (sc: ApiScooter | null) => {
       if (!sc) return "—";
@@ -535,6 +545,11 @@ export function SwapScooterDialog({
                   );
                 })}
               </div>
+              {reasonCategory === "breakdown" && (
+                <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-soft/20 p-3">
+                  <ReturnReasonPicker kind="breakdown" value={breakdownReason} onChange={setBreakdownReason} compact />
+                </div>
+              )}
               <div className="mb-1.5 mt-4 text-[12px] font-semibold text-muted-2">
                 Комментарий (необязательно)
               </div>
@@ -630,6 +645,9 @@ export function SwapScooterDialog({
                     />
                   )}
                   <SwapSummaryRow label="Причина" value={reasonLabel} />
+                  {reasonCategory === "breakdown" && breakdownReason && (
+                    <SwapSummaryRow label="Что сломалось" value={breakdownReason} />
+                  )}
                   {reason.trim() && (
                     <SwapSummaryRow label="Комментарий" value={reason.trim()} />
                   )}
@@ -1042,6 +1060,11 @@ export function SwapScooterDialog({
               );
             })}
           </div>
+          {reasonCategory === "breakdown" && (
+            <div className="mt-2.5 rounded-[12px] border border-orange-200 bg-orange-soft/20 p-3">
+              <ReturnReasonPicker kind="breakdown" value={breakdownReason} onChange={setBreakdownReason} compact />
+            </div>
+          )}
           <input
             value={reason}
             onChange={(e) => setReason(e.target.value)}
@@ -1065,7 +1088,7 @@ export function SwapScooterDialog({
             </button>
             <button
               type="button"
-              disabled={!selectedId || mileage.blocked || swap.isPending}
+              disabled={!selectedId || mileage.blocked || breakdownMissing || swap.isPending}
               onClick={submit}
               className="inline-flex items-center gap-1.5 rounded-[10px] bg-blue-600 px-4 py-2 text-[13px] font-bold text-white hover:bg-blue-700 disabled:opacity-50"
             >

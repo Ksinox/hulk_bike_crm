@@ -135,7 +135,10 @@ export async function ensureRepairJobForScooter(opts: {
   rentalId?: number | null;
   damageReportId?: number | null;
   createdByUserId?: number | null;
+  /** 22.10: причина поломки (замена «Поломка», сдача в ремонт). */
+  breakdownReason?: string | null;
 }): Promise<number> {
+  const breakdown = opts.breakdownReason?.trim() || null;
   const [existing] = await db
     .select()
     .from(repairJobs)
@@ -146,6 +149,19 @@ export async function ensureRepairJobForScooter(opts: {
       ),
     );
   if (existing) {
+    // Новая поломка у уже открытого ремонта — дописываем, а не теряем.
+    if (breakdown && !(existing.breakdownReason ?? "").includes(breakdown)) {
+      await db
+        .update(repairJobs)
+        .set({
+          breakdownReason: existing.breakdownReason
+            ? `${existing.breakdownReason}; ${breakdown}`
+            : breakdown,
+          rentalId: opts.rentalId ?? existing.rentalId,
+          updatedAt: new Date(),
+        })
+        .where(eq(repairJobs.id, existing.id));
+    }
     // Если уже есть открытый job — обновляем damageReportId если он
     // привязан к более свежему акту. Так оператор видит чек-лист по
     // последнему ущербу даже если предыдущий ремонт не закрыли.
@@ -172,6 +188,7 @@ export async function ensureRepairJobForScooter(opts: {
       damageReportId: opts.damageReportId ?? null,
       status: "in_progress",
       createdByUserId: opts.createdByUserId ?? null,
+      breakdownReason: breakdown,
     })
     .returning();
   // Если есть damageReport — наполняем чек-лист его позициями.

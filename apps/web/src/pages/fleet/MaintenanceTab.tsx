@@ -302,6 +302,12 @@ function RepairJobRow({
             </span>
           )}
         </div>
+        {/* 22.10: поломка, указанная при замене или сдаче в ремонт. */}
+        {job.breakdownReason && (
+          <div className="mt-0.5 text-[12px] font-semibold text-orange-ink">
+            Поломка: {job.breakdownReason}
+          </div>
+        )}
         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted">
           <span>{formatDateRu(job.startedAt.slice(0, 10))}</span>
           {job.completedAt && (
