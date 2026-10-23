@@ -104,6 +104,8 @@ export const VARIABLE_CATALOG: VariableGroup[] = [
       { key: "damage.paidSum", label: "Уплачено по акту, ₽" },
       { key: "damage.debt", label: "К доплате (остаток долга), ₽" },
       { key: "damage.note", label: "Комментарий к акту" },
+      { key: "damage.payDueDate", label: "Срок оплаты ущерба (дата)" },
+      { key: "damage.payTerms", label: "Срок оплаты ущерба (абзац)" },
     ],
   },
   {

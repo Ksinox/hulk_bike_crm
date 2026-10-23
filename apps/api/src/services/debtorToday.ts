@@ -21,6 +21,7 @@ import {
   type PaymentForOverdue,
 } from "./debtorOverdue.js";
 import { isClosed, stageLabel, type DebtType, type Stage } from "./debtorStages.js";
+import { mskTodayYmd } from "./debtorFinance.js";
 
 export type TodayActionKind =
   | "systematic_violation" // 3 просрочки подряд → юрист
@@ -28,6 +29,7 @@ export type TodayActionKind =
   | "lawyer_check"         // долго у юриста без апдейта
   | "insurance_reminder"   // напоминание про страховую
   | "payment_due_today"    // плановый платёж сегодня
+  | "payment_check"        // срок оплаты из акта прошёл — «Пришла ли оплата?»
   | "first_contact"        // свежее дело — нужен первый контакт
   | "in_progress";         // активное дело без горящего триггера
 
@@ -59,7 +61,20 @@ export type DebtorForToday = {
   payments: PaymentForOverdue[];
   /** Опционально: запланированное напоминание (для insurance_reminder). */
   reminderDate?: Date | string | null;
+  /** Партия 23.10: остаток к взысканию (с учётом оплат и пени). */
+  remaining?: number;
+  /** «Ждём оплату до» (YYYY-MM-DD) — пока не наступило, звонить не нужно. */
+  paymentDueDate?: string | null;
+  clientPhone?: string;
+  clientPhotoKey?: string | null;
 };
+
+/** Дело ждёт оплату по акту и срок ещё не прошёл — не в прозвон. */
+export function isAwaitingPayment(d: DebtorForToday, today: Date = new Date()): boolean {
+  return !!d.paymentDueDate && d.paymentDueDate >= mskTodayYmd(today);
+}
+
+const ruDate = (ymd: string) => ymd.slice(0, 10).split("-").reverse().join(".");
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -83,6 +98,18 @@ export function getTodayAction(
   today: Date = new Date(),
 ): TodayAction | null {
   if (isClosed(d.stage)) return null;
+
+  // Партия 23.10: ждём оплату по акту — срок не наступил, не дёргаем.
+  if (isAwaitingPayment(d, today)) return null;
+  // Срок прошёл — первым делом спросить, пришла ли оплата.
+  if (d.paymentDueDate) {
+    return {
+      kind: "payment_check",
+      priority: "hot",
+      text: `Срок оплаты ${ruDate(d.paymentDueDate)} прошёл · пришла ли оплата?`,
+      primaryAction: { label: "Ответить", target: "" },
+    };
+  }
 
   // HOT 1: систематическое нарушение
   if (
@@ -211,6 +238,10 @@ function pluralDays(n: number): string {
 export type TodayBundle = {
   hottest: { debtor: DebtorForToday; action: TodayAction } | null;
   queue: { debtor: DebtorForToday; action: TodayAction }[];
+  /** Партия 23.10: все активные дела (для главной раздела). */
+  active: { debtor: DebtorForToday; action: TodayAction | null }[];
+  /** Ждут оплату по акту (срок не прошёл) — отдельно от прозвона. */
+  awaitingCount: number;
   totalActiveCount: number;
   totalActiveSum: number;
 };
@@ -240,7 +271,7 @@ export function getTodayBundle(
     const pb = PRIORITY_ORDER[b.action.priority];
     if (pa !== pb) return pa - pb;
     // в рамках одного приоритета — по сумме DESC
-    return b.debtor.totalAmount - a.debtor.totalAmount;
+    return amountOf(b.debtor) - amountOf(a.debtor);
   });
 
   // hottest — первый hot. Если hot'ов нет — null (тогда UI покажет просто
@@ -249,12 +280,23 @@ export function getTodayBundle(
   // queue — все остальные (без hottest)
   const queue = sorted.filter((x) => x !== hottest);
 
+  const actionById = new Map(withActions.map((x) => [x.debtor.id, x.action]));
+  const allActive = active
+    .map((debtor) => ({ debtor, action: actionById.get(debtor.id) ?? null }))
+    .sort((a, b) => amountOf(b.debtor) - amountOf(a.debtor));
+
   return {
     hottest,
     queue,
+    active: allActive,
+    awaitingCount: active.filter((d) => isAwaitingPayment(d, today)).length,
     totalActiveCount: active.length,
-    totalActiveSum: active.reduce((s, d) => s + d.totalAmount, 0),
+    totalActiveSum: active.reduce((s, d) => s + amountOf(d), 0),
   };
+}
+
+function amountOf(d: DebtorForToday): number {
+  return d.remaining ?? d.totalAmount;
 }
 
 /** Все активные дела, отсортированные по приоритету — для экрана «Список». */

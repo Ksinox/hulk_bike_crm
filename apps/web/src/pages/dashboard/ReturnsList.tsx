@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { fileUrl } from "@/lib/files";
 import { Check, Phone } from "lucide-react";
 import { Card } from "./KpiCard";
 import { StatusPill } from "./StatusPill";
@@ -98,14 +100,27 @@ function EmptyState() {
 export function ClientAvatar({
   initials,
   variant = "blue",
+  photoKey,
 }: {
   initials: string;
   variant?: "blue" | "red";
+  /** Фото из карточки клиента (миниатюра); нет/не загрузилось — инициалы. */
+  photoKey?: string | null;
 }) {
+  const [broken, setBroken] = useState(false);
   const cls =
     variant === "red"
       ? "bg-red-soft text-red-ink"
       : "bg-blue-50 text-blue-700";
+  if (photoKey && !broken)
+    return (
+      <img
+        src={fileUrl(photoKey, { variant: "thumb" }) ?? undefined}
+        alt=""
+        onError={() => setBroken(true)}
+        className="h-8 w-8 flex-shrink-0 rounded-[10px] object-cover"
+      />
+    );
   return (
     <div
       className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px] text-xs font-bold ${cls}`}

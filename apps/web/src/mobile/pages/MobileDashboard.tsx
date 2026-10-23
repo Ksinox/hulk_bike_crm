@@ -1,3 +1,4 @@
+import { isAwaitingPayment, ruDate } from "@/lib/debtors/types";
 import { useState } from "react";
 import {
   AlarmClock,
@@ -340,23 +341,21 @@ export function MobileDashboard({
         )}
       </Section>
 
-      {/* F4 + #25: висящие долги — клиенты с долгом по ущербу, который не виден
-          на активной аренде (нет активной аренды ИЛИ долг с другой, закрытой).
-          В просрочках их нет, во вкладку «Клиенты» оператор почти не ходит —
-          показываем здесь, чтобы не потерялись. Тап → карточка клиента.
-          Пусто → секцию не рендерим. */}
+      {/* F4 + #25 → 23.10: долги в «Должниках» — дела по ущербу и по
+          закрытым арендам (одна точка правды с разделом «Должники»).
+          Тап → само дело. Пусто → секцию не рендерим. */}
       {m.debtorsNoRental.length > 0 && (
         <Section
-          title="Висящие долги"
+          title="В «Должниках»"
           count={m.debtorsNoRental.length}
           icon={<Wallet size={15} />}
           tone="red"
         >
           {m.debtorsNoRental.map((d) => (
             <DebtorNoRentalRow
-              key={d.clientId}
+              key={d.debtorId}
               item={d}
-              onOpen={() => navigate({ route: "clients", clientId: d.clientId })}
+              onOpen={() => navigate({ route: "debtors", debtorId: d.debtorId })}
               onCall={() => callClient(d.clientName, [d.clientPhone])}
             />
           ))}
@@ -938,6 +937,14 @@ function OverdueRow({
   );
 }
 
+function caseReason(d: { type: string; paymentDueDate: string | null; caseNumber: string }): string {
+  const what =
+    d.type === "damage" ? "Ущерб" : d.type === "rental_overdue" ? "Долг аренды" : "Долг";
+  return isAwaitingPayment(d)
+    ? `${what} · ждём оплату до ${ruDate(d.paymentDueDate)}`
+    : `${what} · дело ${d.caseNumber}`;
+}
+
 function DebtorNoRentalRow({
   item,
   onOpen,
@@ -960,7 +967,7 @@ function DebtorNoRentalRow({
             {item.clientName}
           </div>
           <div className="truncate text-[11px] text-muted">
-            ущерб с прошлых аренд
+            {caseReason(item)}
           </div>
         </div>
         <div className="shrink-0 text-[13px] font-bold tabular-nums text-red">

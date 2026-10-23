@@ -370,8 +370,10 @@ export function RentalsList({
       const myDebt = debtAgg?.find((d) => d.rentalId === r.id);
       // realDebt — для статуса (просрочка): паркинг сюда НЕ входит, он не
       // делает аренду просроченной. Но в сумму к показу паркинг включаем.
+      // Партия 23.10: ущерб — не долг аренды (ведётся в «Должниках»), красные
+      // дни просрочки — только за аренду.
       const realDebt = myDebt
-        ? myDebt.overdueBalance + myDebt.damageBalance + myDebt.manualBalance
+        ? myDebt.overdueBalance + myDebt.manualBalance
         : 0;
       const parkingBalance = myDebt?.parkingBalance ?? 0;
       const pendingRent = myDebt?.pendingRent ?? 0;

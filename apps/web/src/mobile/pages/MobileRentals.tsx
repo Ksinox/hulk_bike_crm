@@ -156,11 +156,12 @@ export function MobileRentals() {
 
   const today = todayRu();
   const { data: debtAgg = [] } = useDebtAggregate();
-  // Реальный долг аренды (как в десктоп-списке): просрочка + ущерб + ручной.
-  // Паркинг сюда НЕ входит — он не делает аренду просроченной.
+  // Реальный долг аренды (как в десктоп-списке): просрочка + ручной.
+  // Паркинг сюда НЕ входит — он не делает аренду просроченной. Ущерб — тоже
+  // нет (23.10): он ведётся делом в «Должниках».
   const realDebtOf = (id: number): number => {
     const d = debtAgg.find((x) => x.rentalId === id);
-    return d ? d.overdueBalance + d.damageBalance + d.manualBalance : 0;
+    return d ? d.overdueBalance + d.manualBalance : 0;
   };
 
   /** Период чипса «Возвраты»: сегодня по умолчанию, можно неделю (06.09). */

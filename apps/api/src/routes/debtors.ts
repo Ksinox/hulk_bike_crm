@@ -21,11 +21,15 @@
  *   POST   /api/debtors/:id/close              закрыть дело
  */
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
+  clientDocuments,
   clients,
+  damageReports,
+  payments,
+  rentals,
   debtorCalls,
   debtorNotes,
   debtorPayments,
@@ -56,6 +60,12 @@ import { overdueAmount, overdueDays } from "../services/debtorOverdue.js";
 import { calculateInsuranceForecast } from "../services/debtorProfit.js";
 import { recommendNextAction } from "../services/debtorRecommend.js";
 import { syncRentalDebtorCases } from "../services/debtorSync.js";
+import {
+  addDaysYmd,
+  loadCaseFinance,
+  mskTodayYmd,
+  PENALTY_PER_DAY,
+} from "../services/debtorFinance.js";
 
 // ====== zod schemas ======
 
@@ -109,6 +119,23 @@ const PatchBody = z.object({
   insurancePayout: z.number().int().min(0).nullable().optional(),
   repairCost: z.number().int().min(0).nullable().optional(),
   lawyerName: z.string().max(200).nullable().optional(),
+  /** Пеня по п. 5.7 договора (1 000 ₽/день неоплаты ущерба). */
+  penaltyEnabled: z.boolean().optional(),
+  /** «Ждём оплату до» (YYYY-MM-DD) или null — дело в работе. */
+  paymentDueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
+});
+
+/** Ответ на «Пришла ли оплата?» после срока из акта. */
+const PaymentCheckBody = z.object({
+  answer: z.enum(["yes", "partial", "no"]),
+  amount: z.number().int().positive().optional(),
+  method: z.enum(["transfer", "cash"]).optional(),
+  /** Частично: через сколько дней спросить про остаток. */
+  days: z.number().int().min(1).max(365).optional(),
 });
 
 const TransitionBody = z.object({
@@ -216,21 +243,22 @@ async function loadPayments(debtorId: number) {
  * долг). Для dtp_victim (страховая выплата) — не применяется.
  * Возвращает null, если всё ок.
  */
+async function caseFinance(d: typeof debtors.$inferSelect) {
+  const m = await loadCaseFinance([d]);
+  return m.get(d.id)!;
+}
+
 async function closedPaidBasisError(
-  id: number,
-  d: { type: string; totalAmount: number },
+  d: typeof debtors.$inferSelect,
   to: Stage,
 ): Promise<{ error: string; message: string } | null> {
   if (to !== "closed_paid") return null;
   if (d.type === "dtp_victim") return null; // основание — выплата страховой
-  const all = await loadPayments(id);
-  const paid = paidSoFar(
-    all.map((p) => ({ paidAt: p.paidAt, paidAmount: p.paidAmount })),
-  );
-  if (paid >= d.totalAmount) return null;
+  const f = await caseFinance(d);
+  if (f.remaining <= 0) return null;
   return {
     error: "not_fully_paid",
-    message: `Нельзя закрыть как «оплачено»: погашено ${paid.toLocaleString("ru-RU")} из ${d.totalAmount.toLocaleString("ru-RU")} ₽. Сначала примите платежи на полную сумму — дело закроется само.`,
+    message: `Нельзя закрыть как «оплачено»: погашено ${f.paid.toLocaleString("ru-RU")} из ${f.total.toLocaleString("ru-RU")} ₽. Сначала примите платежи на полную сумму — дело закроется само.`,
   };
 }
 
@@ -240,14 +268,12 @@ async function closedPaidBasisError(
  */
 async function autoCloseIfPaid(
   req: FastifyRequest,
-  d: { id: number; totalAmount: number; stage: string; caseNumber: string },
+  dIn: { id: number },
 ): Promise<void> {
-  if (isClosed(d.stage as Stage)) return;
-  const all = await loadPayments(d.id);
-  const paid = paidSoFar(
-    all.map((p) => ({ paidAt: p.paidAt, paidAmount: p.paidAmount })),
-  );
-  if (paid < d.totalAmount) return;
+  const d = await getDebtor(dIn.id);
+  if (!d || isClosed(d.stage as Stage)) return;
+  const f = await caseFinance(d);
+  if (f.remaining > 0) return;
   const now = new Date();
   const userId = req.user?.userId ?? null;
   await db
@@ -274,6 +300,77 @@ async function autoCloseIfPaid(
     action: "closed",
     summary: `${d.caseNumber}: закрыто — долг погашен полностью`,
   });
+}
+
+/** Ключ миниатюры фото клиента (client_documents kind='photo') по id. */
+async function clientPhotoKeys(
+  ids: number[],
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  if (ids.length === 0) return out;
+  const rows = await db
+    .select({
+      clientId: clientDocuments.clientId,
+      fileKey: clientDocuments.fileKey,
+      id: clientDocuments.id,
+    })
+    .from(clientDocuments)
+    .where(
+      and(
+        inArray(clientDocuments.clientId, ids),
+        eq(clientDocuments.kind, "photo"),
+      ),
+    )
+    .orderBy(asc(clientDocuments.id));
+  for (const r of rows) if (!out.has(r.clientId)) out.set(r.clientId, r.fileKey);
+  return out;
+}
+
+/**
+ * Партия 23.10: деньги по делу ущерба гасят сам акт — платёж ущерба в
+ * аренде (как если бы его приняли в карточке аренды). Возвращает, сколько
+ * ушло на акт, а сколько — на пеню по п. 5.7 (сверх акта).
+ */
+async function applyToDamageReport(
+  req: FastifyRequest,
+  d: typeof debtors.$inferSelect,
+  amount: number,
+  method: "transfer" | "cash",
+  paidAt: Date,
+): Promise<{ damagePart: number; penaltyPart: number }> {
+  if (d.damageReportId == null) return { damagePart: 0, penaltyPart: 0 };
+  const [rep] = await db
+    .select({
+      id: damageReports.id,
+      rentalId: damageReports.rentalId,
+    })
+    .from(damageReports)
+    .where(eq(damageReports.id, d.damageReportId));
+  if (!rep) return { damagePart: 0, penaltyPart: 0 };
+  const f = await caseFinance(d);
+  const damagePart = Math.min(amount, f.reportBalance ?? 0);
+  const penaltyPart = Math.max(0, amount - damagePart);
+  if (damagePart > 0) {
+    await db.insert(payments).values({
+      rentalId: rep.rentalId,
+      type: "damage",
+      amount: damagePart,
+      method,
+      paid: true,
+      paidAt,
+      damageReportId: rep.id,
+      receivedByUserId: req.user?.userId ?? null,
+      note: `Принято в «Должниках» · ${d.caseNumber}`,
+    });
+    await logActivity(req, {
+      entity: "rental",
+      entityId: rep.rentalId,
+      action: "damage_payment",
+      summary: `Оплата ущерба ${damagePart.toLocaleString("ru-RU")} ₽ по акту — принята в «Должниках» (${d.caseNumber})`,
+      meta: { debtorId: d.id, damageReportId: rep.id, amount: damagePart, method },
+    });
+  }
+  return { damagePart, penaltyPart };
 }
 
 function clientDisplayName(d: {
@@ -324,12 +421,19 @@ export async function debtorsRoutes(app: FastifyInstance) {
         .from(clients);
       for (const c of cs) nameMap.set(c.id, { name: c.name, phone: c.phone });
     }
+    const fin = await loadCaseFinance(sorted);
+    const photos = await clientPhotoKeys(cids);
     const items = sorted.map((r) => {
       const c = r.clientId ? nameMap.get(r.clientId) ?? null : null;
+      const f = fin.get(r.id);
       return {
         ...r,
         clientName: c?.name ?? r.externalName ?? null,
         clientPhone: c?.phone ?? r.externalPhone ?? null,
+        clientPhotoKey: r.clientId ? photos.get(r.clientId) ?? null : null,
+        paid: f?.paid ?? 0,
+        remaining: f?.remaining ?? r.totalAmount,
+        penalty: f?.penalty ?? 0,
       };
     });
     return { items };
@@ -356,9 +460,15 @@ export async function debtorsRoutes(app: FastifyInstance) {
       for (const c of cs) clientsMap.set(c.id, { name: c.name, phone: c.phone });
     }
 
+    const fin = await loadCaseFinance(rows);
+    const photos = await clientPhotoKeys(clientIds);
     const list: DebtorForToday[] = rows.map((r) => {
       const cd = clientDisplayName(r, r.clientId ? clientsMap.get(r.clientId) ?? null : null);
       return {
+        remaining: fin.get(r.id)?.remaining ?? r.totalAmount,
+        paymentDueDate: r.paymentDueDate,
+        clientPhone: cd.phone,
+        clientPhotoKey: r.clientId ? photos.get(r.clientId) ?? null : null,
         id: r.id,
         caseNumber: r.caseNumber,
         type: r.type as DebtType,
@@ -467,6 +577,24 @@ export async function debtorsRoutes(app: FastifyInstance) {
       client = c ?? null;
     }
     const display = clientDisplayName(d, client);
+    const fin = await caseFinance(d);
+    const photoKey = d.clientId
+      ? (await clientPhotoKeys([d.clientId])).get(d.clientId) ?? null
+      : null;
+    let damageReport: { id: number; rentalId: number; payDueDate: string | null; total: number; depositCovered: number } | null = null;
+    if (d.damageReportId != null) {
+      const [r] = await db
+        .select({
+          id: damageReports.id,
+          rentalId: damageReports.rentalId,
+          payDueDate: damageReports.payDueDate,
+          total: damageReports.total,
+          depositCovered: damageReports.depositCovered,
+        })
+        .from(damageReports)
+        .where(eq(damageReports.id, d.damageReportId));
+      damageReport = r ?? null;
+    }
 
     const psForCalc = payments.map((p) => ({
       scheduledDate: p.scheduledDate,
@@ -474,12 +602,12 @@ export async function debtorsRoutes(app: FastifyInstance) {
       paidAt: p.paidAt,
       paidAmount: p.paidAmount,
     }));
-    const paid = paidSoFar(psForCalc);
+    const paid = fin.paid;
     const recommendation = recommendNextAction({
       stage: d.stage as Stage,
       stageEnteredAt: d.stageEnteredAt,
       lastLawyerUpdateAt: d.lastLawyerUpdateAt,
-      totalAmount: d.totalAmount,
+      totalAmount: fin.total,
       payments: psForCalc,
     });
     const forecast = calculateInsuranceForecast({
@@ -491,10 +619,18 @@ export async function debtorsRoutes(app: FastifyInstance) {
 
     return {
       ...d,
+      totalAmount: fin.total,
       displayName: display.name,
       displayPhone: display.phone,
+      clientPhotoKey: photoKey,
       paid,
-      progressPercent: progressPercent(d.totalAmount, paid),
+      remaining: fin.remaining,
+      penalty: fin.penalty,
+      penaltyDays: fin.penaltyDays,
+      penaltyPerDay: PENALTY_PER_DAY,
+      reportBalance: fin.reportBalance,
+      damageReport,
+      progressPercent: progressPercent(fin.total, paid),
       overdueDays: overdueDays(psForCalc),
       overdueAmount: overdueAmount(psForCalc),
       payments,
@@ -521,6 +657,13 @@ export async function debtorsRoutes(app: FastifyInstance) {
       });
     }
 
+    // 23.10: комментарий к делу обязателен (откуда долг, о чём договорились).
+    if (!body.comment || body.comment.trim().length < 3) {
+      return reply.code(400).send({
+        error: "comment_required",
+        message: "Добавьте комментарий: откуда долг и о чём договорились",
+      });
+    }
     const caseNumber = await nextCaseNumber();
     const userId = req.user?.userId ?? null;
 
@@ -580,6 +723,144 @@ export async function debtorsRoutes(app: FastifyInstance) {
     },
   );
 
+  // ---------- GET /by-rentals?ids=1,2 (партия 23.10) ----------
+  // Дела по арендам — для красной ссылки «Ущерб → в «Должниках»» в карточке
+  // аренды (вся цепочка продлений).
+  app.get<{ Querystring: { ids?: string } }>("/by-rentals", async (req) => {
+    const ids = (req.query.ids ?? "")
+      .split(",")
+      .map((x) => Number(x))
+      .filter((x) => Number.isFinite(x) && x > 0)
+      .slice(0, 200);
+    if (ids.length === 0) return { items: [] };
+    await syncRentalDebtorCases().catch((e) =>
+      app.log.warn({ err: e }, "debtor sync failed"),
+    );
+    const rows = await db
+      .select()
+      .from(debtors)
+      .where(inArray(debtors.relatedRentalId, ids));
+    const fin = await loadCaseFinance(rows);
+    return {
+      items: rows.map((r) => ({
+        id: r.id,
+        caseNumber: r.caseNumber,
+        type: r.type,
+        stage: r.stage,
+        relatedRentalId: r.relatedRentalId,
+        damageReportId: r.damageReportId,
+        paymentDueDate: r.paymentDueDate,
+        total: fin.get(r.id)?.total ?? r.totalAmount,
+        remaining: fin.get(r.id)?.remaining ?? r.totalAmount,
+      })),
+    };
+  });
+
+  // ---------- POST /:id/payment-check (партия 23.10) ----------
+  // Срок оплаты из акта прошёл — «Пришла ли оплата?»:
+  //   Да       → принимаем остаток, дело закрывается;
+  //   Частично → принимаем сумму, остаток ждём ещё N дней (спросим снова);
+  //   Нет      → дело в работу (прозвон), срок снимается.
+  app.post<{ Params: { id: string } }>(
+    "/:id/payment-check",
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      const parsed = PaymentCheckBody.safeParse(req.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      const d = await getDebtor(id);
+      if (!d) return reply.code(404).send({ error: "not found" });
+      if (isClosed(d.stage as Stage))
+        return reply.code(400).send({ error: "closed", message: "Дело уже закрыто" });
+      const { answer } = parsed.data;
+      const userId = req.user?.userId ?? null;
+      const method = parsed.data.method ?? "cash";
+      const f = await caseFinance(d);
+      const ru = (v: string) => v.split("-").reverse().join(".");
+
+      const takePayment = async (amount: number, note: string) => {
+        const now = new Date();
+        const { penaltyPart } = await applyToDamageReport(req, d, amount, method, now);
+        const maxN = await db
+          .select({ max: sql<number>`COALESCE(MAX(${debtorPayments.n}), 0)` })
+          .from(debtorPayments)
+          .where(eq(debtorPayments.debtorId, id));
+        await db.insert(debtorPayments).values({
+          debtorId: id,
+          n: Number(maxN[0]?.max ?? 0) + 1,
+          scheduledDate: ymd(now),
+          scheduledAmount: amount,
+          paidAt: now,
+          paidAmount: amount,
+          paidMethod: method,
+          paidByUserId: userId,
+          penaltyAmount: penaltyPart,
+          note,
+        });
+      };
+
+      if (answer === "yes") {
+        if (f.remaining > 0) await takePayment(f.remaining, "Оплата пришла в срок по акту");
+        await logActivity(req, {
+          entity: "debtor",
+          entityId: id,
+          action: "payment_check",
+          summary: `${d.caseNumber}: «Пришла ли оплата?» — да, ${f.remaining.toLocaleString("ru-RU")} ₽ (${method === "cash" ? "наличные" : "перевод"})`,
+        });
+        await db
+          .update(debtors)
+          .set({ paymentDueDate: null, updatedAt: new Date() })
+          .where(eq(debtors.id, id));
+        await autoCloseIfPaid(req, d);
+        return { ok: true };
+      }
+      if (answer === "partial") {
+        const amount = parsed.data.amount ?? 0;
+        if (amount <= 0 || amount >= f.remaining)
+          return reply.code(400).send({
+            error: "bad_amount",
+            message: `Частичная оплата — от 1 до ${(f.remaining - 1).toLocaleString("ru-RU")} ₽`,
+          });
+        const days = parsed.data.days ?? 3;
+        const due = addDaysYmd(mskTodayYmd(), days);
+        await takePayment(amount, "Частичная оплата по акту");
+        await db
+          .update(debtors)
+          .set({ paymentDueDate: due, updatedAt: new Date() })
+          .where(eq(debtors.id, id));
+        await logActivity(req, {
+          entity: "debtor",
+          entityId: id,
+          action: "payment_check",
+          summary: `${d.caseNumber}: «Пришла ли оплата?» — частично, ${amount.toLocaleString("ru-RU")} ₽; остаток ${(f.remaining - amount).toLocaleString("ru-RU")} ₽ ждём до ${ru(due)}`,
+          diff: {
+            due: {
+              label: "Ждём оплату до",
+              from: d.paymentDueDate ? ru(d.paymentDueDate) : "—",
+              to: ru(due),
+              kind: "text",
+            },
+          },
+        });
+        return { ok: true, paymentDueDate: due };
+      }
+      // Нет — в работу.
+      await db
+        .update(debtors)
+        .set({ paymentDueDate: null, updatedAt: new Date() })
+        .where(eq(debtors.id, id));
+      await logActivity(req, {
+        entity: "debtor",
+        entityId: id,
+        action: "payment_check",
+        summary: `${d.caseNumber}: «Пришла ли оплата?» — нет, дело в работу (прозвон)`,
+      });
+      return { ok: true };
+    },
+  );
+
   // ---------- PATCH /:id ----------
   app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {
     const id = Number(req.params.id);
@@ -588,12 +869,67 @@ export async function debtorsRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
     }
+    const before = await getDebtor(id);
+    if (!before) return reply.code(404).send({ error: "not found" });
+    const patch: Partial<typeof debtors.$inferInsert> = { ...parsed.data };
+    if (parsed.data.penaltyEnabled === true && !before.penaltyFrom) {
+      let from = before.paymentDueDate;
+      if (!from && before.damageReportId != null) {
+        const [r] = await db
+          .select({ due: damageReports.payDueDate })
+          .from(damageReports)
+          .where(eq(damageReports.id, before.damageReportId));
+        from = r?.due ?? null;
+      }
+      patch.penaltyFrom = from ?? mskTodayYmd();
+    }
     const [row] = await db
       .update(debtors)
-      .set({ ...parsed.data, updatedAt: new Date() })
+      .set({ ...patch, updatedAt: new Date() })
       .where(eq(debtors.id, id))
       .returning();
     if (!row) return reply.code(404).send({ error: "not found" });
+    if (
+      parsed.data.penaltyEnabled !== undefined &&
+      parsed.data.penaltyEnabled !== before.penaltyEnabled
+    ) {
+      await logActivity(req, {
+        entity: "debtor",
+        entityId: id,
+        action: "penalty_toggle",
+        summary: `${row.caseNumber}: пеня по п. 5.7 договора (${PENALTY_PER_DAY.toLocaleString("ru-RU")} ₽/день) — ${row.penaltyEnabled ? "включена" : "выключена"}`,
+        diff: {
+          penalty: {
+            label: "Пеня п. 5.7",
+            from: before.penaltyEnabled ? "считается" : "не считается",
+            to: row.penaltyEnabled ? "считается" : "не считается",
+            kind: "text",
+          },
+        },
+      });
+    }
+    if (
+      parsed.data.paymentDueDate !== undefined &&
+      parsed.data.paymentDueDate !== before.paymentDueDate
+    ) {
+      const ru = (v: string | null) =>
+        v ? v.split("-").reverse().join(".") : "в работе";
+      await logActivity(req, {
+        entity: "debtor",
+        entityId: id,
+        action: "payment_due_changed",
+        summary: `${row.caseNumber}: ждём оплату до — ${ru(before.paymentDueDate)} → ${ru(row.paymentDueDate)}`,
+        diff: {
+          due: {
+            label: "Ждём оплату до",
+            from: ru(before.paymentDueDate),
+            to: ru(row.paymentDueDate),
+            kind: "text",
+          },
+        },
+      });
+    }
+    await autoCloseIfPaid(req, row);
     return row;
   });
 
@@ -621,7 +957,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
       // Закрытие «оплачено» — ТОЛЬКО на основании платежей: сумма
       // зачисленного должна покрывать долг. Исключение — dtp_victim
       // (страховой поток: основание — полученная выплата, не график).
-      const closeErr = await closedPaidBasisError(id, d, to);
+      const closeErr = await closedPaidBasisError(d, to);
       if (closeErr) return reply.code(400).send(closeErr);
 
       const userId = req.user?.userId ?? null;
@@ -775,6 +1111,15 @@ export async function debtorsRoutes(app: FastifyInstance) {
     if (!d) return reply.code(404).send({ error: "not found" });
     const userId = req.user?.userId ?? null;
     const paidAt = parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date();
+    // Партия 23.10: по делу ущерба платёж сразу гасит акт в аренде (одна
+    // точка правды), сверх акта — пеня по п. 5.7.
+    const { penaltyPart } = await applyToDamageReport(
+      req,
+      d,
+      parsed.data.amount,
+      parsed.data.method,
+      paidAt,
+    );
 
     if (parsed.data.paymentN != null) {
       const all = await loadPayments(id);
@@ -817,6 +1162,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
             paidAmount: left,
             paidMethod: parsed.data.method,
             paidByUserId: userId,
+            penaltyAmount: penaltyPart,
             note: parsed.data.note ?? "аванс (переплата)",
           });
         }
@@ -839,6 +1185,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
           paidAmount: parsed.data.amount,
           paidMethod: parsed.data.method,
           paidByUserId: userId,
+          penaltyAmount: penaltyPart,
           note: parsed.data.note ?? null,
         })
         .where(
@@ -874,6 +1221,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
         paidAmount: parsed.data.amount,
         paidMethod: parsed.data.method,
         paidByUserId: userId,
+        penaltyAmount: penaltyPart,
         note: parsed.data.note ?? null,
       })
       .returning();
@@ -1046,7 +1394,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
         message: `Из ${stageLabel(from)} нельзя закрыть как ${stageLabel(to)}`,
       });
     }
-    const closeErr = await closedPaidBasisError(id, d, to);
+    const closeErr = await closedPaidBasisError(d, to);
     if (closeErr) return reply.code(400).send(closeErr);
     const userId = req.user?.userId ?? null;
     const now = new Date();

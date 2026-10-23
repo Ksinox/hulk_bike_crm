@@ -59,6 +59,10 @@ import { useApiScooters } from "@/lib/api/scooters";
 import { scooterModelName } from "@/components/ScooterName";
 import { useScooterNaming } from "@/lib/scooterNaming";
 import { navigate } from "@/app/navigationStore";
+import {
+  openOrCreateDamageDebtor,
+  useDebtorsByRentals,
+} from "@/lib/api/debtors";
 // v0.6.44: tabs убраны из карточки — новый 2-col layout (MasterBlock +
 // CalendarPanel/DocsInline). Сами компоненты табов остаются доступны
 // для других мест (например, drawer-режим использует HistoryTab).
@@ -453,24 +457,9 @@ export function RentalCard({
   // «Пополнить залог» — открывается тапом по плашке залога в «Финансовой
   // информации» (а не из «Принять оплату», где пополнение нелогично).
   const [topupOpen, setTopupOpen] = useState(false);
-  // Подсветка блока акта после перехода из поповера «Долг» (клик по строке
-  // «ущерб» проскролливает к акту и кратко подсвечивает его).
-  const [damageFlash, setDamageFlash] = useState(false);
-  const scrollToDamageAct = () => {
-    // Сначала даём мобильному bottom-sheet KPI доиграть закрытие (~280мс,
-    // см. BottomSheet), иначе скролл стартует на «уезжающем» layout. На
-    // устойчивом layout скроллим к блоку акта и подсвечиваем его.
-    // behavior:'auto' — вложенный overflow-контейнер этого экрана не
-    // поддерживает smooth (проверено: и scrollIntoView, и scrollTo smooth
-    // игнорируются); мгновенный скролл + flash-подсветка как визуальный якорь.
-    window.setTimeout(() => {
-      const el = document.getElementById("damage-act-section");
-      if (!el) return;
-      el.scrollIntoView({ behavior: "auto", block: "start" });
-      setDamageFlash(true);
-      window.setTimeout(() => setDamageFlash(false), 1800);
-    }, 300);
-  };
+  // Подсветка блока акта (раньше — переход из поповера «Долг»; с 23.10
+  // ущерб ведёт в дело «Должников»).
+  const [damageFlash] = useState(false);
   // Недостаток залога (списали в счёт ущерба/удержаний) — для красного флажка
   // на плашке «Долг» и кнопки пополнения в блоке акта.
   const depositGap = Math.max(
@@ -740,13 +729,27 @@ export function RentalCard({
   // событий (для таба «История долгов»). Источник правды для KPI «Долг».
   const debtQ = useRentalDebt(rental.id);
   const debtSummary = debtQ.data;
+  // Партия 23.10: ущерб — отдельным делом в «Должниках» и в экономику аренды
+  // не входит. Остаток ущерба берём из открытых дел по цепочке (закрыл/списал
+  // дело — ущерба больше нет); пока дела не подтянулись — по актам.
+  const rentalCasesQ = useDebtorsByRentals(chainIdsFull);
+  const openDamageCases = (rentalCasesQ.data ?? [])
+    .filter(
+      (c) =>
+        c.type === "damage" && !c.stage.startsWith("closed_") && c.remaining > 0,
+    )
+    .sort((a, b) => b.remaining - a.remaining);
+  const damageLeft = rentalCasesQ.data
+    ? openDamageCases.reduce((s, c) => s + c.remaining, 0)
+    : (debtSummary?.damageBalance ?? totalDebt);
   // v0.4.53: суммарный долг для определения «просрочка / просто
   // ожидаем возврата». Pending rent (paid=false) НЕ считаем —
-  // это плановая оплата, не просрочка.
+  // это плановая оплата, не просрочка. Ущерб аренду просроченной не делает
+  // (23.10); у завершённой — даёт пометку «Завершена с ущербом».
   const overdueRelatedDebt =
     (debtSummary?.overdueBalance ?? 0) +
-    (debtSummary?.damageBalance ?? totalDebt) +
-    (debtSummary?.manualBalance ?? 0);
+    (debtSummary?.manualBalance ?? 0) +
+    (rental.status === "completed" ? damageLeft : 0);
   const effectiveStatus = effectiveRentalStatus(
     rental.status,
     rental.endPlanned,
@@ -783,6 +786,22 @@ export function RentalCard({
   const withholdDepositMut = useWithholdDeposit();
   const forgiveOverdueMut = useForgiveOverdue();
   const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
+  // Партия 23.10: ссылка «Ущерб → в «Должниках»» — открыть дело ущерба
+  // (самое крупное открытое; если дела ещё нет — заведём по акту).
+  const openDamageCase = () => {
+    const c = openDamageCases[0];
+    if (c) {
+      navigate({ route: "debtors", debtorId: c.id });
+      return;
+    }
+    if (reportWithDebt)
+      void openOrCreateDamageDebtor({
+        reportId: reportWithDebt.id,
+        rentalId: reportWithDebt.rentalId ?? rental.id,
+        clientId: rental.clientId ?? null,
+        amount: reportWithDebt.debt,
+      });
+  };
   const reportLatest =
     reports.length > 0 ? reports[reports.length - 1]! : null;
   // #26: «за что» ущерб — короткий список повреждённых позиций из акта-должника
@@ -1020,7 +1039,6 @@ export function RentalCard({
     0,
     overdueDaysBalance - overdueEquipBalance,
   );
-  const damageBalance = debtSummary?.damageBalance ?? totalDebt;
   const manualBalance = debtSummary?.manualBalance ?? 0;
   // #179: у каждого долга — понятная подпись «за что». Экипировочную доплату
   // (manual_charge с комментарием «Изменение экипировки …») отделяем от
@@ -1044,8 +1062,8 @@ export function RentalCard({
   const unpaidParkingDays = parkingList
     .filter((s) => s.amount > s.paidAmount)
     .reduce((sum, s) => sum + s.days, 0);
-  const debtTotal =
-    pending + overdueBalance + damageBalance + manualBalance + parkingBalance;
+  // Партия 23.10: долг аренды — без ущерба (ущерб ведётся в «Должниках»).
+  const debtTotal = pending + overdueBalance + manualBalance + parkingBalance;
   // C4: длинная строка-состав долга (debtParts/debtHint) убрана из KPI —
   // состав теперь только в hover-поповере «Долг». Карточка не растягивается.
 
@@ -1800,6 +1818,7 @@ export function RentalCard({
   // переменную, чтобы рендерить его в разных местах: в обычном режиме —
   // в потоке body, в drawer-режиме — между секциями «Клиент» и «Скутер».
   const kpiStrip = (
+    <div className="flex flex-col gap-2">
     <div
       className={cn(
         "grid grid-cols-3 gap-3",
@@ -1903,7 +1922,6 @@ export function RentalCard({
           здесь только рендер + hover-поповер с детальным составом. */}
       <KpiCard
         label="Долг"
-        damageInDebt={damageBalance > 0}
         depositAlert={
           depositGap > 0
             ? {
@@ -1933,10 +1951,12 @@ export function RentalCard({
         }
         accent={combinedDebt > 0 ? "red" : "muted"}
         popover={
-          combinedDebt > 0 ? (
+          combinedDebt > 0 || damageLeft > 0 ? (
             <div className="space-y-1">
               <div className="font-bold text-ink">
-                Состав долга — {fmt(combinedDebt)} ₽
+                {combinedDebt > 0
+                  ? `Состав долга — ${fmt(combinedDebt)} ₽`
+                  : "Долга по аренде нет"}
               </div>
               {/* Долг ЭТОЙ аренды. Подзаголовок показываем только когда есть и
                   сквозной долг — иначе и так понятно. */}
@@ -1981,25 +2001,7 @@ export function RentalCard({
                 overdueDaysBalance + overdueFineBalance === 0 && (
                   <div>просрочка: <b>{fmt(overdueBalance)} ₽</b></div>
                 )}
-              {damageBalance > 0 && (
-                <button
-                  type="button"
-                  data-dismiss-sheet
-                  onClick={scrollToDamageAct}
-                  title="Открыть акт о повреждениях"
-                  className="group/da -mx-1 flex w-[calc(100%+0.5rem)] items-start gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-red-soft/60"
-                >
-                  <span className="min-w-0 flex-1">
-                    ущерб: <b>{fmt(damageBalance)} ₽</b>
-                    {damageWhatItems.length > 0 && (
-                      <span className="text-muted"> · {damageWhatLabel}</span>
-                    )}
-                  </span>
-                  <span className="mt-px shrink-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-red-ink opacity-60 transition-opacity group-hover/da:opacity-100">
-                    к акту →
-                  </span>
-                </button>
-              )}
+
               {equipmentManualBalance > 0 && (
                 <div>за экипировку: <b>{fmt(equipmentManualBalance)} ₽</b></div>
               )}
@@ -2008,6 +2010,30 @@ export function RentalCard({
               )}
               {parkingBalance > 0 && (
                 <div>паркинг: <b>{fmt(parkingBalance)} ₽</b></div>
+              )}
+              {damageLeft > 0 && (
+                <button
+                  type="button"
+                  data-dismiss-sheet
+                  onClick={openDamageCase}
+                  title="Открыть дело в «Должниках»"
+                  className="group/da -mx-1 mt-1.5 flex w-[calc(100%+0.5rem)] items-start gap-1.5 rounded-md border-t border-border px-1 pb-0.5 pt-1.5 text-left transition-colors hover:bg-red-soft/60"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="font-semibold text-red-ink">
+                      Ущерб {fmt(damageLeft)} ₽
+                    </span>
+                    {damageWhatItems.length > 0 && (
+                      <span className="text-muted"> · {damageWhatLabel}</span>
+                    )}
+                    <span className="block text-[10px] text-muted-2">
+                      не входит в долг аренды · ведётся в «Должниках»
+                    </span>
+                  </span>
+                  <span className="mt-px shrink-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-red-ink opacity-60 transition-opacity group-hover/da:opacity-100">
+                    к делу →
+                  </span>
+                </button>
               )}
               {/* Сквозной долг (с прошлых аренд) — отдельной секцией под *. */}
               {crossDebtTotal > 0 && (
@@ -2122,6 +2148,35 @@ export function RentalCard({
           hint={`${chainRentals.length} ${chainRentals.length === 1 ? "аренда" : chainRentals.length < 5 ? "аренды" : "аренд"} в серии`}
           accent="blue"
         />
+      )}
+    </div>
+      {/* Партия 23.10: ущерб — не долг аренды. Красная строка под плашками
+          ведёт в дело «Должников» (там срок оплаты и «Пришла ли оплата?»). */}
+      {damageLeft > 0 && (
+        <button
+          type="button"
+          data-damage-link
+          onClick={openDamageCase}
+          title="Открыть дело в «Должниках»"
+          className="group flex min-h-[44px] w-full items-center gap-2 rounded-[12px] border border-red-200 bg-red-soft/30 px-3.5 py-2 text-left transition-colors hover:border-red-300 hover:bg-red-soft/60"
+        >
+          <AlertTriangle size={15} className="shrink-0 text-red-ink" />
+          <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">
+            <b className="text-red-ink underline decoration-red-ink/40 underline-offset-2 group-hover:decoration-red-ink">
+              Ущерб {fmt(damageLeft)} ₽
+            </b>
+            <span className="text-muted">
+              {" "}
+              · не входит в долг аренды · {openDamageCases[0]
+                ? `дело ${openDamageCases[0].caseNumber}`
+                : "в «Должниках»"}
+            </span>
+          </span>
+          <ArrowUpRight
+            size={15}
+            className="shrink-0 text-muted-2 transition-colors group-hover:text-red-600"
+          />
+        </button>
       )}
     </div>
   );
@@ -2803,18 +2858,6 @@ export function RentalCard({
                           value={overdueBalance}
                         />
                       )}
-                    {damageBalance > 0 && (
-                      <DebtRow
-                        label="Ущерб по акту"
-                        formula={damageWhatLabel}
-                        value={damageBalance}
-                        onOpenAct={
-                          reportWithDebt
-                            ? () => setPreviewDamageId(reportWithDebt.id)
-                            : undefined
-                        }
-                      />
-                    )}
                     {equipmentManualBalance > 0 && (
                       <DebtRow
                         label="За экипировку"
@@ -2865,6 +2908,35 @@ export function RentalCard({
                   <div className="mt-1 text-[13px] text-muted">Долгов нет</div>
                 )}
               </div>
+              {/* Партия 23.10: ущерб — отдельно от долга аренды, ведётся делом
+                  в «Должниках». Строка ведёт прямо в дело. */}
+              {damageLeft > 0 && (
+                <button
+                  type="button"
+                  onClick={openDamageCase}
+                  className="group flex items-center gap-3 rounded-[12px] border border-red-200 bg-red-soft/30 px-4 py-3 text-left transition-colors hover:border-red-300 hover:bg-red-soft/50"
+                >
+                  <AlertTriangle size={16} className="shrink-0 text-red-ink" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-bold text-red-ink">
+                      Ущерб {fmt(damageLeft)} ₽
+                      {openDamageCases[0] && (
+                        <span className="ml-1.5 font-mono text-[11px] font-semibold text-red-ink/70">
+                          {openDamageCases[0].caseNumber}
+                        </span>
+                      )}
+                    </div>
+                    <div className="truncate text-[11px] text-muted">
+                      {damageWhatLabel ? `${damageWhatLabel} · ` : ""}не входит в
+                      долг аренды · ведётся в «Должниках»
+                    </div>
+                  </div>
+                  <ArrowUpRight
+                    size={15}
+                    className="shrink-0 text-muted-2 transition-colors group-hover:text-red-600"
+                  />
+                </button>
+              )}
             </div>
           </AccordionSection>
 
@@ -3612,7 +3684,6 @@ function KpiCard({
   accent = "default",
   popover,
   depositAlert,
-  damageInDebt = false,
 }: {
   label: string;
   value: string;
@@ -3626,9 +3697,6 @@ function KpiCard({
   /** Красный флажок «залог неполный» в углу плашки. Клик → пополнить залог
    *  (тот же диалог). stopPropagation — не задевает тап/поповер плашки. */
   depositAlert?: { onClick: () => void; title: string };
-  /** Значок-треугольник «в долг входит ущерб» — рядом со значением, чтобы
-   *  с одного взгляда понять, что по аренде есть повреждения. */
-  damageInDebt?: boolean;
 }) {
   const isMobile = useIsMobile();
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -3730,13 +3798,6 @@ function KpiCard({
           valueColor,
         )}
       >
-        {damageInDebt && (
-          <AlertTriangle
-            size={16}
-            className="shrink-0 text-red-ink"
-            aria-label="В долг входит ущерб"
-          />
-        )}
         {value}
       </div>
       {/* Инлайн-расшифровка — только на десктопе; на мобиле она в сниппете. */}

@@ -72,6 +72,8 @@ export type ApiDamageReport = {
   note: string | null;
   /** v0.2.75: реакция клиента на акт после печати. */
   clientAgreement: DamageClientAgreement;
+  /** Партия 23.10: срок оплаты ущерба (YYYY-MM-DD), п. 2.3.15 договора. */
+  payDueDate?: string | null;
   createdAt: string;
   updatedAt: string;
   /** Этап 2: номер текущей ревизии (1 = создание, +1 на каждую правку). */
@@ -131,6 +133,8 @@ export type CreateDamageReportInput = {
   sendScooterToRepair?: boolean;
   /** Part B: токен черновика — привязать загруженные заранее медиа к акту. */
   draftToken?: string | null;
+  /** Партия 23.10: срок оплаты ущерба, дней от акта (по умолчанию 7). */
+  payDays?: number;
 };
 
 export type DamagePaymentInput = {
@@ -233,6 +237,8 @@ export function useCreateDamageReport() {
       api.post<ApiDamageReport>("/api/damage-reports", input),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: damageReportsKeys.all });
+      // Партия 23.10: ущерб живёт делом в «Должниках».
+      qc.invalidateQueries({ queryKey: ["debtors"] });
       qc.invalidateQueries({ queryKey: ["rentals"] });
       qc.invalidateQueries({ queryKey: ["scooters"] });
       qc.invalidateQueries({
@@ -251,11 +257,15 @@ export function usePatchDamageReport() {
         depositCovered?: number;
         note?: string | null;
         items?: CreateDamageItem[];
+        /** Партия 23.10: срок оплаты ущерба (YYYY-MM-DD). */
+        payDueDate?: string;
       };
     }) =>
       api.patch<ApiDamageReport>(`/api/damage-reports/${args.id}`, args.patch),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: damageReportsKeys.all });
+      // Партия 23.10: ущерб живёт делом в «Должниках».
+      qc.invalidateQueries({ queryKey: ["debtors"] });
     },
   });
 }
@@ -265,7 +275,10 @@ export function useDeleteDamageReport() {
   return useMutation({
     mutationFn: (id: number) =>
       api.delete<{ ok: true }>(`/api/damage-reports/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: damageReportsKeys.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: damageReportsKeys.all });
+      qc.invalidateQueries({ queryKey: ["debtors"] });
+    },
   });
 }
 
@@ -283,6 +296,8 @@ export function useDamageAgreement() {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: damageReportsKeys.all });
+      // Партия 23.10: ущерб живёт делом в «Должниках».
+      qc.invalidateQueries({ queryKey: ["debtors"] });
       qc.invalidateQueries({ queryKey: ["rentals"] });
       qc.invalidateQueries({ queryKey: ["activity"] });
     },
@@ -300,6 +315,8 @@ export function useDamagePayment() {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: damageReportsKeys.all });
+      // Партия 23.10: ущерб живёт делом в «Должниках».
+      qc.invalidateQueries({ queryKey: ["debtors"] });
       qc.invalidateQueries({ queryKey: ["rentals"] });
       qc.invalidateQueries({ queryKey: ["payments"] });
       // v0.5.4: критично инвалидировать сводку долга и aggregate —
@@ -386,6 +403,8 @@ export function useUploadDamageMedia() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: damageReportsKeys.all });
+      // Партия 23.10: ущерб живёт делом в «Должниках».
+      qc.invalidateQueries({ queryKey: ["debtors"] });
     },
   });
 }
@@ -443,6 +462,8 @@ export function useDeleteDamageMedia() {
       api.delete<void>(`/api/damage-reports/media/${mediaId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: damageReportsKeys.all });
+      // Партия 23.10: ущерб живёт делом в «Должниках».
+      qc.invalidateQueries({ queryKey: ["debtors"] });
     },
   });
 }

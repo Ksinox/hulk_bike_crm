@@ -133,6 +133,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
         type: d.type,
         amount: d.amount,
         method: d.method,
+        damageReportId: d.damageReportId ?? null,
       }).catch((e) => req.log.warn({ err: e }, "debtor mirror failed"));
     }
     return reply.code(201).send(row);
@@ -230,6 +231,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
         type: row.type,
         amount: row.amount,
         method: row.method,
+        damageReportId: row.damageReportId,
       }).catch((e) => req.log.warn({ err: e }, "debtor mirror failed"));
     }
     return row;

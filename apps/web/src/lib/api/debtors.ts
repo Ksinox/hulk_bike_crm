@@ -31,6 +31,11 @@ const keys = {
 function invalidateLinked(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["clients"] });
   qc.invalidateQueries({ queryKey: ["activity"] });
+  // Партия 23.10: оплата по делу ущерба гасит акт в аренде — обновляем и её.
+  qc.invalidateQueries({ queryKey: ["rental-debt"] });
+  qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
+  qc.invalidateQueries({ queryKey: ["damage-reports"] });
+  qc.invalidateQueries({ queryKey: ["payments"] });
 }
 
 /**
@@ -68,6 +73,62 @@ export async function openOrCreateDamageDebtor(args: {
       (e as Error).message ?? "",
     );
   }
+}
+
+/** Партия 23.10: дела по арендам (вся цепочка) — для ссылки из карточки аренды. */
+export type RentalDebtorCase = {
+  id: number;
+  caseNumber: string;
+  type: DebtType;
+  stage: Stage;
+  relatedRentalId: number | null;
+  damageReportId: number | null;
+  paymentDueDate: string | null;
+  total: number;
+  remaining: number;
+};
+
+export function useDebtorsByRentals(rentalIds: number[]) {
+  const ids = [...new Set(rentalIds.filter((x) => x > 0))].sort((a, b) => a - b);
+  return useQuery({
+    queryKey: [...keys.all, "by-rentals", ids.join(",")],
+    queryFn: () =>
+      api
+        .get<{ items: RentalDebtorCase[] }>(
+          `/api/debtors/by-rentals?ids=${ids.join(",")}`,
+        )
+        .then((r) => r.items),
+    enabled: ids.length > 0,
+    staleTime: 30_000,
+  });
+}
+
+/** «Пришла ли оплата?» — ответ после срока из акта. */
+export function usePaymentCheck() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      id: number;
+      answer: "yes" | "partial" | "no";
+      amount?: number;
+      method?: PaymentMethod;
+      days?: number;
+    }) =>
+      api.post<{ ok: boolean; paymentDueDate?: string }>(
+        `/api/debtors/${args.id}/payment-check`,
+        {
+          answer: args.answer,
+          amount: args.amount,
+          method: args.method,
+          days: args.days,
+        },
+      ),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: keys.detail(vars.id) });
+      qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
+    },
+  });
 }
 
 export function useDebtorsList(params?: { stage?: string; type?: string; closed?: boolean }) {
@@ -148,6 +209,7 @@ export function usePatchDebtor() {
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
     },
   });
 }

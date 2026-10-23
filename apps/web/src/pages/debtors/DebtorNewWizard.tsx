@@ -45,7 +45,7 @@ const TYPE_OPTIONS: { id: DebtType; title: string; descr: string }[] = [
   },
   {
     id: "rental_overdue",
-    title: "Просрочка аренды",
+    title: "Долг за аренду",
     descr: "Старая задолженность по аренде, не закрытая клиентом.",
   },
 ];
@@ -98,7 +98,11 @@ export function DebtorNewWizard({
       externalName.trim().length > 0 &&
       externalPhone.trim().length > 0;
   const canStep3 = type != null;
-  const canCreate = Number(totalAmount) > 0 && type != null && canStep2;
+  // 23.10: комментарий обязателен — без него через неделю никто не вспомнит,
+  // откуда долг и о чём договорились.
+  const commentOk = comment.trim().length >= 3;
+  const canCreate =
+    Number(totalAmount) > 0 && type != null && canStep2 && commentOk;
 
   const submit = async () => {
     if (!canCreate || !type) return;
@@ -396,15 +400,23 @@ export function DebtorNewWizard({
               </div>
               <div>
                 <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-                  Комментарий (необязательно)
+                  Комментарий <span className="text-red-ink">*</span>
                 </label>
                 <textarea
                   rows={3}
-                  className="w-full resize-none rounded-[10px] border border-border bg-white p-3 text-[13px] text-ink outline-none focus:border-ink"
-                  placeholder="Где, когда, ссылки, доп. контакты…"
+                  data-required-comment
+                  className={`w-full resize-none rounded-[10px] border bg-white p-3 text-[13px] text-ink outline-none focus:border-ink ${
+                    commentOk ? "border-border" : "border-red-200"
+                  }`}
+                  placeholder="Откуда долг, о чём договорились, доп. контакты…"
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                 />
+                {!commentOk && (
+                  <div className="mt-1 text-[11.5px] text-red-ink">
+                    Обязательно — коротко, откуда долг и что обещал клиент
+                  </div>
+                )}
               </div>
               {type && (
                 <div className="rounded-[10px] bg-surface-soft px-4 py-3 text-[12.5px] text-muted">

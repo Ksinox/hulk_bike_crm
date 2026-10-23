@@ -199,7 +199,7 @@ describe("debtorStages — labels", () => {
   });
   it("typeLabel русские", () => {
     expect(typeLabel("dtp_guilty")).toBe("ДТП · виновник");
-    expect(typeLabel("rental_overdue")).toBe("Просрочка аренды");
+    expect(typeLabel("rental_overdue")).toBe("Долг за аренду");
   });
 });
 

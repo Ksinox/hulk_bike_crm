@@ -14,9 +14,12 @@ import {
   STAGE_LABEL,
   formatRub,
   isProblemCase,
+  isAwaitingPayment,
+  ruDate,
   type DebtType,
   type Stage,
 } from "@/lib/debtors/types";
+import { fileUrl } from "@/lib/files";
 
 type Kind = "all" | "money" | "problem";
 const KINDS: { id: Kind; label: string }[] = [
@@ -62,10 +65,10 @@ export function DebtorsList({
   });
   const totalSum = filtered
     .filter((d) => !d.stage.startsWith("closed_"))
-    .reduce((s, d) => s + d.totalAmount, 0);
+    .reduce((s, d) => s + (d.remaining ?? d.totalAmount), 0);
 
   return (
-    <section className="rounded-[18px] bg-white p-7 shadow-card-sm">
+    <section className="rounded-[18px] bg-white p-4 shadow-card-sm sm:p-7">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button
@@ -151,11 +154,9 @@ export function DebtorsList({
                 key={d.id}
                 type="button"
                 onClick={() => onOpenCase(d.id)}
-                className={`grid grid-cols-[36px_1fr_auto_auto_auto] items-center gap-3.5 rounded-[12px] border border-border bg-white px-4 py-3 text-left transition-all hover:translate-x-1 hover:border-ink hover:shadow-card ${closed ? "opacity-60" : ""}`}
+                className={`grid grid-cols-[36px_1fr_auto] items-center gap-3 rounded-[12px] border border-border bg-white px-3 py-3 text-left transition-all hover:translate-x-1 hover:border-ink hover:shadow-card sm:grid-cols-[36px_1fr_auto_auto_auto] sm:gap-3.5 sm:px-4 ${closed ? "opacity-60" : ""}`}
               >
-                <div className="grid h-9 w-9 place-items-center rounded-full border border-border bg-gradient-to-br from-blue-50 to-surface-soft text-[12px] font-semibold text-ink">
-                  {(d.clientName ?? "?").slice(0, 2).toUpperCase()}
-                </div>
+                <ListAvatar name={d.clientName ?? "?"} photoKey={d.clientPhotoKey ?? null} />
                 <div className="min-w-0">
                   <div className="truncate text-[14.5px] font-semibold leading-[1.2] text-ink">
                     {d.clientName ?? "—"}
@@ -171,7 +172,7 @@ export function DebtorsList({
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="hidden items-center gap-1.5 sm:flex">
                   {isProblemCase(d.type, d.stage as Stage) && (
                     <span className="inline-flex h-6 items-center gap-1 rounded-full bg-red-soft px-2 text-[11px] font-bold text-red-ink">
                       <AlertTriangle size={11} /> Проблемный
@@ -184,11 +185,19 @@ export function DebtorsList({
                     {TYPE_LABEL[d.type]}
                   </span>
                 </div>
-                <span className="rounded-full bg-surface-soft px-2.5 py-1 text-[11.5px] font-medium text-muted">
-                  {STAGE_LABEL[d.stage]}
+                <span
+                  className={`hidden rounded-full px-2.5 py-1 text-[11.5px] font-medium sm:inline ${
+                    !closed && isAwaitingPayment(d)
+                      ? "bg-blue-50 text-blue-700"
+                      : "bg-surface-soft text-muted"
+                  }`}
+                >
+                  {!closed && isAwaitingPayment(d)
+                    ? `ждём до ${ruDate(d.paymentDueDate)}`
+                    : STAGE_LABEL[d.stage]}
                 </span>
                 <div className="text-right font-display text-[16px] font-semibold tracking-[-0.01em] text-ink tabular-nums">
-                  {formatRub(d.totalAmount)}
+                  {formatRub(closed ? d.totalAmount : (d.remaining ?? d.totalAmount))}
                 </div>
               </button>
             );
@@ -196,5 +205,23 @@ export function DebtorsList({
         </div>
       )}
     </section>
+  );
+}
+
+function ListAvatar({ name, photoKey }: { name: string; photoKey: string | null }) {
+  const [broken, setBroken] = useState(false);
+  if (photoKey && !broken)
+    return (
+      <img
+        src={fileUrl(photoKey, { variant: "thumb" }) ?? undefined}
+        alt=""
+        onError={() => setBroken(true)}
+        className="h-9 w-9 rounded-full object-cover"
+      />
+    );
+  return (
+    <div className="grid h-9 w-9 place-items-center rounded-full border border-border bg-gradient-to-br from-blue-50 to-surface-soft text-[12px] font-semibold text-ink">
+      {name.slice(0, 2).toUpperCase()}
+    </div>
   );
 }

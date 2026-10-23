@@ -177,6 +177,19 @@ const CSS = `
 `;
 
 /**
+ * Партия 23.10: срок оплаты ущерба (п. 2.3.15 договора) — абзац для акта.
+ * Пустая строка, если долга нет или срок не задан (старые акты).
+ */
+function payTermsSentence(
+  report: { payDueDate?: string | null },
+  debt: number,
+): string {
+  if (debt <= 0 || !report.payDueDate) return "";
+  const due = report.payDueDate.slice(0, 10).split("-").reverse().join(".");
+  return `Арендатор обязуется возместить ущерб в сумме <b>${fmtMoney(debt)} ₽</b> в срок до <b>${due}</b> включительно (п. 2.3.15 договора). За каждый день просрочки возмещения Арендодатель вправе начислить 1 000 ₽ (п. 5.7 договора).`;
+}
+
+/**
  * Сборка контекста damage.* переменных для подстановки в override-шаблон.
  * Возвращает map { 'damage.itemsTable': '<table>...</table>', ... }.
  * Используется substituteDamageVariables ниже.
@@ -242,6 +255,10 @@ function buildDamageContext(b: DamageBundle): Record<string, string> {
     "damage.paidSum": fmtMoney(paid),
     "damage.debt": fmtMoney(debt),
     "damage.note": report.note ? escape(report.note) : "",
+    "damage.payDueDate": report.payDueDate
+      ? report.payDueDate.slice(0, 10).split("-").reverse().join(".")
+      : "—",
+    "damage.payTerms": payTermsSentence(report, debt),
   };
 }
 
@@ -276,6 +293,15 @@ function substituteDamageVariables(
     if (key in ctx) return ctx[key] ?? "";
     return resolveVariable(key, bundle);
   });
+  // 23.10: шаблон правили до появления срока оплаты — вставляем абзац сами
+  // перед «С перечнем повреждений … СОГЛАСЕН» (или в конец).
+  const terms = ctx["damage.payTerms"];
+  if (terms && !/damage\.pay(Terms|DueDate)/.test(html)) {
+    const para = `<p class="para" style="margin-top:10pt">${terms}</p>`;
+    const at = out.indexOf("С перечнем повреждений");
+    const open = at >= 0 ? Math.max(out.lastIndexOf("<p", at), out.lastIndexOf("<div", at)) : -1;
+    out = open >= 0 ? out.slice(0, open) + para + out.slice(open) : out + para;
+  }
   return out;
 }
 
@@ -447,6 +473,8 @@ function renderDamageHtmlSystem(b: DamageBundle): string {
 
   ${paymentsBlock}
 
+  ${payTermsSentence(report, debt) ? `<div class="para" style="margin-top:10pt">${payTermsSentence(report, debt)}</div>` : ""}
+
   <div class="para" style="margin-top:14pt">
     С перечнем повреждений, расчётом стоимости устранения и итоговой суммой к доплате <b>СОГЛАСЕН</b>:
   </div>
@@ -530,6 +558,8 @@ export function renderDamageSystemForEditor(): string {
     </tr>
   </table>
 </div>
+
+<p class="para" style="margin-top:10pt">${pill("damage.payTerms", "Срок оплаты ущерба (абзац)")}</p>
 
 <p class="para" style="margin-top:14pt">
   С перечнем повреждений, расчётом стоимости устранения и итоговой суммой к доплате <b>СОГЛАСЕН</b>:

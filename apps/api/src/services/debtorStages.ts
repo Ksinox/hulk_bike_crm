@@ -295,7 +295,7 @@ export function typeLabel(type: DebtType): string {
     dtp_victim: "ДТП · потерпевший",
     damage: "Ущерб",
     theft: "Угон",
-    rental_overdue: "Просрочка аренды",
+    rental_overdue: "Долг за аренду",
   };
   return labels[type];
 }
