@@ -40,6 +40,25 @@ const detail = async (id) => (await call("GET", `/api/debtors/${id}`)).body;
 const rentalDebt = async (rid) => (await call("GET", `/api/rentals/${rid}/debt`)).body;
 const client = async (cid) => (await call("GET", `/api/clients/${cid}`)).body;
 
+// Тестовый директор (только в копии базы): подтверждает защищённые операции.
+let dirCookie = "";
+async function asDirector(method, path, body) {
+  if (!dirCookie) {
+    const r = await fetch(API + "/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ login: "sb_director", password: process.env.SB_PASS }),
+    });
+    dirCookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+  }
+  const r = await fetch(API + path, {
+    method,
+    headers: { "content-type": "application/json", cookie: dirCookie, "x-director-approval": "self" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return { status: r.status, body: await r.json().catch(() => null) };
+}
+
 const login = await call("POST", "/api/auth/login", {
   login: process.env.SB_LOGIN ?? "sb_admin",
   password: process.env.SB_PASS,
@@ -132,7 +151,7 @@ d = await detail(c.id);
 ok(d.stage === "created" && d.remaining > 0, "дело переоткрыто, остаток снова есть", { st: d.stage, rem: d.remaining });
 
 console.log("\n8. Списали дело → ущерба в аренде и у клиента больше нет");
-const wo = await call("POST", `/api/debtors/${c.id}/close`, { toStage: "closed_written_off", reason: "ТЕСТ списание" });
+const wo = await asDirector("POST", `/api/debtors/${c.id}/close`, { toStage: "closed_written_off", reason: "ТЕСТ списание" });
 ok(wo.status === 200, "списано", wo.body);
 c = await caseOf(r.id, act.id);
 ok(c.stage === "closed_written_off", "дело списано");
@@ -242,6 +261,80 @@ console.log("\n13. Выкуп → «Должники»: просрочка по 
   await call("GET", "/api/debtors"); // sync
   const bc3 = await detail(tr.body.debtor.id);
   ok(bc3.stage === "closed_paid", "клиент догнал график — дело закрылось само", { st: bc3.stage, why: bc3.closedReason });
+}
+
+
+console.log("\n14. Долг за аренду: оплата частями в карточке аренды и паркинг — всё видно в деле");
+{
+  const [cr] = await sql`
+    select r.id from rentals r
+    where r.status='completed'
+      and not exists (select 1 from debtors x where x.related_rental_id=r.id)
+      and not exists (select 1 from payments p where p.rental_id=r.id and p.type='rent' and not p.paid)
+    order by r.id desc offset 1 limit 1`;
+  const rid = Number(cr.id);
+  await sql`insert into debt_entries (rental_id, kind, amount, comment) values (${rid}, 'manual_charge', 2000, 'ТЕСТ ручной долг 2')`;
+  let items = (await call("GET", `/api/debtors/by-rentals?ids=${rid}`)).body.items;
+  const rc = items.find((x) => x.type === "rental_overdue");
+  ok(!!rc && rc.remaining === 2000, "дело «долг за аренду» 2 000 заведено", items);
+  const rp = await call("POST", `/api/rentals/${rid}/debt/payment`, { kind: "manual_payment", amount: 700, method: "cash" });
+  ok(rp.status === 200 || rp.status === 201, "в карточке аренды принято 700 (частично)", rp.status);
+  let d5 = await detail(rc.id);
+  ok(d5.paid === 700 && d5.remaining === 1300, "в деле: оплачено 700, осталось 1 300", { paid: d5.paid, rem: d5.remaining });
+  ok(d5.payments.some((p) => p.paidAmount === 700 && /карточке аренды/.test(p.note ?? "")), "в деле строка «Принято в карточке аренды»", d5.payments.map((p) => [p.paidAmount, p.note]));
+  // паркинг: насчитали 750 и оплатили в карточке аренды
+  await sql`insert into parking_sessions (rental_id, start_date, end_date, days, amount, paid_amount) values (${rid}, current_date - 3, current_date, 3, 750, 0)`.catch(async (e) => {
+    console.log("    (паркинг: другая схема)", e.message);
+  });
+  d5 = await detail(rc.id);
+  const withPark = d5.remaining;
+  const pk = await call("POST", `/api/rentals/${rid}/parking/pay`, { amount: 750, method: "cash" });
+  if (pk.status === 200 || pk.status === 201) {
+    d5 = await detail(rc.id);
+    ok(d5.remaining === withPark - 750, "паркинг оплачен в аренде — в деле остаток меньше на 750", { before: withPark, after: d5.remaining });
+    ok(d5.payments.some((p) => p.paidAmount === 750 && /паркинг/.test(p.note ?? "")), "в деле строка про паркинг");
+  } else console.log("    паркинг:", pk.status, JSON.stringify(pk.body).slice(0, 120));
+
+  console.log("\n15. Платёж в аренде отменили — из дела он тоже уходит");
+  const [lastRent] = await sql`select id from payments where rental_id=${rid} and type='rent' and paid and amount=700 order by id desc limit 1`;
+  await sql`update payments set paid=false where id=${lastRent.id}`;
+  d5 = await detail(rc.id);
+  ok(!d5.payments.some((p) => p.paidAmount === 700), "строки про 700 больше нет", d5.payments.map((p) => p.paidAmount));
+  await sql`update payments set paid=true where id=${lastRent.id}`;
+
+  console.log("\n16. Закрыть без денег и «Убрать из «Должников»» — только с ключом директора");
+  const cl = await call("POST", `/api/debtors/${rc.id}/close`, { toStage: "closed_settled", reason: "ТЕСТ мировая" });
+  ok(cl.status === 428, "мировая без ключа — нужен ключ директора (428)", cl.status);
+  ok(!!cl.body?.brief?.summary, "директор видит, что за дело и сколько осталось", cl.body?.brief);
+  const tr2 = await call("POST", `/api/debtors/${rc.id}/transition`, { toStage: "closed_written_off", reason: "ТЕСТ" });
+  ok(tr2.status === 428, "списание через ход дела — тоже с ключом", tr2.status);
+  const rmNo = await call("DELETE", `/api/debtors/${rc.id}`, { reason: "" });
+  ok(rmNo.status === 400, "убрать без причины — нельзя", rmNo.status);
+  const rm = await call("DELETE", `/api/debtors/${rc.id}`, { reason: "ТЕСТ договорились" });
+  ok(rm.status === 428, "убрать с причиной — нужен ключ директора", rm.status);
+  ok((await detail(rc.id)).stage !== "closed_written_off", "без ключа дело не тронуто");
+  const rmOk = await asDirector("DELETE", `/api/debtors/${rc.id}`, { reason: "ТЕСТ договорились" });
+  ok(rmOk.status === 200, "директор подтвердил — убрано", rmOk.status);
+  const d7 = await detail(rc.id);
+  ok(d7.stage === "closed_written_off" && /Убрано из/.test(d7.closedReason ?? ""), "дело закрыто «Убрано из «Должников»: …»", { st: d7.stage, why: d7.closedReason });
+  await call("GET", "/api/debtors");
+  ok((await detail(rc.id)).stage === "closed_written_off", "синхронизация его заново не заводит");
+}
+
+console.log("\n17. Выкуп: платёж в самой сделке — строка в деле");
+{
+  const [dl] = await sql`select id from buyout_deals where status='active' order by id desc limit 1`;
+  const dealId = Number(dl.id);
+  const [row] = await sql`select id, amount, paid_amount from buyout_schedule where deal_id=${dealId} and paid_amount < amount order by seq limit 1`;
+  await sql`update buyout_schedule set due_date = current_date - 3 where id=${row.id}`;
+  const tr = await call("POST", `/api/buyout/deals/${dealId}/to-debtors`, { comment: "ТЕСТ выкуп 2" });
+  const caseId = tr.body.debtor.id;
+  const paidBefore = (await detail(caseId)).paid;
+  const pay = await call("POST", `/api/buyout/deals/${dealId}/payments`, { amount: 1000, method: "cash" });
+  ok(pay.status === 200, "в сделке выкупа принято 1 000", pay.status);
+  const d6 = await detail(caseId);
+  ok(d6.payments.some((p) => p.paidAmount === 1000 && /выкупа/.test(p.note ?? "")), "в деле строка «Принято в сделке выкупа»", d6.payments.map((p) => [p.paidAmount, p.note]));
+  ok(d6.paid - paidBefore === 1000, "в деле оплачено +1 000", { before: paidBefore, after: d6.paid });
 }
 
 console.log(`\nИТОГ: ${pass} ✓, ${fail} ✗`);

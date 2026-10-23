@@ -25,6 +25,7 @@ import {
   payments,
 } from "../db/schema.js";
 import { computeProgress } from "./buyoutMath.js";
+import { rentOutstanding, rentPaidSince } from "./debtorLedger.js";
 
 /**
  * Причина авто-закрытия дела ущерба «акт оплачен». По ней (и только по ней)
@@ -32,14 +33,6 @@ import { computeProgress } from "./buyoutMath.js";
  * старые закрытия с другими причинами не трогаем.
  */
 export const DAMAGE_PAID_REASON = "Ущерб возмещён полностью";
-
-/**
- * Метка в комментарии дела «долг за аренду», заведённого новой логикой
- * (аренду закрыли с долгом). Такие дела ведутся по самой аренде: платёж в
- * «Должниках» гасит долг аренды, оплата в аренде закрывает дело. Старые дела
- * (до 23.10) с графиками менеджеров не трогаем.
- */
-export const RENT_CASE_MARK = "закрыта с долгом";
 
 /** П. 5.7 договора: 1 000 ₽ за каждый день неоплаты ущерба. */
 export const PENALTY_PER_DAY = 1000;
@@ -82,6 +75,8 @@ type CaseRow = {
   damageReportId: number | null;
   buyoutDealId?: number | null;
   createdAt?: Date;
+  type?: string;
+  relatedRentalId?: number | null;
   penaltyEnabled: boolean;
   penaltyFrom: string | null;
   penaltyUntil: string | null;
@@ -179,7 +174,40 @@ export async function loadCaseFinance(
     }
   }
 
+  // Долг за аренду (дело по аренде) — по самой аренде: остаток = текущий
+  // долг аренды, оплачено = все платежи по ней с момента заведения дела,
+  // где бы их ни приняли.
+  const rentCases = rows.filter(
+    (r) =>
+      r.relatedRentalId != null &&
+      r.damageReportId == null &&
+      r.buyoutDealId == null &&
+      r.type !== "damage",
+  );
+  const rentOut = await rentOutstanding([...new Set(rentCases.map((r) => r.relatedRentalId!))]);
+  const rentPaid = await rentPaidSince(
+    rentCases.map((r) => ({
+      id: r.id,
+      relatedRentalId: r.relatedRentalId!,
+      createdAt: r.createdAt ?? new Date(0),
+    })),
+  );
+
   for (const r of rows) {
+    if (rentCases.includes(r)) {
+      const remaining = rentOut.get(r.relatedRentalId!) ?? 0;
+      const paid = rentPaid.get(r.id) ?? 0;
+      out.set(r.id, {
+        base: paid + remaining,
+        penalty: 0,
+        penaltyDays: 0,
+        total: paid + remaining,
+        paid,
+        remaining,
+        reportBalance: null,
+      });
+      continue;
+    }
     const bo = r.buyoutDealId != null ? buyout.get(r.buyoutDealId) : undefined;
     if (bo) {
       const paid = bo.paidSince(r.createdAt ?? new Date(0));

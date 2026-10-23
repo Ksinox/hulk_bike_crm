@@ -64,12 +64,13 @@ import { overdueAmount, overdueDays } from "../services/debtorOverdue.js";
 import { calculateInsuranceForecast } from "../services/debtorProfit.js";
 import { recommendNextAction } from "../services/debtorRecommend.js";
 import { syncRentalDebtorCases } from "../services/debtorSync.js";
+import { reconcileCaseHistory } from "../services/debtorLedger.js";
 import { recordBuyoutPayment } from "./buyout.js";
+import { requireDirectorApproval } from "./approvals.js";
 import { computeProgress } from "../services/buyoutMath.js";
 import {
   addDaysYmd,
   DAMAGE_PAID_REASON,
-  RENT_CASE_MARK,
   loadCaseFinance,
   mskTodayYmd,
   PENALTY_PER_DAY,
@@ -421,7 +422,7 @@ async function applyToRentDebt(
     d.type !== "rental_overdue" ||
     d.relatedRentalId == null ||
     d.damageReportId != null ||
-    !(d.comment ?? "").includes(RENT_CASE_MARK)
+    d.buyoutDealId != null
   )
     return 0;
   const rid = d.relatedRentalId;
@@ -560,6 +561,32 @@ async function applyToBuyout(
   if (r.status !== 200)
     return { ok: false, error: (r.body as { error?: string })?.error ?? "buyout_payment_failed" };
   return { ok: true };
+}
+
+/**
+ * Партия 23.10: сводка для директора — какое дело закрывают/убирают и
+ * сколько по нему осталось (её видит директор в запросе на подтверждение).
+ */
+async function briefDebtorCase(
+  d: typeof debtors.$inferSelect,
+  what: string,
+  reason: string | null,
+) {
+  const f = await caseFinance(d);
+  let name = d.externalName ?? "—";
+  if (d.clientId != null) {
+    const [c] = await db.select({ name: clients.name }).from(clients).where(eq(clients.id, d.clientId));
+    name = c?.name ?? name;
+  }
+  return {
+    summary: `${what}: дело ${d.caseNumber} · ${name}`,
+    facts: [
+      { label: "Должник", value: name },
+      { label: "Дело", value: `${d.caseNumber} · ${typeLabel(d.type as DebtType)} · ${stageLabel(d.stage as Stage)}` },
+      { label: "Осталось взыскать", value: `${f.remaining.toLocaleString("ru-RU")} ₽ из ${f.total.toLocaleString("ru-RU")} ₽` },
+      ...(reason ? [{ label: "Причина", value: reason }] : []),
+    ],
+  };
 }
 
 function clientDisplayName(d: {
@@ -740,6 +767,10 @@ export async function debtorsRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/:id", async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    // 23.10: история дела — по реальным платежам (приняли где угодно).
+    await reconcileCaseHistory([id]).catch((e) =>
+      app.log.warn({ err: e }, "debtor history reconcile failed"),
+    );
     const d = await getDebtor(id);
     if (!d) return reply.code(404).send({ error: "not found" });
 
@@ -1191,6 +1222,16 @@ export async function debtorsRoutes(app: FastifyInstance) {
       // (страховой поток: основание — полученная выплата, не график).
       const closeErr = await closedPaidBasisError(d, to);
       if (closeErr) return reply.code(400).send(closeErr);
+      // 23.10: закрыть дело без денег (мировая, списание, суд, вернули
+      // имущество) — только с подтверждением директора.
+      if (
+        to.startsWith("closed_") &&
+        to !== "closed_paid" &&
+        !(await requireDirectorApproval(app, req, reply, "debtor_close", () =>
+          briefDebtorCase(d, `Закрыть дело — «${stageLabel(to)}»`, parsed.data.reason ?? null),
+        ))
+      )
+        return;
 
       const userId = req.user?.userId ?? null;
       const now = new Date();
@@ -1351,7 +1392,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
     if (
       d.damageReportId != null ||
       d.buyoutDealId != null ||
-      (d.comment ?? "").includes(RENT_CASE_MARK)
+      d.relatedRentalId != null
     ) {
       const f = await caseFinance(d);
       if (parsed.data.amount > f.remaining)
@@ -1650,6 +1691,13 @@ export async function debtorsRoutes(app: FastifyInstance) {
     }
     const closeErr = await closedPaidBasisError(d, to);
     if (closeErr) return reply.code(400).send(closeErr);
+    if (
+      to !== "closed_paid" &&
+      !(await requireDirectorApproval(app, req, reply, "debtor_close", () =>
+        briefDebtorCase(d, `Закрыть дело — «${stageLabel(to)}»`, parsed.data.reason ?? null),
+      ))
+    )
+      return;
     const userId = req.user?.userId ?? null;
     const now = new Date();
     await db
@@ -1681,21 +1729,63 @@ export async function debtorsRoutes(app: FastifyInstance) {
     return await getDebtor(id);
   });
 
-  // ---------- DELETE /:id (только creator) ----------
+  // ---------- DELETE /:id — «Убрать из «Должников»» (с ключом директора) ----------
+  // Дело, заведённое системой (по акту / аренде / выкупу), не стираем — иначе
+  // синхронизация завела бы его снова: закрываем «списано» с причиной, и оно
+  // уходит из списка. Ручное дело (без источника) удаляем.
   app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
-    if (req.user?.role !== "creator") {
-      return reply.code(403).send({ error: "forbidden" });
-    }
     const id = Number(req.params.id);
     const d = await getDebtor(id);
     if (!d) return reply.code(404).send({ error: "not found" });
-    await db.delete(debtors).where(eq(debtors.id, id));
+    const body = (req.body ?? {}) as { reason?: unknown };
+    const reason =
+      typeof body.reason === "string" && body.reason.trim() ? body.reason.trim().slice(0, 500) : null;
+    if (!reason)
+      return reply.code(400).send({ error: "reason_required", message: "Укажите причину" });
+    if (
+      !(await requireDirectorApproval(app, req, reply, "debtor_remove", () =>
+        briefDebtorCase(d, "Убрать из «Должников»", reason),
+      ))
+    )
+      return;
+    const auto = d.damageReportId != null || d.relatedRentalId != null || d.buyoutDealId != null;
+    if (auto) {
+      const now = new Date();
+      await db
+        .update(debtors)
+        .set({
+          stage: "closed_written_off",
+          clientStatus: "closed",
+          stageEnteredAt: now,
+          closedAt: now,
+          closedReason: `Убрано из «Должников»: ${reason}`,
+          updatedAt: now,
+        })
+        .where(eq(debtors.id, id));
+      await db.insert(debtorStageEvents).values({
+        debtorId: id,
+        fromStage: d.stage as Stage,
+        toStage: "closed_written_off",
+        reason: `убрано из «Должников» (с подтверждением директора): ${reason}`,
+        userId: req.user?.userId ?? null,
+      });
+    } else {
+      await db.delete(debtors).where(eq(debtors.id, id));
+    }
     await logActivity(req, {
       entity: "debtor",
       entityId: id,
-      action: "deleted",
-      summary: `${d.caseNumber}: дело удалено (creator)`,
+      action: "removed",
+      summary: `${d.caseNumber}: убрано из «Должников» — ${reason}${auto ? "" : " (дело удалено)"}`,
+      diff: {
+        stage: {
+          label: "Дело",
+          from: stageLabel(d.stage as Stage),
+          to: auto ? "закрыто: убрано из «Должников»" : "удалено",
+          kind: "text",
+        },
+      },
     });
-    return { ok: true };
+    return { ok: true, removed: !auto };
   });
 }

@@ -213,6 +213,7 @@ export function useChargeManualDebt() {
       qc.invalidateQueries({ queryKey: debtKeys.one(vars.rentalId) });
       qc.invalidateQueries({ queryKey: ["activity"] });
       qc.invalidateQueries({ queryKey: debtKeys.aggregate });
+      qc.invalidateQueries({ queryKey: ["debtors"] });
     },
   });
 }
@@ -234,6 +235,7 @@ export function useWithholdDeposit() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: debtKeys.one(vars.rentalId) });
       qc.invalidateQueries({ queryKey: debtKeys.aggregate });
+      qc.invalidateQueries({ queryKey: ["debtors"] });
       qc.invalidateQueries({ queryKey: ["rentals"] });
       qc.invalidateQueries({ queryKey: ["rentals-archived"] });
       qc.invalidateQueries({ queryKey: ["payments"] });
@@ -275,6 +277,7 @@ export function useForgiveOverdue() {
       qc.invalidateQueries({ queryKey: debtKeys.one(vars.rentalId) });
       qc.invalidateQueries({ queryKey: ["activity"] });
       qc.invalidateQueries({ queryKey: debtKeys.aggregate });
+      qc.invalidateQueries({ queryKey: ["debtors"] });
       // v0.4.55: forgive теперь сдвигает endPlannedAt и status —
       // инвалидируем список аренд и клиентов чтобы UI подтянул новые
       // даты/статусы.

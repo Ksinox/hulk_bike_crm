@@ -1631,6 +1631,8 @@ export function PaymentAcceptDialog({
       // report.debt из этого запроса; без инвалидации он висел устаревшим
       // после оплаты ущерба через единое окно.
       qc.invalidateQueries({ queryKey: ["damage-reports"] });
+      // 23.10: платёж по аренде отражается и в деле «Должников».
+      qc.invalidateQueries({ queryKey: ["debtors"] });
 
       if (completing) {
         // Этап 2: завершение. Недосбор (частичная оплата долга) остаётся
@@ -1720,6 +1722,7 @@ export function PaymentAcceptDialog({
       qc.invalidateQueries({ queryKey: ["payments"] });
       qc.invalidateQueries({ queryKey: ["activity"] });
       qc.invalidateQueries({ queryKey: ["revenue"] });
+      qc.invalidateQueries({ queryKey: ["debtors"] });
       toastRentalDone(
         rental,
         "Депозит пополнен",

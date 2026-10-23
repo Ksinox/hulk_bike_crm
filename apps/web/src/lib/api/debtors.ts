@@ -33,6 +33,7 @@ function invalidateLinked(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["activity"] });
   // Партия 23.10: оплата по делу ущерба гасит акт в аренде — обновляем и её.
   qc.invalidateQueries({ queryKey: ["rental-debt"] });
+  qc.invalidateQueries({ queryKey: ["debtors"] });
   qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
   qc.invalidateQueries({ queryKey: ["damage-reports"] });
   qc.invalidateQueries({ queryKey: ["payments"] });
@@ -337,6 +338,21 @@ export function useLawyerUpdate() {
     mutationFn: (args: { id: number; note: string }) =>
       api.post<unknown>(`/api/debtors/${args.id}/lawyer-update`, { note: args.note }),
     onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: keys.detail(vars.id) }),
+  });
+}
+
+/** 23.10: «Убрать из «Должников»» — с причиной и ключом директора. */
+export function useRemoveDebtor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: number; reason: string }) =>
+      api.delete<{ ok: boolean; removed: boolean }>(`/api/debtors/${args.id}`, {
+        reason: args.reason,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
+    },
   });
 }
 

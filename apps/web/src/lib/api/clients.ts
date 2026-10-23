@@ -76,6 +76,7 @@ export function usePayClientDamageDebt() {
       qc.invalidateQueries({ queryKey: ["damage-reports"] });
       qc.invalidateQueries({ queryKey: ["payments"] });
       qc.invalidateQueries({ queryKey: ["rental-debt"] });
+      qc.invalidateQueries({ queryKey: ["debtors"] });
       qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
       qc.invalidateQueries({ queryKey: ["rentals"] });
       qc.invalidateQueries({ queryKey: ["activity"] });
