@@ -48,7 +48,7 @@ export function PayMethodPicker({
   /** Телефон и планшет: кнопки и поля по 44px (2.0.2). */
   touch?: boolean;
 }) {
-  const { cash: cashPart, transfer } = splitByMethod(total, method, cash);
+  const { cash: cashPart } = splitByMethod(total, method, cash);
 
   // При переходе в «смешанно» подставляем половину — так оператору почти
   // всегда остаётся поправить одну цифру, а не вводить с нуля.
@@ -77,38 +77,67 @@ export function PayMethodPicker({
       </div>
 
       {method === "mixed" && (
-        <div className="grid grid-cols-2 gap-2">
-          <label className="flex flex-col gap-1">
-            <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-              Наличными
-            </span>
-            <input
-              inputMode="numeric"
-              value={cashPart ? String(cashPart) : ""}
-              onChange={(e) =>
-                onCash(clamp(Number(e.target.value.replace(/[^\d]/g, "")) || 0, 0, total))
-              }
-              className={cn(
-                "rounded-xl border border-border bg-surface px-3 font-bold tabular-nums outline-none focus:border-emerald-500",
-                touch ? "h-11 text-[16px]" : "h-10 text-[14px]",
-              )}
-            />
-          </label>
-          <div className="flex flex-col gap-1">
-            <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-              Переводом
-            </span>
-            <div
-              className={cn(
-                "flex items-center rounded-xl bg-surface-soft px-3 font-bold tabular-nums text-ink",
-                touch ? "h-11 text-[16px]" : "h-10 text-[14px]",
-              )}
-            >
-              {transfer.toLocaleString("ru-RU")} ₽
-            </div>
-          </div>
-        </div>
+        <MixedSplitFields total={total} cash={cashPart} onCash={onCash} touch={touch} />
       )}
+    </div>
+  );
+}
+
+/**
+ * 2.1: доли смешанной оплаты — сколько наличными (вводится), сколько
+ * переводом (остаток, считается сам). Для экранов со своим рядом кнопок
+ * способа (паркинг, залог, экипировка): кнопка «Смешанно» + этот блок.
+ */
+export function MixedSplitFields({
+  total,
+  cash,
+  onCash,
+  touch,
+}: {
+  total: number;
+  cash: number;
+  onCash: (v: number) => void;
+  touch?: boolean;
+}) {
+  const cashPart = clamp(cash, 0, total);
+  const transfer = total - cashPart;
+  // Первый показ — половина: оператору остаётся поправить одну цифру.
+  useEffect(() => {
+    if (cash <= 0 && total > 0) onCash(Math.floor(total / 2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+          Наличными
+        </span>
+        <input
+          inputMode="numeric"
+          data-mixed-cash
+          value={cashPart ? String(cashPart) : ""}
+          onChange={(e) =>
+            onCash(clamp(Number(e.target.value.replace(/[^\d]/g, "")) || 0, 0, total))
+          }
+          className={cn(
+            "rounded-xl border border-border bg-surface px-3 font-bold tabular-nums outline-none focus:border-emerald-500",
+            touch ? "h-11 text-[16px]" : "h-10 text-[14px]",
+          )}
+        />
+      </label>
+      <div className="flex flex-col gap-1">
+        <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+          Переводом
+        </span>
+        <div
+          className={cn(
+            "flex items-center rounded-xl bg-surface-soft px-3 font-bold tabular-nums text-ink",
+            touch ? "h-11 text-[16px]" : "h-10 text-[14px]",
+          )}
+        >
+          {transfer.toLocaleString("ru-RU")} ₽
+        </div>
+      </div>
     </div>
   );
 }

@@ -143,7 +143,8 @@ const PatchBody = z.object({
 const PaymentCheckBody = z.object({
   answer: z.enum(["yes", "partial", "no"]),
   amount: z.number().int().positive().optional(),
-  method: z.enum(["transfer", "cash"]).optional(),
+  method: z.enum(["transfer", "cash", "mixed"]).optional(),
+  cashAmount: z.number().int().min(0).optional(),
   /** Частично: через сколько дней спросить про остаток. */
   days: z.number().int().min(1).max(365).optional(),
 });
@@ -173,7 +174,9 @@ const ScheduleBody = z
 const PaymentBody = z.object({
   paymentN: z.number().int().min(1).optional(), // если фиксируем конкретный платёж графика
   amount: z.number().int().positive(),
-  method: z.enum(["transfer", "cash"]),
+  method: z.enum(["transfer", "cash", "mixed"]),
+  /** 2.1: при «смешанно» — сколько наличными (остальное переводом). */
+  cashAmount: z.number().int().min(0).optional(),
   paidAt: z.string().optional(), // ISO; default = now
   note: z.string().max(500).optional(),
   /**
@@ -548,19 +551,120 @@ async function applyToBuyout(
   req: FastifyRequest,
   d: typeof debtors.$inferSelect,
   amount: number,
-  method: "transfer" | "cash",
+  method: "transfer" | "cash" | "mixed",
   paidAt: Date,
+  cashAmount?: number,
 ): Promise<{ ok: boolean; error?: string }> {
   if (d.buyoutDealId == null) return { ok: true };
   const r = await recordBuyoutPayment(req, d.buyoutDealId, {
     amount,
     method,
+    cashAmount: method === "mixed" ? cashAmount : undefined,
+    transferAmount: method === "mixed" ? amount - (cashAmount ?? 0) : undefined,
     paidAt: paidAt.toISOString(),
     note: `Принято в «Должниках» · ${d.caseNumber}`,
   });
   if (r.status !== 200)
     return { ok: false, error: (r.body as { error?: string })?.error ?? "buyout_payment_failed" };
   return { ok: true };
+}
+
+/**
+ * 2.1: ручное дело (без акта, аренды и выкупа) — деньги в выручку видом
+ * «Долг по делу» на последней аренде клиента (выручка в CRM считается по
+ * арендам). Нет у человека аренды — в выручку провести не к чему.
+ */
+async function applyToManual(
+  req: FastifyRequest,
+  d: typeof debtors.$inferSelect,
+  amount: number,
+  method: "transfer" | "cash",
+  paidAt: Date,
+): Promise<void> {
+  const ledgered =
+    d.damageReportId != null ||
+    d.buyoutDealId != null ||
+    (d.relatedRentalId != null && d.type !== "damage");
+  if (ledgered || amount <= 0) return;
+  let rentalId = d.relatedRentalId;
+  if (rentalId == null && d.clientId != null) {
+    const [last] = await db
+      .select({ id: rentals.id })
+      .from(rentals)
+      .where(eq(rentals.clientId, d.clientId))
+      .orderBy(desc(rentals.id))
+      .limit(1);
+    rentalId = last?.id ?? null;
+  }
+  if (rentalId == null) return;
+  await db.insert(payments).values({
+    rentalId,
+    type: "debtor",
+    amount,
+    method,
+    paid: true,
+    paidAt,
+    receivedByUserId: req.user?.userId ?? null,
+    note: `Долг по делу ${d.caseNumber} · принято в «Должниках»`,
+  });
+  await logActivity(req, {
+    entity: "rental",
+    entityId: rentalId,
+    action: "debtor_payment",
+    summary: `Оплата долга по делу ${d.caseNumber} — ${amount.toLocaleString("ru-RU")} ₽ (${method === "cash" ? "наличными" : "переводом"}), принята в «Должниках»`,
+    meta: { debtorId: d.id, amount, method },
+  });
+}
+
+/**
+ * 2.1: провести деньги по делу — в первоисточник (акт, аренда, выкуп или
+ * выручка ручного дела). «Смешанно» делим на две проводки — наличные и
+ * перевод отдельно, чтобы касса и выручка сходились по способам.
+ */
+async function applyMoney(
+  req: FastifyRequest,
+  d: typeof debtors.$inferSelect,
+  amount: number,
+  method: "transfer" | "cash" | "mixed",
+  paidAt: Date,
+  cashInput?: number,
+): Promise<{ ok: boolean; error?: string; penaltyPart: number; cash: number; transfer: number }> {
+  const cash =
+    method === "cash" ? amount : method === "transfer" ? 0 : Math.max(0, Math.min(amount, cashInput ?? 0));
+  const transfer = amount - cash;
+  if (d.buyoutDealId != null) {
+    const bo = await applyToBuyout(req, d, amount, method, paidAt, cash);
+    return { ok: bo.ok, error: bo.error, penaltyPart: 0, cash, transfer };
+  }
+  let penaltyPart = 0;
+  for (const [part, m] of [
+    [cash, "cash"],
+    [transfer, "transfer"],
+  ] as const) {
+    if (part <= 0) continue;
+    penaltyPart += (await applyToDamageReport(req, d, part, m, paidAt)).penaltyPart;
+    await applyToRentDebt(req, d, part, m, paidAt);
+    await applyToManual(req, d, part, m, paidAt);
+  }
+  return { ok: true, penaltyPart, cash, transfer };
+}
+
+/** Для журнала: как пришли деньги. */
+function methodText(method: string, cash: number, transfer: number) {
+  return method === "cash"
+    ? "наличными"
+    : method === "transfer"
+      ? "переводом"
+      : `смешанно: наличными ${cash.toLocaleString("ru-RU")} ₽ + переводом ${transfer.toLocaleString("ru-RU")} ₽`;
+}
+
+/** Строка дела: способ и доли смешанной оплаты. */
+function methodCols(method: "transfer" | "cash" | "mixed", cash: number, transfer: number) {
+  return {
+    paidMethod: method,
+    cashAmount: method === "mixed" ? cash : null,
+    transferAmount: method === "mixed" ? transfer : null,
+  };
 }
 
 /**
@@ -1044,8 +1148,8 @@ export async function debtorsRoutes(app: FastifyInstance) {
 
       const takePayment = async (amount: number, note: string) => {
         const now = new Date();
-        const { penaltyPart } = await applyToDamageReport(req, d, amount, method, now);
-        await applyToRentDebt(req, d, amount, method, now);
+        const mo = await applyMoney(req, d, amount, method, now, parsed.data.cashAmount);
+        const penaltyPart = mo.penaltyPart;
         const maxN = await db
           .select({ max: sql<number>`COALESCE(MAX(${debtorPayments.n}), 0)` })
           .from(debtorPayments)
@@ -1057,7 +1161,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
           scheduledAmount: amount,
           paidAt: now,
           paidAmount: amount,
-          paidMethod: method,
+          ...methodCols(method, mo.cash, mo.transfer),
           paidByUserId: userId,
           penaltyAmount: penaltyPart,
           note,
@@ -1070,7 +1174,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
           entity: "debtor",
           entityId: id,
           action: "payment_check",
-          summary: `${d.caseNumber}: «Пришла ли оплата?» — да, ${f.remaining.toLocaleString("ru-RU")} ₽ (${method === "cash" ? "наличные" : "перевод"})`,
+          summary: `${d.caseNumber}: «Пришла ли оплата?» — да, ${f.remaining.toLocaleString("ru-RU")} ₽ (${method === "mixed" ? "смешанно" : method === "cash" ? "наличными" : "переводом"})`,
         });
         await db
           .update(debtors)
@@ -1401,15 +1505,16 @@ export async function debtorsRoutes(app: FastifyInstance) {
           message: `Больше остатка по делу: осталось ${f.remaining.toLocaleString("ru-RU")} ₽`,
         });
     }
-    const { penaltyPart } = await applyToDamageReport(
+    const bo = await applyMoney(
       req,
       d,
       parsed.data.amount,
       parsed.data.method,
       paidAt,
+      parsed.data.cashAmount,
     );
-    await applyToRentDebt(req, d, parsed.data.amount, parsed.data.method, paidAt);
-    const bo = await applyToBuyout(req, d, parsed.data.amount, parsed.data.method, paidAt);
+    const penaltyPart = bo.penaltyPart;
+    const mcols = methodCols(parsed.data.method, bo.cash, bo.transfer);
     if (!bo.ok)
       return reply.code(409).send({
         error: bo.error,
@@ -1465,7 +1570,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
           entity: "debtor",
           entityId: id,
           action: "payment_received",
-          summary: `${d.caseNumber}: платёж ${parsed.data.amount.toLocaleString("ru-RU")} ₽ в счёт срока — закрыто платежей: ${closed.length}${left > 0 ? " + аванс" : ""} (${parsed.data.method})`,
+          summary: `${d.caseNumber}: платёж ${parsed.data.amount.toLocaleString("ru-RU")} ₽ в счёт срока — закрыто платежей: ${closed.length}${left > 0 ? " + аванс" : ""} (${methodText(parsed.data.method, bo.cash, bo.transfer)})`,
         });
         await autoCloseIfPaid(req, d);
         return { ok: true, closed };
@@ -1478,7 +1583,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
         .set({
           paidAt,
           paidAmount: parsed.data.amount,
-          paidMethod: parsed.data.method,
+          ...mcols,
           paidByUserId: userId,
           penaltyAmount: penaltyPart,
           note: parsed.data.note ?? null,
@@ -1493,7 +1598,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
         entity: "debtor",
         entityId: id,
         action: "payment_received",
-        summary: `${d.caseNumber}: платёж ${row.n} получен · ${parsed.data.amount.toLocaleString("ru-RU")} ₽ (${parsed.data.method})`,
+        summary: `${d.caseNumber}: платёж ${row.n} получен · ${parsed.data.amount.toLocaleString("ru-RU")} ₽ (${methodText(parsed.data.method, bo.cash, bo.transfer)})`,
       });
       await autoCloseIfPaid(req, d);
       return row;
@@ -1514,7 +1619,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
         scheduledAmount: parsed.data.amount,
         paidAt,
         paidAmount: parsed.data.amount,
-        paidMethod: parsed.data.method,
+        ...mcols,
         paidByUserId: userId,
         penaltyAmount: penaltyPart,
         note: parsed.data.note ?? null,
@@ -1525,7 +1630,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
       entity: "debtor",
       entityId: id,
       action: "payment_received",
-      summary: `${d.caseNumber}: внеплановый платёж · ${parsed.data.amount} ₽ (${parsed.data.method})`,
+      summary: `${d.caseNumber}: внеплановый платёж · ${parsed.data.amount.toLocaleString("ru-RU")} ₽ (${methodText(parsed.data.method, bo.cash, bo.transfer)})`,
     });
     await autoCloseIfPaid(req, d);
     return row;

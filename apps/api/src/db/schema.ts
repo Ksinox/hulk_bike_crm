@@ -130,6 +130,9 @@ export const paymentTypeEnum = pgEnum("payment_type", [
    *  (долг = total − depositCovered − Σ damage-платежей, deposit_forfeit
    *  туда не входит). amount = depositCovered, method = 'deposit'. */
   "deposit_forfeit",
+  /** 2.1: оплата по ручному делу «Должников» (без акта/аренды/выкупа) —
+   *  выручка «Долг по делу». Привязывается к последней аренде клиента. */
+  "debtor",
 ]);
 
 export const clientDocKindEnum = pgEnum("client_doc_kind", [
@@ -2042,6 +2045,8 @@ export const debtorClientStatusEnum = pgEnum("debtor_client_status", [
 export const debtorPaymentMethodEnum = pgEnum("debtor_payment_method", [
   "transfer",
   "cash",
+  // 2.1: смешанно — доли в cashAmount / transferAmount.
+  "mixed",
 ]);
 
 export const debtorCallOutcomeEnum = pgEnum("debtor_call_outcome", [
@@ -2142,6 +2147,9 @@ export const debtorPayments = pgTable(
     paidAt: timestamp("paid_at", { withTimezone: true }),
     paidAmount: integer("paid_amount"),
     paidMethod: debtorPaymentMethodEnum("paid_method"),
+    /** 2.1: доли смешанной оплаты (paidMethod = mixed). */
+    cashAmount: integer("cash_amount"),
+    transferAmount: integer("transfer_amount"),
     /** Партия 23.10: часть платежа, ушедшая на пеню по п. 5.7 (не на акт). */
     penaltyAmount: integer("penalty_amount").notNull().default(0),
     /** Партия 23.10: реальный платёж (аренды/акта), который отражает строка. */

@@ -30,4 +30,12 @@ export async function run(page, ctx) {
   await ctx.sleep(5000);
   console.log(await page.evaluate(() => document.body.innerText.match(/.{0,60}(Должник|долг|Долг|D-0\d\d).{0,60}/g)?.slice(0, 12).join("\n")));
   await ctx.shot(`b4-client-${vp}`, { jpeg: true });
+  if (process.env.CLICK_DAMAGE) {
+    await page.evaluate(() =>
+      document.querySelector("[data-client-damage]")?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    await ctx.sleep(5000);
+    console.log("ОТКРЫЛОСЬ:", await page.evaluate(() => document.querySelector("[data-case-hero] h2")?.textContent + " | " + (document.querySelector("[data-case-remaining]")?.textContent ?? "")));
+    await ctx.shot(`b4-client-click-${vp}`, { jpeg: true });
+  }
 }

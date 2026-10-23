@@ -154,11 +154,14 @@ export function usePayParking() {
     mutationFn: (args: {
       rentalId: number;
       amount: number;
-      method?: "cash" | "card" | "transfer" | "deposit";
+      method?: "cash" | "card" | "transfer" | "deposit" | "mixed";
+      /** 2.1: при «смешанно» — сколько наличными. */
+      cashAmount?: number;
     }) =>
       api.post<{ applied: number }>(`/api/rentals/${args.rentalId}/parking/pay`, {
         amount: args.amount,
         method: args.method,
+        cashAmount: args.method === "mixed" ? args.cashAmount : undefined,
       }),
     onSuccess: () => {
       invalidate();

@@ -92,7 +92,8 @@ export type DebtSummary = {
       | "swap_fee"
       | "equipment_fee"
       | "parking"
-      | "deposit_forfeit";
+      | "deposit_forfeit"
+      | "debtor";
     amount: number;
     paid: boolean;
     paidAt: string | null;

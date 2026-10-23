@@ -112,7 +112,8 @@ export type RevenueTypeFilter =
   | "damage"
   | "equipment_fee"
   | "swap_fee"
-  | "parking";
+  | "parking"
+  | "debtor";
 
 /** Конкретный вид операции (без «all») — для мультифильтра выручки. */
 export type RevenueTypeKey = Exclude<RevenueTypeFilter, "all">;
@@ -126,6 +127,7 @@ export const REVENUE_TYPE_LABEL: Record<RevenueTypeKey, string> = {
   equipment_fee: "Экипировка",
   swap_fee: "Замена скутера",
   parking: "Паркинг",
+  debtor: "Долги (Должники)",
 };
 
 /** Классифицирует платёж по виду; продление = rent с пометкой в note. */
@@ -137,6 +139,7 @@ function paymentTypeKey(p: ApiPayment): Exclude<RevenueTypeFilter, "all"> {
   if (p.type === "equipment_fee") return "equipment_fee";
   if (p.type === "swap_fee") return "swap_fee";
   if (p.type === "parking") return "parking";
+  if (p.type === "debtor") return "debtor";
   return "rent";
 }
 

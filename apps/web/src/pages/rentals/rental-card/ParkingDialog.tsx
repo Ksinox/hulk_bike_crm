@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { SquareParking, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isTouchPrimary } from "@/lib/useIsMobile";
+import { MixedSplitFields } from "@/components/PayMethodPicker";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import type { Rental } from "@/lib/mock/rentals";
@@ -57,7 +59,8 @@ export function ParkingDrawer({
   const create = useCreateParking();
   const pay = usePayParking();
   const [freeFirstDay, setFreeFirstDay] = useState(true);
-  const [method, setMethod] = useState<"cash" | "transfer" | "deposit">("cash");
+  const [method, setMethod] = useState<"cash" | "transfer" | "deposit" | "mixed">("cash");
+  const [cashPart, setCashPart] = useState(0);
   const busy = create.isPending || pay.isPending;
   // Депозит клиента (кошелёк) — можно оплатить паркинг с него, если хватает.
   const { data: client } = useApiClient(rental.clientId ?? null);
@@ -95,7 +98,7 @@ export function ParkingDrawer({
       if (isSettle) {
         // Сессия уже закрыта снятием — только принимаем оплату накопленного.
         if (collect && amount > 0) {
-          await pay.mutateAsync({ rentalId: rental.id, amount, method });
+          await pay.mutateAsync({ rentalId: rental.id, amount, method, cashAmount: cashPart });
           toastRentalDone(
             rental,
             "Паркинг оплачен",
@@ -118,7 +121,7 @@ export function ParkingDrawer({
         freeFirstDay,
       });
       if (collect && amount > 0) {
-        await pay.mutateAsync({ rentalId: rental.id, amount, method });
+        await pay.mutateAsync({ rentalId: rental.id, amount, method, cashAmount: cashPart });
         toastRentalDone(rental, "Паркинг оплачен", `${safeDays} дн · ${amount} ₽`);
       } else {
         toastRentalDone(
@@ -207,7 +210,7 @@ export function ParkingDrawer({
               Способ оплаты
             </span>
             <div className="flex gap-2">
-              {(["cash", "transfer"] as const).map((m) => (
+              {(["cash", "transfer", "mixed"] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
@@ -219,7 +222,7 @@ export function ParkingDrawer({
                       : "border-border text-ink-2 hover:bg-surface-soft",
                   )}
                 >
-                  {m === "cash" ? "Наличные" : "Перевод"}
+                  {m === "cash" ? "Наличные" : m === "transfer" ? "Перевод" : "Смешанно"}
                 </button>
               ))}
               {depositBalance > 0 && (
@@ -243,6 +246,14 @@ export function ParkingDrawer({
                 </button>
               )}
             </div>
+            {method === "mixed" && (
+              <MixedSplitFields
+                total={amount}
+                cash={cashPart}
+                onCash={setCashPart}
+                touch={isTouchPrimary()}
+              />
+            )}
             {depositBalance > 0 && (
               <span className="text-[11px] text-muted-2">
                 На депозите клиента: {depositBalance.toLocaleString("ru-RU")} ₽

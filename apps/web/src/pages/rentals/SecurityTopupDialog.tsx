@@ -15,6 +15,8 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Shield, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isTouchPrimary } from "@/lib/useIsMobile";
+import { MixedSplitFields } from "@/components/PayMethodPicker";
 import { toast } from "@/lib/toast";
 import { topupSecurityAsync } from "./rentalsStore";
 import { toastRentalDone } from "./rentalUndo";
@@ -51,7 +53,8 @@ export function SecurityTopupDialog({
   const recommended = Math.max(0, originalDeposit - currentDeposit);
   const [amountStr, setAmountStr] = useState<string>(String(recommended));
   const amount = Number(amountStr.replace(/\D/g, "")) || 0;
-  const [method, setMethod] = useState<"cash" | "transfer">("cash");
+  const [method, setMethod] = useState<"cash" | "transfer" | "mixed">("cash");
+  const [cashPart, setCashPart] = useState(0);
   const [saving, setSaving] = useState(false);
 
   const fmt = (n: number) => n.toLocaleString("ru-RU");
@@ -60,7 +63,7 @@ export function SecurityTopupDialog({
     if (saving || amount <= 0) return;
     setSaving(true);
     try {
-      await topupSecurityAsync(rentalId, amount, method);
+      await topupSecurityAsync(rentalId, amount, method, cashPart);
       toastRentalDone(
         { id: rentalId, status: "active" },
         "Залог пополнен",
@@ -153,8 +156,8 @@ export function SecurityTopupDialog({
             <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
               Способ
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {(["cash", "transfer"] as const).map((m) => (
+            <div className="grid grid-cols-3 gap-1.5">
+              {(["cash", "transfer", "mixed"] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
@@ -166,10 +169,20 @@ export function SecurityTopupDialog({
                       : "border-border bg-white text-ink-2 hover:border-blue-400",
                   )}
                 >
-                  {m === "cash" ? "Наличные" : "Перевод"}
+                  {m === "cash" ? "Наличные" : m === "transfer" ? "Перевод" : "Смешанно"}
                 </button>
               ))}
             </div>
+            {method === "mixed" && amount > 0 && (
+              <div className="mt-2">
+                <MixedSplitFields
+                  total={amount}
+                  cash={cashPart}
+                  onCash={setCashPart}
+                  touch={isTouchPrimary()}
+                />
+              </div>
+            )}
           </div>
         </div>
 

@@ -107,7 +107,7 @@ ok(d.paid === 2000 && d.remaining === 10000, "дело: оплачено 2 000, 
 ok(d.payments.some((p) => p.paidAmount === 2000), "в деле строка платежа из аренды");
 
 console.log("\n3. Срок прошёл → «Частично» 3 000, остаток через 3 дня");
-await sql`update debtors set payment_due_date = current_date - 1 where id=${c.id}`;
+await sql`update debtors set payment_due_date = (now() at time zone 'Europe/Moscow')::date - 1 where id=${c.id}`;
 const today2 = (await call("GET", "/api/debtors/today")).body;
 const inCalls = [today2.hottest, ...today2.queue].find((q) => q?.debtor.id === c.id);
 ok(inCalls?.action.kind === "payment_check", "после срока — первым «пришла ли оплата?»", inCalls?.action);
@@ -125,7 +125,7 @@ ok(over.status === 400, "платёж 8 000 при остатке 7 000 откл
 
 console.log("\n5. Пеня п. 5.7: включили, 3 дня назад");
 await call("PATCH", `/api/debtors/${c.id}`, { penaltyEnabled: true });
-await sql`update debtors set penalty_from = current_date - 3 where id=${c.id}`;
+await sql`update debtors set penalty_from = (now() at time zone 'Europe/Moscow')::date - 3 where id=${c.id}`;
 d = await detail(c.id);
 ok(d.penalty === 3000 && d.remaining === 10000, "пеня 3 000, к оплате 10 000", { pen: d.penalty, rem: d.remaining });
 
@@ -335,6 +335,94 @@ console.log("\n17. Выкуп: платёж в самой сделке — ст�
   const d6 = await detail(caseId);
   ok(d6.payments.some((p) => p.paidAmount === 1000 && /выкупа/.test(p.note ?? "")), "в деле строка «Принято в сделке выкупа»", d6.payments.map((p) => [p.paidAmount, p.note]));
   ok(d6.paid - paidBefore === 1000, "в деле оплачено +1 000", { before: paidBefore, after: d6.paid });
+}
+
+
+console.log("\n18. Смешанная оплата: нал и перевод — отдельными платежами (фильтр выручки)");
+{
+  // дело ущерба
+  const act4 = (await call("POST", "/api/damage-reports", {
+    rentalId: r.id, depositCovered: 0, payDays: 7,
+    items: [{ name: "ТЕСТ смешанно", originalPrice: 5000, finalPrice: 5000, quantity: 1 }],
+  })).body;
+  const c5 = await caseOf(r.id, act4.id);
+  const mx = await call("POST", `/api/debtors/${c5.id}/payments`, { amount: 5000, method: "mixed", cashAmount: 2000 });
+  ok(mx.status === 200, "смешанно 5 000 (нал 2 000 + перевод 3 000) принято", mx.body);
+  const dp = await sql`select method, amount from payments where damage_report_id=${act4.id} and type='damage' and paid order by method`;
+  ok(dp.length === 2 && dp.find((x) => x.method === "cash")?.amount === 2000 && dp.find((x) => x.method === "transfer")?.amount === 3000,
+    "в аренде два платежа ущерба: наличными 2 000 и переводом 3 000", dp);
+  const d8 = await detail(c5.id);
+  const row = d8.payments.find((p) => p.paidAmount === 5000);
+  ok(row?.paidMethod === "mixed" && row?.cashAmount === 2000 && row?.transferAmount === 3000, "строка дела: смешанно, доли видны", row);
+  ok(d8.stage === "closed_paid", "акт оплачен — дело закрыто");
+
+  // ручное дело (без акта/аренды) — в выручку видом «Долг по делу»
+  const man = await call("POST", "/api/debtors", { clientId: r.client_id, type: "damage", totalAmount: 1200, comment: "ТЕСТ ручное дело" });
+  ok(man.status === 201, "ручное дело заведено", man.status);
+  const before = await sql`select coalesce(sum(amount),0)::int s from payments where type='debtor' and note like ${"%" + man.body.caseNumber + "%"}`;
+  const mp = await call("POST", `/api/debtors/${man.body.id}/payments`, { amount: 1200, method: "mixed", cashAmount: 500 });
+  ok(mp.status === 200, "по ручному делу принято 1 200 смешанно", mp.body);
+  const rev = await sql`select method, amount, rental_id from payments where type='debtor' and paid and note like ${"%" + man.body.caseNumber + "%"} order by method`;
+  ok(rev.length === 2 && rev.find((x) => x.method === "cash")?.amount === 500 && rev.find((x) => x.method === "transfer")?.amount === 700,
+    "в выручке: «Долг по делу» наличными 500 и переводом 700", rev);
+  ok(before[0].s === 0 && Number(rev[0]?.rental_id) > 0, "привязано к аренде клиента");
+  const d9 = await detail(man.body.id);
+  ok(d9.stage === "closed_paid" && d9.paid === 1200, "ручное дело погашено и закрыто", { st: d9.stage, paid: d9.paid });
+}
+
+console.log("\n19. «Смешанно» в аренде: залог, паркинг, экипировка — две проводки, «Отменить» снимает обе");
+{
+  const [r2] = await sql`
+    select r.id, r.deposit, r.deposit_original from rentals r
+    where r.status='active' and r.archived_at is null and r.deposit_item is null and r.id <> ${r.id}
+      and r.end_planned_at > now() + interval '3 days'
+      and not exists (select 1 from parking_sessions s where s.rental_id=r.id)
+    order by r.id desc limit 1`;
+  const rid = Number(r2.id);
+  const rowsAfter = async (minId, type) =>
+    sql`select id, method, amount from payments where rental_id=${rid} and type=${type} and id > ${minId} order by id`;
+  const [{ m0 }] = await sql`select coalesce(max(id),0)::bigint m0 from payments`;
+  const undoLast = async (type) => {
+    const [last] = await sql`select id from payments where rental_id=${rid} and type=${type} order by id desc limit 1`;
+    return call("POST", `/api/rentals/${rid}/rollback-payment`, { paymentId: Number(last.id) });
+  };
+  const split = (rows) => ({ cash: rows.find((x) => x.method === "cash")?.amount, transfer: rows.find((x) => x.method === "transfer")?.amount, n: rows.length });
+
+  // залог
+  const t = await call("POST", `/api/rentals/${rid}/security-topup`, { amount: 1000, method: "mixed", cashAmount: 300 });
+  ok(t.status === 200, "залог +1 000 смешанно принят", t.body);
+  const ts = split(await rowsAfter(m0, "deposit"));
+  ok(ts.n === 2 && ts.cash === 300 && ts.transfer === 700, "залог: наличными 300 и переводом 700", ts);
+  const tu = await undoLast("deposit");
+  const [rd] = await sql`select deposit from rentals where id=${rid}`;
+  ok(tu.status === 200 && (await rowsAfter(m0, "deposit")).length === 0 && rd.deposit === r2.deposit,
+    "«Отменить» снял обе проводки, залог как был", { st: tu.status, dep: rd.deposit });
+
+  // паркинг
+  const today = (await sql`select to_char((now() at time zone 'Europe/Moscow')::date, 'YYYY-MM-DD') d`)[0].d;
+  const pk = await call("POST", `/api/rentals/${rid}/parking`, { startDate: today, endDate: today, freeFirstDay: false });
+  ok(pk.status === 200 || pk.status === 201, "паркинг поставлен", pk.body);
+  const due = (await sql`select amount from parking_sessions where rental_id=${rid} order by id desc limit 1`)[0].amount;
+  const pp = await call("POST", `/api/rentals/${rid}/parking/pay`, { amount: due, method: "mixed", cashAmount: 100 });
+  ok(pp.status === 200, `паркинг ${due} смешанно оплачен`, pp.body);
+  const ps = split(await rowsAfter(m0, "parking"));
+  ok(ps.n === 2 && ps.cash === 100 && ps.transfer === due - 100, "паркинг: наличными 100 и переводом остаток", ps);
+  const pu = await undoLast("parking");
+  const [sess] = await sql`select paid_amount from parking_sessions where rental_id=${rid} order by id desc limit 1`;
+  ok(pu.status === 200 && (await rowsAfter(m0, "parking")).length === 0 && sess.paid_amount === 0,
+    "«Отменить» снял обе проводки паркинга, сессия снова не оплачена", { st: pu.status, b: pu.body, paid: sess.paid_amount });
+
+  // экипировка
+  const [eqRow] = await sql`select equipment_json from rentals where id=${rid}`;
+  const items = [...(eqRow.equipment_json ?? []), { name: "ТЕСТ доплата", price: 100, free: false }];
+  const ec = await call("POST", `/api/rentals/${rid}/equipment-change`, { newEquipmentJson: items, payNow: true, method: "mixed", cashAmount: 50 });
+  ok(ec.status === 200, "экипировка с доплатой смешанно", ec.body);
+  const es = split(await rowsAfter(m0, "equipment_fee"));
+  ok(es.n === 2 && es.cash === 50 && es.transfer > 0, "доплата: наличными 50 и переводом остаток", es);
+  const eu = await undoLast("equipment_fee");
+  ok(eu.status === 200 && (await rowsAfter(m0, "equipment_fee")).length === 0, "«Отменить» снял обе проводки доплаты", { st: eu.status, b: eu.body });
+  // уборка: паркинг-сессия теста
+  await sql`delete from parking_sessions where rental_id=${rid} and paid_amount=0 and created_at > now() - interval '1 hour'`;
 }
 
 console.log(`\nИТОГ: ${pass} ✓, ${fail} ✗`);

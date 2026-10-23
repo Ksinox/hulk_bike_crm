@@ -26,7 +26,8 @@ export type PaymentType =
   | "swap_fee"
   | "equipment_fee"
   | "parking"
-  | "deposit_forfeit";
+  | "deposit_forfeit"
+  | "debtor";
 
 export type Payment = {
   id: number;
@@ -548,11 +549,13 @@ export async function extendInplaceAsync(
 export async function topupSecurityAsync(
   rentalId: number,
   amount: number,
-  method: "cash" | "transfer",
+  method: "cash" | "transfer" | "mixed",
+  cashAmount?: number,
 ): Promise<void> {
   await api.post(`/api/rentals/${rentalId}/security-topup`, {
     amount,
     method,
+    cashAmount: method === "mixed" ? cashAmount : undefined,
   });
   invAll();
 }
@@ -570,7 +573,9 @@ export async function equipmentChangeAsync(args: {
     free: boolean;
   }>;
   payNow: boolean;
-  method?: "cash" | "transfer";
+  method?: "cash" | "transfer" | "mixed";
+  /** 2.1: при «смешанно» — сколько наличными. */
+  cashAmount?: number;
   comment?: string;
   refundTo?: "cash" | "deposit";
   refundMethod?: "cash" | "transfer";
@@ -579,6 +584,7 @@ export async function equipmentChangeAsync(args: {
     newEquipmentJson: args.newEquipmentJson,
     payNow: args.payNow,
     method: args.method,
+    cashAmount: args.method === "mixed" ? args.cashAmount : undefined,
     comment: args.comment,
     refundTo: args.refundTo,
     refundMethod: args.refundMethod,

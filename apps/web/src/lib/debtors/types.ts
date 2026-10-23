@@ -30,7 +30,7 @@ export type Stage =
   | "closed_court";
 
 export type ClientStatus = "active" | "closed";
-export type PaymentMethod = "transfer" | "cash";
+export type PaymentMethod = "transfer" | "cash" | "mixed";
 export type CallOutcome = "answered" | "no_answer" | "promised" | "refused";
 
 export type Debtor = {
@@ -111,6 +111,9 @@ export type DebtorPayment = {
   paidAt: string | null;
   paidAmount: number | null;
   paidMethod: PaymentMethod | null;
+  /** 2.1: доли смешанной оплаты. */
+  cashAmount?: number | null;
+  transferAmount?: number | null;
   note: string | null;
   createdAt: string;
 };
