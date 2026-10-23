@@ -181,6 +181,27 @@ export async function run(page, ctx) {
     await ctx.sleep(3500);
     await ctx.shot(`b4-case-${vp}-${tag}`, { jpeg: true });
   }
+  if (what === "history") {
+    // дело с платежами из карточки аренды + «Убрать из «Должников»» (без отправки)
+    await ctx.gotoRoute("debtors");
+    await ctx.sleep(4500);
+    await page.evaluate((row) => {
+      document.querySelector(`[data-reason-chip="${row}"]`)?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }, process.env.ROW ?? "D-013");
+    await ctx.sleep(4000);
+    await page.evaluate(() => {
+      const h = [...document.querySelectorAll("div")].find((x) => x.textContent?.trim().startsWith("Платежи"));
+      h?.scrollIntoView({ block: "start" });
+    });
+    await ctx.sleep(600);
+    await ctx.shot(`b4-history-${vp}-${tag}`, { jpeg: true });
+    await page.evaluate(() => document.querySelector("[data-remove-debtor]")?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await ctx.sleep(600);
+    await page.type("textarea[placeholder^='Причина']", "Договорились, долг закрыт наличными", { delay: 15 });
+    await page.evaluate(() => document.querySelector("textarea[placeholder^='Причина']")?.scrollIntoView({ block: "center" }));
+    await ctx.sleep(500);
+    await ctx.shot(`b4-remove-${vp}-${tag}`, { jpeg: true });
+  }
   if (what === "wizard") {
     await ctx.gotoRoute("debtors");
     await ctx.sleep(4000);
