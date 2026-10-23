@@ -832,7 +832,7 @@ export function NewRentalModal({
                             // клиента висит долг по прошлым актам — красный
                             // бейдж, чтобы оператор подумал прежде чем
                             // выдавать ему новый скутер.
-                            const debt = c.unpaidDamageDebt ?? 0;
+                            const debt = clientOwes(c);
                             const hasDebt = debt > 0;
                             return (
                             <button
@@ -845,7 +845,7 @@ export function NewRentalModal({
                               className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-blue-50"
                               title={
                                 hasDebt
-                                  ? `Висит долг по ущербу: ${debt.toLocaleString("ru-RU")} ₽`
+                                  ? `Висит долг в «Должниках»: ${debt.toLocaleString("ru-RU")} ₽`
                                   : undefined
                               }
                             >
@@ -2166,7 +2166,7 @@ function MobileClientPicker({
           </div>
         ) : (
           clients.map((c) => {
-            const debt = c.unpaidDamageDebt ?? 0;
+            const debt = clientOwes(c);
             return (
               <button
                 key={c.id}
@@ -2414,4 +2414,19 @@ function plural(n: number, forms: [string, string, string]): string {
   if (mod10 === 1 && mod100 !== 11) return forms[0];
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1];
   return forms[2];
+}
+
+/**
+ * 23.10: сколько клиент должен по делам «Должников» — ущерб (вкл. акты без
+ * дела) + открытые дела «долг за аренду» и прочие. Для предупреждения при
+ * выдаче новой аренды.
+ */
+function clientOwes(c: {
+  unpaidDamageDebt?: number;
+  debtorCases?: { type: string; active: boolean; totalAmount: number; paid: number }[];
+}): number {
+  const other = (c.debtorCases ?? [])
+    .filter((x) => x.active && x.type !== "damage")
+    .reduce((s, x) => s + Math.max(0, x.totalAmount - x.paid), 0);
+  return (c.unpaidDamageDebt ?? 0) + other;
 }

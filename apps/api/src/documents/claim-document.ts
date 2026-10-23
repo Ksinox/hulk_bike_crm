@@ -15,12 +15,15 @@ import {
   clients,
   damageReportItems,
   damageReports,
+  debtors,
   documentTemplates,
+  payments,
   rentals,
   scooterModels,
   scooters,
 } from "../db/schema.js";
 import { LANDLORD } from "./landlord.js";
+import { loadCaseFinance } from "../services/debtorFinance.js";
 import { resolveDamageItemLabel } from "./damage-document.js";
 
 type ClaimBundle = {
@@ -30,6 +33,11 @@ type ClaimBundle = {
   scooter: typeof scooters.$inferSelect | null;
   model: typeof scooterModels.$inferSelect | null;
   items: (typeof damageReportItems.$inferSelect)[];
+  /**
+   * 23.10: сколько реально должен по акту на сегодня — сумма акта минус
+   * зачёт залога и оплаты, плюс пеня по п. 5.7 (если включена в деле).
+   */
+  money: { deposit: number; paid: number; penalty: number; penaltyDays: number; debt: number };
 };
 
 export async function loadClaimBundle(
@@ -72,7 +80,40 @@ export async function loadClaimBundle(
     .select()
     .from(damageReportItems)
     .where(eq(damageReportItems.reportId, reportId));
-  return { report, rental, client, scooter, model, items };
+  const pays = await db
+    .select({ amount: payments.amount })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.damageReportId, reportId),
+        eq(payments.type, "damage"),
+        eq(payments.paid, true),
+      ),
+    );
+  const paid = pays.reduce((s, p) => s + p.amount, 0);
+  const base = Math.max(0, report.total - report.depositCovered);
+  let penalty = 0;
+  let penaltyDays = 0;
+  let penaltyPaid = 0;
+  const [cse] = await db.select().from(debtors).where(eq(debtors.damageReportId, reportId));
+  if (cse && !String(cse.stage).startsWith("closed_")) {
+    const f = (await loadCaseFinance([cse])).get(cse.id);
+    if (f) {
+      penalty = f.penalty;
+      penaltyDays = f.penaltyDays;
+      penaltyPaid = Math.max(0, f.paid - Math.min(base, paid));
+    }
+  }
+  const debt = Math.max(0, base - paid) + Math.max(0, penalty - penaltyPaid);
+  return {
+    report,
+    rental,
+    client,
+    scooter,
+    model,
+    items,
+    money: { deposit: report.depositCovered, paid, penalty, penaltyDays, debt },
+  };
 }
 
 function fmtDateRu(d: Date | string | null | undefined): string {
@@ -303,8 +344,22 @@ function tplClaim(b: ClaimBundle, dueDays = 21): string {
       : `<p class="para small"><i>Перечень повреждений приведён в Акте о повреждениях № ${reportNo}.</i></p>`
   }
 
+  ${
+    b.money.deposit > 0 || b.money.paid > 0 || b.money.penalty > 0
+      ? `<p class="para">
+    Сумма ущерба по акту — ${fmtMoney(total)} ₽${
+      b.money.deposit > 0 ? `; зачтено из залога — ${fmtMoney(b.money.deposit)} ₽` : ""
+    }${b.money.paid > 0 ? `; оплачено Арендатором — ${fmtMoney(b.money.paid)} ₽` : ""}${
+      b.money.penalty > 0
+        ? `; пеня по п. 5.7 договора (1 000 ₽ за каждый день неоплаты ущерба) — ${fmtMoney(b.money.penalty)} ₽ за ${b.money.penaltyDays} дн.`
+        : ""
+    }
+  </p>`
+      : ""
+  }
+
   <p class="para">
-    <b>Общая сумма задолженности: ${fmtMoney(total)} ₽ (${moneyWords(total)} рублей).</b>
+    <b>Общая сумма задолженности: ${fmtMoney(b.money.debt)} ₽ (${moneyWords(b.money.debt)} рублей).</b>
     Арендатор обязуется выплатить сумму ущерба до <b>${dueDate}</b>.
   </p>
 

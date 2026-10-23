@@ -48,6 +48,7 @@ export function DamageActBlock({
   deposit,
   depositOriginal,
   onTopupDeposit,
+  closedWithoutPay = null,
 }: {
   reports: ApiDamageReport[];
   /** Открыть последний акт на правку (DamageReportDialog в режиме edit). */
@@ -65,6 +66,9 @@ export function DamageActBlock({
   depositOriginal?: number;
   /** Открыть диалог пополнения залога (тот же, что и в «Финансовой»). */
   onTopupDeposit?: () => void;
+  /** 23.10: дело в «Должниках» закрыто без денег (списано/мировая) — так и
+   *  пишем, а не «Оплачен»; долг по акту при этом не показываем. */
+  closedWithoutPay?: string | null;
 }) {
   const allMedia = reports.flatMap((r) => r.media ?? []);
   const total = reports.reduce((s, r) => s + r.total, 0);
@@ -192,7 +196,14 @@ export function DamageActBlock({
               {fmt(total)} ₽
             </div>
           </div>
-          {debt > 0 ? (
+          {closedWithoutPay ? (
+            <span
+              title={closedWithoutPay}
+              className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800"
+            >
+              Закрыто без оплаты
+            </span>
+          ) : debt > 0 ? (
             <span className="flex shrink-0 items-center gap-1 rounded-full bg-red-soft px-2.5 py-1 text-[11px] font-bold text-red-ink">
               <Clock size={12} /> Долг {fmt(debt)} ₽
             </span>

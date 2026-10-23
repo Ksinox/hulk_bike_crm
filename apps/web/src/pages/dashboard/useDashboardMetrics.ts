@@ -568,9 +568,24 @@ export function useDashboardMetrics(): DashboardMetrics {
     // Аренды с активным долгом по ущербу (debt>0 в любом акте). На фронте
     // debt уже подсчитан сервером на базе total/depositCovered/payments —
     // оператор увидит красный квадратик пока есть хоть одна копейка долга.
+    // 23.10: ущерб — по открытым делам «Должников» (списали/закрыли дело —
+    // плитка гаснет), пока дела не подтянулись — по актам.
+    const openDamageCaseRentals = new Set<number>(
+      (debtorsQ.data?.items ?? [])
+        .filter(
+          (x) =>
+            x.type === "damage" &&
+            !isClosedStage(x.stage) &&
+            (x.remaining ?? x.totalAmount) > 0 &&
+            x.relatedRentalId != null,
+        )
+        .map((x) => x.relatedRentalId!),
+    );
     const damageDebtRentalIds = new Set<number>(
       damageAll
-        .filter((d) => d.debt > 0)
+        .filter((d) =>
+          debtorsQ.data ? openDamageCaseRentals.has(d.rentalId) : d.debt > 0,
+        )
         .map((d) => d.rentalId)
         .filter((id): id is number => typeof id === "number"),
     );
@@ -636,7 +651,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     const damageDebtRentalByScooter = new Map<number, number>();
     const rentalById = new Map(rentals.map((r) => [r.id, r] as const));
     damageAll.forEach((d) => {
-      if (d.debt <= 0) return;
+      if (!damageDebtRentalIds.has(d.rentalId)) return;
       const r = rentalById.get(d.rentalId);
       if (r?.scooterId != null) {
         damageDebtScooterIds.add(r.scooterId);

@@ -28,6 +28,8 @@ import {
   clientDocuments,
   clients,
   damageReports,
+  debtEntries,
+  parkingSessions,
   payments,
   rentals,
   debtorCalls,
@@ -62,6 +64,8 @@ import { recommendNextAction } from "../services/debtorRecommend.js";
 import { syncRentalDebtorCases } from "../services/debtorSync.js";
 import {
   addDaysYmd,
+  DAMAGE_PAID_REASON,
+  RENT_CASE_MARK,
   loadCaseFinance,
   mskTodayYmd,
   PENALTY_PER_DAY,
@@ -283,7 +287,8 @@ async function autoCloseIfPaid(
       clientStatus: "closed",
       stageEnteredAt: now,
       closedAt: now,
-      closedReason: "Долг погашен полностью",
+      closedReason:
+        d.damageReportId != null ? DAMAGE_PAID_REASON : "Долг погашен полностью",
       updatedAt: now,
     })
     .where(eq(debtors.id, d.id));
@@ -370,7 +375,163 @@ async function applyToDamageReport(
       meta: { debtorId: d.id, damageReportId: rep.id, amount: damagePart, method },
     });
   }
+  // Пеня по п. 5.7 — тоже живые деньги: в аренду платежом-штрафом (идёт в
+  // выручку), акт при этом остаётся оплаченным ровно на свою сумму.
+  if (penaltyPart > 0) {
+    await db.insert(payments).values({
+      rentalId: rep.rentalId,
+      type: "fine",
+      amount: penaltyPart,
+      method,
+      paid: true,
+      paidAt,
+      receivedByUserId: req.user?.userId ?? null,
+      note: `Пеня по п. 5.7 договора (ущерб) · ${d.caseNumber}`,
+    });
+    await logActivity(req, {
+      entity: "rental",
+      entityId: rep.rentalId,
+      action: "damage_penalty_payment",
+      summary: `Пеня по п. 5.7 за неоплату ущерба ${penaltyPart.toLocaleString("ru-RU")} ₽ — принята в «Должниках» (${d.caseNumber})`,
+      meta: { debtorId: d.id, amount: penaltyPart, method },
+    });
+  }
   return { damagePart, penaltyPart };
+}
+
+/**
+ * Партия 23.10: дело «долг за аренду» (аренду закрыли с долгом) — платёж в
+ * «Должниках» гасит долг самой аренды тем же порядком, что карточка аренды:
+ * ручной долг → неоплаченная аренда → паркинг. Деньги попадают в выручку
+ * платежами аренды. Возвращает, сколько разложено по аренде.
+ */
+async function applyToRentDebt(
+  req: FastifyRequest,
+  d: typeof debtors.$inferSelect,
+  amount: number,
+  method: "transfer" | "cash",
+  paidAt: Date,
+): Promise<number> {
+  if (
+    d.type !== "rental_overdue" ||
+    d.relatedRentalId == null ||
+    d.damageReportId != null ||
+    !(d.comment ?? "").includes(RENT_CASE_MARK)
+  )
+    return 0;
+  const rid = d.relatedRentalId;
+  const userId = req.user?.userId ?? null;
+  const note = `Принято в «Должниках» · ${d.caseNumber}`;
+  let left = amount;
+  const parts: string[] = [];
+
+  // 1. Ручной долг
+  const ents = await db.select().from(debtEntries).where(eq(debtEntries.rentalId, rid));
+  const manualBal = Math.max(
+    0,
+    ents.filter((e) => e.kind === "manual_charge").reduce((s, e) => s + e.amount, 0) -
+      ents.filter((e) => e.kind === "manual_forgive").reduce((s, e) => s + e.amount, 0),
+  );
+  const m = Math.min(left, manualBal);
+  if (m > 0) {
+    const [entry] = await db
+      .insert(debtEntries)
+      .values({ rentalId: rid, kind: "manual_forgive", amount: m, comment: note, createdByUserId: userId })
+      .returning();
+    await db.insert(payments).values({
+      rentalId: rid,
+      type: "rent",
+      amount: m,
+      method,
+      paid: true,
+      paidAt,
+      receivedByUserId: userId,
+      note: `Оплата ручного долга · ${note}`,
+      rollbackSnapshot: { kind: "payment", payKind: "manual", debtEntryId: entry?.id } as unknown as object,
+    });
+    left -= m;
+    parts.push(`ручной долг ${m.toLocaleString("ru-RU")} ₽`);
+  }
+
+  // 2. Неоплаченная аренда (строки по порядку; частично — делим строку)
+  const unpaid = await db
+    .select()
+    .from(payments)
+    .where(and(eq(payments.rentalId, rid), eq(payments.type, "rent"), eq(payments.paid, false)))
+    .orderBy(asc(payments.id));
+  let rentTaken = 0;
+  for (const row of unpaid) {
+    if (left <= 0) break;
+    if (left >= row.amount) {
+      await db
+        .update(payments)
+        .set({ paid: true, paidAt, method, receivedByUserId: userId, note: row.note ? `${row.note} · ${note}` : note })
+        .where(eq(payments.id, row.id));
+      left -= row.amount;
+      rentTaken += row.amount;
+    } else {
+      await db.update(payments).set({ amount: row.amount - left }).where(eq(payments.id, row.id));
+      await db.insert(payments).values({
+        rentalId: rid,
+        type: "rent",
+        amount: left,
+        method,
+        paid: true,
+        paidAt,
+        scheduledOn: row.scheduledOn,
+        receivedByUserId: userId,
+        note: `Часть неоплаченной аренды · ${note}`,
+      });
+      rentTaken += left;
+      left = 0;
+    }
+  }
+  if (rentTaken > 0) parts.push(`аренда ${rentTaken.toLocaleString("ru-RU")} ₽`);
+
+  // 3. Паркинг
+  const sessions = await db
+    .select()
+    .from(parkingSessions)
+    .where(eq(parkingSessions.rentalId, rid))
+    .orderBy(asc(parkingSessions.id));
+  let parkTaken = 0;
+  for (const ss of sessions) {
+    if (left <= 0) break;
+    const due = Math.max(0, ss.amount - ss.paidAmount);
+    const t = Math.min(left, due);
+    if (t <= 0) continue;
+    await db
+      .update(parkingSessions)
+      .set({ paidAmount: ss.paidAmount + t })
+      .where(eq(parkingSessions.id, ss.id));
+    left -= t;
+    parkTaken += t;
+  }
+  if (parkTaken > 0) {
+    await db.insert(payments).values({
+      rentalId: rid,
+      type: "parking",
+      amount: parkTaken,
+      method,
+      paid: true,
+      paidAt,
+      receivedByUserId: userId,
+      note: `Оплата паркинга · ${note}`,
+    });
+    parts.push(`паркинг ${parkTaken.toLocaleString("ru-RU")} ₽`);
+  }
+
+  const applied = amount - left;
+  if (applied > 0)
+    await logActivity(req, {
+      entity: "rental",
+      entityId: rid,
+      action: "debt_payment",
+      summary: `Оплата долга за аренду ${applied.toLocaleString("ru-RU")} ₽ — принята в «Должниках» (${d.caseNumber}): ${parts.join(", ")}`,
+      meta: { debtorId: d.id, amount: applied, method },
+      diff: { payment: { label: "Принято", from: 0, to: applied, kind: "money" } },
+    });
+  return applied;
 }
 
 function clientDisplayName(d: {
@@ -783,6 +944,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
       const takePayment = async (amount: number, note: string) => {
         const now = new Date();
         const { penaltyPart } = await applyToDamageReport(req, d, amount, method, now);
+        await applyToRentDebt(req, d, amount, method, now);
         const maxN = await db
           .select({ max: sql<number>`COALESCE(MAX(${debtorPayments.n}), 0)` })
           .from(debtorPayments)
@@ -1013,7 +1175,9 @@ export async function debtorsRoutes(app: FastifyInstance) {
     const paid = paidSoFar(
       existing.map((p) => ({ paidAt: p.paidAt, paidAmount: p.paidAmount })),
     );
-    const remaining = Math.max(0, d.totalAmount - paid);
+    void paid;
+    // 23.10: остаток — общим расчётом (у дела ущерба — по акту и пене).
+    const remaining = (await caseFinance(d)).remaining;
     const total = parsed.data.totalAmount ?? remaining;
     if (total <= 0) {
       return reply
@@ -1112,7 +1276,16 @@ export async function debtorsRoutes(app: FastifyInstance) {
     const userId = req.user?.userId ?? null;
     const paidAt = parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date();
     // Партия 23.10: по делу ущерба платёж сразу гасит акт в аренде (одна
-    // точка правды), сверх акта — пеня по п. 5.7.
+    // точка правды), сверх акта — пеня по п. 5.7. Больше остатка не берём:
+    // лишние деньги некуда отнести (это ошибка ввода).
+    if (d.damageReportId != null || (d.comment ?? "").includes(RENT_CASE_MARK)) {
+      const f = await caseFinance(d);
+      if (parsed.data.amount > f.remaining)
+        return reply.code(400).send({
+          error: "over_remaining",
+          message: `Больше остатка по делу: осталось ${f.remaining.toLocaleString("ru-RU")} ₽`,
+        });
+    }
     const { penaltyPart } = await applyToDamageReport(
       req,
       d,
@@ -1120,6 +1293,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
       parsed.data.method,
       paidAt,
     );
+    await applyToRentDebt(req, d, parsed.data.amount, parsed.data.method, paidAt);
 
     if (parsed.data.paymentN != null) {
       const all = await loadPayments(id);

@@ -33,7 +33,12 @@ import {
   rentals,
 } from "../db/schema.js";
 import { isClosed, type Stage } from "./debtorStages.js";
-import { loadCaseFinance, mskTodayYmd } from "./debtorFinance.js";
+import {
+  DAMAGE_PAID_REASON,
+  RENT_CASE_MARK,
+  loadCaseFinance,
+  mskTodayYmd,
+} from "./debtorFinance.js";
 
 const MSK = "Europe/Moscow";
 const toMsk = (d: Date) =>
@@ -224,7 +229,36 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
       result.created += 1;
       continue;
     }
-    if (isClosed(c.stage as Stage)) continue;
+    if (isClosed(c.stage as Stage)) {
+      // Закрыли автоматически «акт оплачен», а по акту снова долг (оплату
+      // отменили / акт увеличили) — дело снова в работу, иначе долг потеряется.
+      if (
+        c.stage === "closed_paid" &&
+        c.closedReason === DAMAGE_PAID_REASON &&
+        balance > 0
+      ) {
+        await db
+          .update(debtors)
+          .set({
+            stage: "created",
+            clientStatus: "active",
+            stageEnteredAt: sql`now()`,
+            closedAt: null,
+            closedReason: null,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(debtors.id, c.id));
+        await db.insert(debtorStageEvents).values({
+          debtorId: c.id,
+          fromStage: "closed_paid",
+          toStage: "created",
+          reason: `авто: по акту снова долг ${balance.toLocaleString("ru-RU")} ₽ (оплату отменили или акт изменили)`,
+        });
+        damageCaseIds.push(c.id);
+        result.updated += 1;
+      }
+      continue;
+    }
     damageCaseIds.push(c.id);
   }
 
@@ -251,7 +285,7 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
         result.updated += 1;
       }
       if (f.remaining <= 0) {
-        await closeCase(c, "Ущерб возмещён полностью", "авто: акт оплачен");
+        await closeCase(c, DAMAGE_PAID_REASON, "авто: акт оплачен");
         result.closed += 1;
       }
     }
@@ -260,8 +294,13 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
   // ============ 2. Долг за аренду — только закрытые с долгом ============
   // Любое прежнее дело по аренде (в т.ч. закрытое) — значит, по ней уже
   // работали: новое дело «за аренду» не заводим (как и раньше).
+  // Дела ущерба не в счёт: аренду с ущербом часто закрывают и с долгом за
+  // аренду — это два разных дела.
   const anyCaseRental = new Set(
-    allCases.map((c) => c.relatedRentalId).filter((x): x is number => x != null),
+    allCases
+      .filter((c) => c.type !== "damage" && c.damageReportId == null)
+      .map((c) => c.relatedRentalId)
+      .filter((x): x is number => x != null),
   );
   const rentCasesByRental = new Map<number, (typeof allCases)[number][]>();
   for (const c of allCases) {
@@ -420,6 +459,24 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
       continue;
     }
     if (isClosed(exist.stage as Stage)) continue;
+
+    // Дело новой логики («аренда закрыта с долгом») ведётся по самой аренде:
+    // всего = уже принятое в «Должниках» + что ещё должен по аренде; долг
+    // аренды погашен (где угодно) — дело закрыто.
+    if ((exist.comment ?? "").includes(RENT_CASE_MARK)) {
+      const total = (modulePaidByCase.get(exist.id) ?? 0) + outstanding;
+      if (outstanding <= 0) {
+        await closeCase(exist, "Долг за аренду погашен", "авто: долг аренды погашен");
+        result.closed += 1;
+      } else if (exist.totalAmount !== total) {
+        await db
+          .update(debtors)
+          .set({ totalAmount: total, updatedAt: sql`now()` })
+          .where(eq(debtors.id, exist.id));
+        result.updated += 1;
+      }
+      continue;
+    }
 
     // Дело ведётся в модуле (есть график/платежи) — сумму не перетираем,
     // закрываем, когда в модуле погашено полностью.
