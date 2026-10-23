@@ -1301,6 +1301,11 @@ export const damageReports = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    /**
+     * Партия 23.10: срок оплаты ущерба по акту (п. 2.3.15 договора). По
+     * умолчанию +7 дней от акта. До него дело в «Должниках» ждёт оплату.
+     */
+    payDueDate: date("pay_due_date"),
     /** Этап 2: номер текущей ревизии (1 = создание, +1 на каждую правку). */
     revisionNo: integer("revision_no").notNull().default(1),
     /** Head-хэш цепочки ревизий (SHA-256). Защита от подделки. */
@@ -2088,6 +2093,15 @@ export const debtors = pgTable(
       () => damageReports.id,
       { onDelete: "set null" },
     ),
+    // Партия 23.10: «ждём оплату до» — пока дата не наступила, дело не в
+    // прозвоне; в срок CRM спрашивает «Пришла ли оплата?».
+    paymentDueDate: date("payment_due_date"),
+    // Пеня по п. 5.7 договора (1 000 ₽/день неоплаты ущерба). По умолчанию
+    // выключена — включает менеджер. Считается с penaltyFrom по penaltyUntil
+    // (день полного возмещения ущерба) или по сегодня.
+    penaltyEnabled: boolean("penalty_enabled").notNull().default(false),
+    penaltyFrom: date("penalty_from"),
+    penaltyUntil: date("penalty_until"),
     // closing
     closedAt: timestamp("closed_at", { withTimezone: true }),
     closedReason: text("closed_reason"),
@@ -2124,6 +2138,8 @@ export const debtorPayments = pgTable(
     paidAt: timestamp("paid_at", { withTimezone: true }),
     paidAmount: integer("paid_amount"),
     paidMethod: debtorPaymentMethodEnum("paid_method"),
+    /** Партия 23.10: часть платежа, ушедшая на пеню по п. 5.7 (не на акт). */
+    penaltyAmount: integer("penalty_amount").notNull().default(0),
     paidByUserId: bigint("paid_by_user_id", { mode: "number" }).references(
       () => users.id,
       { onDelete: "set null" },

@@ -11,12 +11,16 @@ import {
   damageReportItems,
   damageReportMedia,
   damageReportRevisions,
+  debtors,
   payments,
   rentals,
   scooters,
   users,
 } from "../db/schema.js";
 import { makeFileKey, removeObject, putObject } from "../storage/index.js";
+import { syncRentalDebtorCases } from "../services/debtorSync.js";
+import { mirrorRentalPaymentToDebtor } from "../services/debtorMirror.js";
+import { addDaysYmd, mskTodayYmd } from "../services/debtorFinance.js";
 import { putObjectWithImageVariants } from "../storage/image.js";
 import { processDamageVideo } from "../services/damageVideoProcessor.js";
 import { inspectVideoForServe } from "../storage/video.js";
@@ -112,9 +116,19 @@ const CreateBody = z.object({
   items: z.array(ItemInput).min(1),
   /** Part B: токен черновика — привязать загруженные заранее медиа к акту. */
   draftToken: z.string().max(80).nullable().optional(),
+  /**
+   * Партия 23.10: срок оплаты ущерба, дней от акта (п. 2.3.15 договора).
+   * По умолчанию 7 — до этой даты дело в «Должниках» ждёт оплату.
+   */
+  payDays: z.number().int().min(0).max(365).default(7),
 });
 
 const PatchBody = z.object({
+  /** Партия 23.10: срок оплаты ущерба (YYYY-MM-DD). */
+  payDueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   depositCovered: z.number().int().min(0).optional(),
   note: z.string().max(2000).nullable().optional(),
   items: z.array(ItemInput).optional(),
@@ -254,6 +268,7 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       note,
       sendScooterToRepair,
       draftToken,
+      payDays,
     } = parsed.data;
     // Грузим аренду — нужен скутер и залог.
     const [rental] = await db
@@ -280,6 +295,7 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         total,
         depositCovered: cappedDeposit,
         note: note ?? null,
+        payDueDate: addDaysYmd(mskTodayYmd(), payDays),
       })
       .returning();
     // v0.4.97: единый счёт залога. Если при создании акта часть ущерба
@@ -398,6 +414,11 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       .update(damageReports)
       .set({ contentHash: headHash })
       .where(eq(damageReports.id, report!.id));
+    // Партия 23.10: ущерб сразу заводится делом в «Должниках» (этап «ждём
+    // оплату до …»), чтобы был один источник правды и его можно было закрыть.
+    await syncRentalDebtorCases().catch((e) =>
+      req.log?.warn?.({ err: e }, "debtor sync after damage report failed"),
+    );
     return await loadReportFull(report!.id);
   });
 
@@ -417,6 +438,53 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       .where(eq(damageReports.id, id));
     if (!report) return reply.code(404).send({ error: "not found" });
     const userId = getUserId(req);
+    // Партия 23.10: срок оплаты — не правка содержания акта (ревизию не
+    // создаём), но переносим его в дело «Должников», если то ещё ждёт оплату.
+    if (
+      parsed.data.payDueDate !== undefined &&
+      parsed.data.payDueDate !== report.payDueDate
+    ) {
+      const ru = (v: string | null) =>
+        v ? v.split("-").reverse().join(".") : "—";
+      await db
+        .update(damageReports)
+        .set({ payDueDate: parsed.data.payDueDate, updatedAt: new Date() })
+        .where(eq(damageReports.id, id));
+      const cases = await db
+        .select()
+        .from(debtors)
+        .where(eq(debtors.damageReportId, id));
+      for (const c of cases) {
+        if (String(c.stage).startsWith("closed_")) continue;
+        await db
+          .update(debtors)
+          .set({
+            paymentDueDate: parsed.data.payDueDate,
+            ...(c.penaltyEnabled ? {} : { penaltyFrom: parsed.data.payDueDate }),
+            updatedAt: new Date(),
+          })
+          .where(eq(debtors.id, c.id));
+      }
+      await logActivity(req, {
+        entity: "damage_report",
+        entityId: id,
+        action: "pay_due_changed",
+        summary: `Аренда #${String(report.rentalId).padStart(4, "0")}: срок оплаты ущерба по акту #${id} — ${ru(report.payDueDate)} → ${ru(parsed.data.payDueDate)}`,
+        diff: {
+          due: {
+            label: "Срок оплаты",
+            from: ru(report.payDueDate),
+            to: ru(parsed.data.payDueDate),
+            kind: "text",
+          },
+        },
+      });
+      const onlyDue =
+        parsed.data.items === undefined &&
+        parsed.data.depositCovered === undefined &&
+        parsed.data.note === undefined;
+      if (onlyDue) return await loadReportFull(id);
+    }
     // Старое состояние — для diff и (если акт легаси без ревизий) снимка rev 1.
     const oldItems = await db
       .select()
@@ -655,6 +723,10 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       meta: { revisionNo: nextRevNo, total: newTotal, posDiff },
       diff: Object.keys(diff).length > 0 ? diff : undefined,
     });
+    // Сумма акта могла поменяться — дело в «Должниках» пересчитается.
+    await syncRentalDebtorCases().catch((e) =>
+      req.log?.warn?.({ err: e }, "debtor sync after damage edit failed"),
+    );
     return await loadReportFull(id);
   });
 
@@ -728,6 +800,14 @@ export async function damageReportsRoutes(app: FastifyInstance) {
           method: parsed.data.method,
         },
       });
+      // Партия 23.10: оплата по акту — строкой в деле «Должников».
+      await mirrorRentalPaymentToDebtor(req, {
+        rentalId: report.rentalId,
+        type: "damage",
+        amount: parsed.data.amount,
+        method: parsed.data.method,
+        damageReportId: id,
+      }).catch((e) => req.log?.warn?.({ err: e }, "debtor mirror failed"));
       return await loadReportFull(id);
     },
   );

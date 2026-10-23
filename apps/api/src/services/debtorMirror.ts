@@ -12,7 +12,7 @@
  * «ведётся в модуле» и авто-закрывается при полном погашении.
  */
 import type { FastifyRequest } from "fastify";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   debtors,
@@ -22,6 +22,7 @@ import {
 } from "../db/schema.js";
 import { logActivity } from "./activityLog.js";
 import { isClosed, type Stage } from "./debtorStages.js";
+import { loadCaseFinance } from "./debtorFinance.js";
 
 /** Типы платежей по аренде, которые гасят «долг» (а не залог/возврат). */
 const MIRROR_TYPES = new Set(["rent", "fine", "damage"]);
@@ -38,17 +39,37 @@ function ymd(d: Date): string {
 
 export async function mirrorRentalPaymentToDebtor(
   req: FastifyRequest,
-  args: { rentalId: number; type: string; amount: number; method: string },
+  args: {
+    rentalId: number;
+    type: string;
+    amount: number;
+    method: string;
+    damageReportId?: number | null;
+  },
 ): Promise<void> {
   if (!MIRROR_TYPES.has(args.type)) return;
   if (!Number.isFinite(args.amount) || args.amount <= 0) return;
 
-  const [d] = await db
-    .select()
-    .from(debtors)
-    .where(eq(debtors.relatedRentalId, args.rentalId));
-  if (!d) return; // дело ещё не заведено (создастся синком позже) — пропускаем
-  if (isClosed(d.stage as Stage)) return;
+  // Партия 23.10: ущерб — в дело своего акта, аренда/просрочка — в дело
+  // долга за аренду. Раньше всё падало в «одно дело на аренду».
+  const candidates =
+    args.type === "damage" && args.damageReportId != null
+      ? await db
+          .select()
+          .from(debtors)
+          .where(eq(debtors.damageReportId, args.damageReportId))
+      : await db
+          .select()
+          .from(debtors)
+          .where(
+            and(
+              eq(debtors.relatedRentalId, args.rentalId),
+              isNull(debtors.damageReportId),
+              ne(debtors.type, "damage"),
+            ),
+          );
+  const d = candidates.find((c) => !isClosed(c.stage as Stage));
+  if (!d) return; // дела нет (создастся синком) или уже закрыто
 
   // Имя пользователя, принявшего платёж (для пометки «кто принял»).
   let userName = "администратор";
@@ -91,15 +112,9 @@ export async function mirrorRentalPaymentToDebtor(
     summary: `${d.caseNumber}: платёж ${args.amount.toLocaleString("ru-RU")} ₽ через карточку аренды (${label}) · ${userName}`,
   });
 
-  // Авто-закрытие при полном погашении.
-  const all = await db
-    .select()
-    .from(debtorPayments)
-    .where(eq(debtorPayments.debtorId, d.id));
-  const paid = all
-    .filter((p) => p.paidAt)
-    .reduce((s, p) => s + (p.paidAmount ?? 0), 0);
-  if (paid >= d.totalAmount) {
+  // Авто-закрытие при полном погашении (у дела ущерба — по самому акту).
+  const fin = (await loadCaseFinance([d])).get(d.id);
+  if (fin && fin.remaining <= 0) {
     await db
       .update(debtors)
       .set({
