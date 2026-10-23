@@ -104,7 +104,7 @@ export function ClientPhoto({
   const gender = guessGender(client.name);
   const stamp = client.blacklisted
     ? { text: "ЧЁРНЫЙ СПИСОК", tone: "red" as const }
-    : client.debt > 0
+    : (client.allDebt ?? client.debt) > 0
       ? { text: "ДОЛЖНИК", tone: "orange" as const }
       : null;
 

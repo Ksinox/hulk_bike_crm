@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowUpRight,
   Ban,
   Bike,
   Check,
@@ -484,23 +485,38 @@ export function ClientCard({ client }: { client: Client }) {
           поведение, которое заказчик просил: после завершения аренды с
           ущербом долг не теряется, а отображается на профиле клиента. */}
       {(client.unpaidDamageDebt ?? 0) > 0 && (
-        <div className="flex items-center gap-2 rounded-[14px] bg-red-soft/70 p-3 text-[13px] text-red-ink">
+        // 23.10: ущерб ведётся делом в «Должниках» — плашка ведёт в дело.
+        <button
+          type="button"
+          data-client-damage
+          onClick={() => {
+            const c = debtorCases.find((x) => x.type === "damage" && x.active);
+            navigate(c ? { route: "debtors", debtorId: c.id } : { route: "debtors" });
+          }}
+          className="group flex w-full items-center gap-2 rounded-[14px] bg-red-soft/70 p-3 text-left text-[13px] text-red-ink transition-colors hover:bg-red-soft"
+        >
           <AlertTriangle size={16} className="shrink-0" />
           <div className="min-w-0 flex-1">
             <b>
               Долг по ущербу: {fmt(client.unpaidDamageDebt ?? 0)} ₽
             </b>
             <span className="ml-2 text-[12px] text-red-ink/80">
-              по всем актам клиента (включая завершённые аренды)
+              {(() => {
+                const ds = debtorCases.filter((x) => x.type === "damage" && x.active);
+                return ds.length > 0
+                  ? `в «Должниках» · ${ds.map((x) => `дело ${x.caseNumber}`).join(", ")}`
+                  : "по всем актам клиента (включая завершённые аренды)";
+              })()}
             </span>
           </div>
-        </div>
+          <ArrowUpRight size={15} className="shrink-0 opacity-60 group-hover:opacity-100" />
+        </button>
       )}
       {client.debt > 0 && (
         <div className="flex items-center gap-2 rounded-[14px] bg-orange-soft/70 p-3 text-[13px] text-orange-ink">
           <AlertTriangle size={16} className="shrink-0" />
           <div className="min-w-0 flex-1">
-            <b>Есть непогашенный долг: {fmt(client.debt)} ₽</b>
+            <b>Долг за аренду: {fmt(client.debt)} ₽</b>
             <span className="ml-2 text-[12px] text-orange-ink/80">
               {client.comment || "по последней аренде"}
             </span>

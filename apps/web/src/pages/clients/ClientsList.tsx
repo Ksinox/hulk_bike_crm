@@ -112,7 +112,7 @@ function ClientTile({
   onSelect: (id: number) => void;
 }) {
   const photo = useClientPhoto(c.id);
-  const hasDebt = c.debt > 0 && !c.blacklisted;
+  const hasDebt = (c.allDebt ?? c.debt) > 0 && !c.blacklisted;
   return (
     <button
       type="button"
@@ -160,7 +160,7 @@ function ClientTile({
           </span>
         ) : hasDebt ? (
           <span className="inline-flex items-center gap-1 font-semibold text-red-ink">
-            <AlertTriangle size={11} /> долг {c.debt.toLocaleString("ru-RU")} ₽
+            <AlertTriangle size={11} /> долг {(c.allDebt ?? c.debt).toLocaleString("ru-RU")} ₽
           </span>
         ) : c.rents > 0 ? (
           <span className="font-semibold text-ink-2">{c.rents} аренд.</span>
@@ -182,7 +182,7 @@ function ClientRow({
   onSelect: (id: number) => void;
 }) {
   const photo = useClientPhoto(c.id);
-  const hasDebt = c.debt > 0 && !c.blacklisted;
+  const hasDebt = (c.allDebt ?? c.debt) > 0 && !c.blacklisted;
 
   const accent =
     !active && c.blacklisted
@@ -269,7 +269,7 @@ function ClientRow({
               )}
             >
               <AlertTriangle size={11} />
-              долг {c.debt.toLocaleString("ru-RU")} ₽
+              долг {(c.allDebt ?? c.debt).toLocaleString("ru-RU")} ₽
             </span>
           ) : c.rents > 0 ? (
             <span className="font-semibold">

@@ -72,7 +72,7 @@ export function MobileClients() {
     let black = 0;
     for (const c of clients) {
       if (activeSet.has(c.id) && !c.blacklisted) active++;
-      if (c.debt > 0) debt++;
+      if ((c.allDebt ?? c.debt) > 0) debt++;
       if (c.blacklisted) black++;
     }
     return { active, debt, black };
@@ -81,7 +81,7 @@ export function MobileClients() {
   const filtered = useMemo(() => {
     const matchStatus = (c: Client): boolean => {
       if (filter === "active") return activeSet.has(c.id) && !c.blacklisted;
-      if (filter === "debt") return c.debt > 0;
+      if (filter === "debt") return (c.allDebt ?? c.debt) > 0;
       if (filter === "black") return !!c.blacklisted;
       return true;
     };
@@ -218,9 +218,9 @@ function ClientRow({
             {client.phone}
           </div>
         </div>
-        {client.debt > 0 && (
+        {(client.allDebt ?? client.debt) > 0 && (
           <div className="shrink-0 text-right text-[13px] font-bold tabular-nums text-red">
-            {rub(client.debt)} ₽
+            {rub(client.allDebt ?? client.debt)} ₽
           </div>
         )}
       </button>

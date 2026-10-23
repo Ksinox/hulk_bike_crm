@@ -65,14 +65,14 @@ function matchClient(
   }
   if (f.status === "inactive") {
     // без аренды, без долгов, не в ЧС
-    if (hasActive || c.debt > 0 || c.blacklisted) return false;
+    if (hasActive || (c.allDebt ?? c.debt) > 0 || c.blacklisted) return false;
   }
-  if (f.status === "debt" && c.debt === 0) return false;
+  if (f.status === "debt" && (c.allDebt ?? c.debt) === 0) return false;
   if (f.status === "issue") {
     const isIssue =
       unreachable.has(c.id) ||
       overdueSet.has(c.id) ||
-      c.debt > 0 ||
+      (c.allDebt ?? c.debt) > 0 ||
       c.blacklisted;
     if (!isIssue) return false;
   }
