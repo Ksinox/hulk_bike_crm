@@ -5,6 +5,8 @@ import { useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { useDebtor, useRecordPayment } from "@/lib/api/debtors";
 import type { PaymentMethod } from "@/lib/debtors/types";
+import { PayMethodPicker, splitByMethod } from "@/components/PayMethodPicker";
+import { isTouchPrimary } from "@/lib/useIsMobile";
 import { toast } from "@/lib/toast";
 
 export function DebtorPaymentScreen({
@@ -30,6 +32,7 @@ export function DebtorPaymentScreen({
 
   const [amount, setAmount] = useState<string>("");
   const [method, setMethod] = useState<PaymentMethod>("transfer");
+  const [cashPart, setCashPart] = useState(0);
   // Как зачесть переплату, если сумма больше планового платежа.
   const [allocate, setAllocate] = useState<"term" | "total">("term");
 
@@ -61,6 +64,7 @@ export function DebtorPaymentScreen({
         id,
         amount: numAmount,
         method,
+        cashAmount: method === "mixed" ? splitByMethod(numAmount, "mixed", cashPart).cash : undefined,
         paymentN: nextPlanned?.n,
         allocate: overpay ? allocate : undefined,
       });
@@ -157,54 +161,16 @@ export function DebtorPaymentScreen({
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
             Способ
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setMethod("transfer")}
-              className={`flex items-center gap-3 rounded-[12px] border p-3.5 text-left ${
-                method === "transfer"
-                  ? "border-ink bg-ink text-white"
-                  : "border-border hover:border-ink"
-              }`}
-            >
-              <div
-                className={`grid h-9 w-9 flex-none place-items-center rounded-[9px] ${
-                  method === "transfer" ? "bg-white/15" : "bg-surface-soft"
-                }`}
-              >
-                ↔
-              </div>
-              <div>
-                <div className="text-[14px] font-semibold">Перевод</div>
-                <div className={`mt-0.5 font-mono text-[11px] ${method === "transfer" ? "text-white/60" : "text-muted"}`}>
-                  карта / СБП / р/с
-                </div>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMethod("cash")}
-              className={`flex items-center gap-3 rounded-[12px] border p-3.5 text-left ${
-                method === "cash"
-                  ? "border-ink bg-ink text-white"
-                  : "border-border hover:border-ink"
-              }`}
-            >
-              <div
-                className={`grid h-9 w-9 flex-none place-items-center rounded-[9px] ${
-                  method === "cash" ? "bg-white/15" : "bg-surface-soft"
-                }`}
-              >
-                ₽
-              </div>
-              <div>
-                <div className="text-[14px] font-semibold">Наличные</div>
-                <div className={`mt-0.5 font-mono text-[11px] ${method === "cash" ? "text-white/60" : "text-muted"}`}>
-                  в кассу магазина
-                </div>
-              </div>
-            </button>
-          </div>
+          {/* 2.1: способ — как везде в CRM: наличными, переводом или смешанно
+              (доли уходят в кассу и на счёт отдельными проводками). */}
+          <PayMethodPicker
+            total={numAmount}
+            method={method}
+            onMethod={setMethod}
+            cash={cashPart}
+            onCash={setCashPart}
+            touch={isTouchPrimary()}
+          />
 
           {/* Аллокация переплаты — как в банке: сократить срок или уменьшить остаток */}
           {overpay && (

@@ -26,7 +26,8 @@ export type PaymentType =
   | "swap_fee"
   | "equipment_fee"
   | "parking"
-  | "deposit_forfeit";
+  | "deposit_forfeit"
+  | "debtor";
 
 export type Payment = {
   id: number;

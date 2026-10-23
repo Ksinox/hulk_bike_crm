@@ -36,7 +36,8 @@ export type RevenueTypeKey =
   | "damage"
   | "equipment_fee"
   | "swap_fee"
-  | "parking";
+  | "parking"
+  | "debtor";
 
 export type RevenueAnalytics = {
   total: number;
@@ -82,6 +83,7 @@ const TYPE_META: Record<RevenueTypeKey, { label: string; color: string }> = {
   equipment_fee: { label: "Экипировка", color: "#8B5CF6" },
   swap_fee: { label: "Замена скутера", color: "#06B6D4" },
   parking: { label: "Паркинг", color: "#64748B" },
+  debtor: { label: "Долги (Должники)", color: "#14B8A6" },
 };
 
 const isExtension = (p: ApiPayment): boolean =>
@@ -94,6 +96,7 @@ function typeKeyOf(p: ApiPayment): RevenueTypeKey {
   if (p.type === "equipment_fee") return "equipment_fee";
   if (p.type === "swap_fee") return "swap_fee";
   if (p.type === "parking") return "parking";
+  if (p.type === "debtor") return "debtor";
   return "rent";
 }
 

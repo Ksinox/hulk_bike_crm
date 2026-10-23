@@ -134,10 +134,14 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
   // менеджером, и заводить по акту новое нельзя. Открытые — в приоритете.
   const legacyDamageByRental = new Map<number, (typeof allCases)[number][]>();
   for (const c of allCases) {
+    // Дело удалённого акта (ссылку обнулил FK) и убранное из «Должников» —
+    // не старое: к новому акту его не цепляем.
+    const ownClosed = /^(Акт о повреждениях|Убрано из)/.test(c.closedReason ?? "");
     if (
       c.type === "damage" &&
       c.damageReportId == null &&
-      c.relatedRentalId != null
+      c.relatedRentalId != null &&
+      !ownClosed
     ) {
       const arr = legacyDamageByRental.get(c.relatedRentalId) ?? [];
       arr.push(c);

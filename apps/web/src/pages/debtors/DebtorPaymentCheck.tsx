@@ -24,6 +24,7 @@ import {
 import { DatePicker } from "@/components/ui/date-picker";
 import { toast } from "@/lib/toast";
 import { isTouchPrimary } from "@/lib/useIsMobile";
+import { PayMethodPicker, splitByMethod } from "@/components/PayMethodPicker";
 
 const H = isTouchPrimary() ? "h-12" : "h-10";
 
@@ -41,6 +42,7 @@ export function DebtorPaymentCheck({
   const patch = usePatchDebtor();
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [method, setMethod] = useState<PaymentMethod>("cash");
+  const [cashPart, setCashPart] = useState(0);
   const [amountStr, setAmountStr] = useState("");
   const [days, setDays] = useState(3);
   const [moving, setMoving] = useState(false);
@@ -60,6 +62,10 @@ export function DebtorPaymentCheck({
         id: d.id,
         answer,
         method,
+        cashAmount:
+          method === "mixed"
+            ? splitByMethod(answer === "partial" ? amount : d.remaining, "mixed", cashPart).cash
+            : undefined,
         amount: answer === "partial" ? amount : undefined,
         days: answer === "partial" ? days : undefined,
       });
@@ -245,17 +251,15 @@ export function DebtorPaymentCheck({
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
                         Как пришли деньги
                       </div>
-                      <div className="flex gap-2">
-                        {(["cash", "transfer"] as const).map((m) => (
-                          <Chip
-                            key={m}
-                            active={method === m}
-                            onClick={() => setMethod(m)}
-                          >
-                            {m === "cash" ? "Наличные" : "Перевод"}
-                          </Chip>
-                        ))}
-                      </div>
+                      <PayMethodPicker
+                        total={answer === "partial" ? amount : d.remaining}
+                        method={method}
+                        onMethod={setMethod}
+                        cash={cashPart}
+                        onCash={setCashPart}
+                        touch={isTouchPrimary()}
+                        compact
+                      />
                     </div>
                     {answer === "partial" && (
                       <div>

@@ -107,7 +107,7 @@ ok(d.paid === 2000 && d.remaining === 10000, "дело: оплачено 2 000, 
 ok(d.payments.some((p) => p.paidAmount === 2000), "в деле строка платежа из аренды");
 
 console.log("\n3. Срок прошёл → «Частично» 3 000, остаток через 3 дня");
-await sql`update debtors set payment_due_date = current_date - 1 where id=${c.id}`;
+await sql`update debtors set payment_due_date = (now() at time zone 'Europe/Moscow')::date - 1 where id=${c.id}`;
 const today2 = (await call("GET", "/api/debtors/today")).body;
 const inCalls = [today2.hottest, ...today2.queue].find((q) => q?.debtor.id === c.id);
 ok(inCalls?.action.kind === "payment_check", "после срока — первым «пришла ли оплата?»", inCalls?.action);
@@ -125,7 +125,7 @@ ok(over.status === 400, "платёж 8 000 при остатке 7 000 откл
 
 console.log("\n5. Пеня п. 5.7: включили, 3 дня назад");
 await call("PATCH", `/api/debtors/${c.id}`, { penaltyEnabled: true });
-await sql`update debtors set penalty_from = current_date - 3 where id=${c.id}`;
+await sql`update debtors set penalty_from = (now() at time zone 'Europe/Moscow')::date - 3 where id=${c.id}`;
 d = await detail(c.id);
 ok(d.penalty === 3000 && d.remaining === 10000, "пеня 3 000, к оплате 10 000", { pen: d.penalty, rem: d.remaining });
 
@@ -335,6 +335,39 @@ console.log("\n17. Выкуп: платёж в самой сделке — ст�
   const d6 = await detail(caseId);
   ok(d6.payments.some((p) => p.paidAmount === 1000 && /выкупа/.test(p.note ?? "")), "в деле строка «Принято в сделке выкупа»", d6.payments.map((p) => [p.paidAmount, p.note]));
   ok(d6.paid - paidBefore === 1000, "в деле оплачено +1 000", { before: paidBefore, after: d6.paid });
+}
+
+
+console.log("\n18. Смешанная оплата: нал и перевод — отдельными платежами (фильтр выручки)");
+{
+  // дело ущерба
+  const act4 = (await call("POST", "/api/damage-reports", {
+    rentalId: r.id, depositCovered: 0, payDays: 7,
+    items: [{ name: "ТЕСТ смешанно", originalPrice: 5000, finalPrice: 5000, quantity: 1 }],
+  })).body;
+  const c5 = await caseOf(r.id, act4.id);
+  const mx = await call("POST", `/api/debtors/${c5.id}/payments`, { amount: 5000, method: "mixed", cashAmount: 2000 });
+  ok(mx.status === 200, "смешанно 5 000 (нал 2 000 + перевод 3 000) принято", mx.body);
+  const dp = await sql`select method, amount from payments where damage_report_id=${act4.id} and type='damage' and paid order by method`;
+  ok(dp.length === 2 && dp.find((x) => x.method === "cash")?.amount === 2000 && dp.find((x) => x.method === "transfer")?.amount === 3000,
+    "в аренде два платежа ущерба: наличными 2 000 и переводом 3 000", dp);
+  const d8 = await detail(c5.id);
+  const row = d8.payments.find((p) => p.paidAmount === 5000);
+  ok(row?.paidMethod === "mixed" && row?.cashAmount === 2000 && row?.transferAmount === 3000, "строка дела: смешанно, доли видны", row);
+  ok(d8.stage === "closed_paid", "акт оплачен — дело закрыто");
+
+  // ручное дело (без акта/аренды) — в выручку видом «Долг по делу»
+  const man = await call("POST", "/api/debtors", { clientId: r.client_id, type: "damage", totalAmount: 1200, comment: "ТЕСТ ручное дело" });
+  ok(man.status === 201, "ручное дело заведено", man.status);
+  const before = await sql`select coalesce(sum(amount),0)::int s from payments where type='debtor' and note like ${"%" + man.body.caseNumber + "%"}`;
+  const mp = await call("POST", `/api/debtors/${man.body.id}/payments`, { amount: 1200, method: "mixed", cashAmount: 500 });
+  ok(mp.status === 200, "по ручному делу принято 1 200 смешанно", mp.body);
+  const rev = await sql`select method, amount, rental_id from payments where type='debtor' and paid and note like ${"%" + man.body.caseNumber + "%"} order by method`;
+  ok(rev.length === 2 && rev.find((x) => x.method === "cash")?.amount === 500 && rev.find((x) => x.method === "transfer")?.amount === 700,
+    "в выручке: «Долг по делу» наличными 500 и переводом 700", rev);
+  ok(before[0].s === 0 && Number(rev[0]?.rental_id) > 0, "привязано к аренде клиента");
+  const d9 = await detail(man.body.id);
+  ok(d9.stage === "closed_paid" && d9.paid === 1200, "ручное дело погашено и закрыто", { st: d9.stage, paid: d9.paid });
 }
 
 console.log(`\nИТОГ: ${pass} ✓, ${fail} ✗`);

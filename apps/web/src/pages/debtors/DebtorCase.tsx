@@ -441,7 +441,7 @@ export function DebtorCase({
         text: (
           <>
             Платёж <b className="text-emerald-700">{formatRub(p.paidAmount ?? 0)}</b> ·{" "}
-            {p.paidMethod === "cash" ? "наличные" : "перевод"}
+            {methodLabel(p)}
             {p.note && <span className="text-muted"> · {p.note}</span>}
           </>
         ),
@@ -660,7 +660,7 @@ export function DebtorCase({
                     }
                   >
                     {paid
-                      ? `${ruDate(p.paidAt!)} · ${p.paidMethod === "transfer" ? "перевод" : "наличные"}`
+                      ? `${ruDate(p.paidAt!)} · ${methodLabel(p)}`
                       : `${ruDate(p.scheduledDate)} · ${overdue ? "просрочен" : "по графику"}`}
                   </div>
                   {p.note && (
@@ -1054,6 +1054,13 @@ export function DebtorCase({
       )}
     </div>
   );
+}
+
+/** Как пришли деньги: наличные / перевод / смешанно с долями. */
+function methodLabel(p: { paidMethod: string | null; cashAmount?: number | null; transferAmount?: number | null }) {
+  if (p.paidMethod === "mixed")
+    return `смешанно: нал ${formatRub(p.cashAmount ?? 0)} + перевод ${formatRub(p.transferAmount ?? 0)}`;
+  return p.paidMethod === "cash" ? "наличные" : "перевод";
 }
 
 const OUTCOME_SHORT: Record<CallOutcome, string> = {

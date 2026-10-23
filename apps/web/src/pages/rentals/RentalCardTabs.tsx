@@ -821,6 +821,7 @@ const PAYMENT_TYPE_LABEL: Record<string, string> = {
   swap_fee: "Замена скутера",
   equipment_fee: "Экипировка",
   parking: "Паркинг",
+  debtor: "Долг по делу",
 };
 
 const PAYMENT_TYPE_TONE: Record<string, string> = {
@@ -832,6 +833,7 @@ const PAYMENT_TYPE_TONE: Record<string, string> = {
   swap_fee: "bg-blue-50 text-blue-700",
   equipment_fee: "bg-orange-soft text-orange-ink",
   parking: "bg-yellow-100 text-yellow-700",
+  debtor: "bg-red-soft text-red-ink",
 };
 
 export function PaymentsTab({
@@ -2717,6 +2719,7 @@ function PaymentEventRow({
     swap_fee: "Доплата за замену скутера",
     equipment_fee: "Оплата экипировки",
     parking: "Оплата паркинга",
+    debtor: "Оплата долга по делу («Должники»)",
   };
   const methodLabel: Record<string, string> = {
     cash: "наличные",

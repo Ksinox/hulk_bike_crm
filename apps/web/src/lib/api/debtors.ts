@@ -113,6 +113,7 @@ export function usePaymentCheck() {
       answer: "yes" | "partial" | "no";
       amount?: number;
       method?: PaymentMethod;
+      cashAmount?: number;
       days?: number;
     }) =>
       api.post<{ ok: boolean; paymentDueDate?: string }>(
@@ -121,6 +122,7 @@ export function usePaymentCheck() {
           answer: args.answer,
           amount: args.amount,
           method: args.method,
+          cashAmount: args.cashAmount,
           days: args.days,
         },
       ),
@@ -267,6 +269,8 @@ export function useRecordPayment() {
       paymentN?: number;
       amount: number;
       method: PaymentMethod;
+      /** 2.1: при «смешанно» — сколько наличными. */
+      cashAmount?: number;
       paidAt?: string;
       note?: string;
       allocate?: "term" | "total";
@@ -275,6 +279,7 @@ export function useRecordPayment() {
         paymentN: args.paymentN,
         amount: args.amount,
         method: args.method,
+        cashAmount: args.cashAmount,
         paidAt: args.paidAt,
         note: args.note,
         allocate: args.allocate,
