@@ -463,6 +463,7 @@ export function DebtorCase({
         </button>
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           {/* Кто */}
+          <div className="min-w-0">
           <div className="flex min-w-0 items-start gap-4">
             <CaseAvatar name={d.displayName} photoKey={d.clientPhotoKey ?? null} />
             <div className="min-w-0">
@@ -489,8 +490,10 @@ export function DebtorCase({
                 <Phone size={14} className="text-blue-600" />
                 {d.displayPhone}
               </a>
+            </div>
+          </div>
               {(d.clientId != null || d.relatedRentalId != null) && (
-                <div className="mt-2.5 flex flex-wrap gap-2">
+                <div className="mt-3 flex flex-wrap gap-2 sm:pl-[72px]">
                   {d.clientId != null && (
                     <button
                       type="button"
@@ -528,7 +531,6 @@ export function DebtorCase({
                   )}
                 </div>
               )}
-            </div>
           </div>
 
           {/* Сколько */}
