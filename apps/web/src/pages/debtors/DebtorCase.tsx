@@ -32,6 +32,7 @@ import {
   useTransitionDebtor,
   useLogCall,
   useAddNote,
+  useRemoveDebtor,
 } from "@/lib/api/debtors";
 import {
   STAGE_LABEL,
@@ -240,6 +241,9 @@ export function DebtorCase({
   const [showPromised, setShowPromised] = useState(false);
   const [promisedDate, setPromisedDate] = useState("");
   const [noteText, setNoteText] = useState("");
+  const removeDebtor = useRemoveDebtor();
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removeReason, setRemoveReason] = useState("");
 
   if (q.isLoading) {
     return <div className="flex h-64 items-center justify-center text-muted">Загрузка…</div>;
@@ -724,7 +728,7 @@ export function DebtorCase({
       {closings.length > 0 && (
         <div className="mt-4 border-t border-border pt-3">
           <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-2">
-            Закрыть дело без денег
+            Закрыть дело без денег · с подтверждением директора
           </div>
           <div className="flex flex-wrap gap-2">
             {closings.map((t) => {
@@ -745,6 +749,62 @@ export function DebtorCase({
                 </button>
               );
             })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // 23.10: «Убрать из «Должников»» — с причиной и ключом директора.
+  const removeCard = !closed && (
+    <div className="rounded-2xl border border-dashed border-border bg-surface px-5 py-3">
+      {!removeOpen ? (
+        <button
+          type="button"
+          data-remove-debtor
+          onClick={() => setRemoveOpen(true)}
+          className={`${TAP}inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-muted hover:text-red-ink`}
+        >
+          <Ban size={13} /> Убрать из «Должников»
+        </button>
+      ) : (
+        <div className="py-1">
+          <div className="text-[13px] font-semibold text-ink">Убрать из «Должников»</div>
+          <div className="mt-0.5 text-[12px] text-muted">
+            Нужен код или подтверждение директора. Долг перестанет числиться за клиентом.
+          </div>
+          <textarea
+            autoFocus
+            rows={2}
+            value={removeReason}
+            onChange={(e) => setRemoveReason(e.target.value)}
+            placeholder="Причина: договорились, ошибочное дело…"
+            className="mt-2 w-full resize-none rounded-[10px] border border-border bg-white p-3 text-[13px] text-ink outline-none focus:border-ink"
+          />
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setRemoveOpen(false)}
+              className="h-10 rounded-[10px] px-3 text-[13px] font-semibold text-muted hover:text-ink"
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              disabled={removeReason.trim().length < 3 || removeDebtor.isPending}
+              onClick={async () => {
+                try {
+                  await removeDebtor.mutateAsync({ id, reason: removeReason.trim() });
+                  toast.success("Убрано из «Должников»", removeReason.trim());
+                  onBack();
+                } catch (e) {
+                  toast.error("Не получилось", (e as Error).message);
+                }
+              }}
+              className="h-10 rounded-[10px] bg-red-600 px-4 text-[13px] font-semibold text-white disabled:opacity-40"
+            >
+              Убрать
+            </button>
           </div>
         </div>
       )}
@@ -979,6 +1039,7 @@ export function DebtorCase({
           <DebtorPaymentCheck d={d} part="penalty" />
           {nextStepCard}
           <div className="lg:hidden">{historyCard}</div>
+          {removeCard}
         </div>
       </div>
 

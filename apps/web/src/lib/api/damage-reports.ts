@@ -325,6 +325,7 @@ export function useDamagePayment() {
       // damage_report.paidSum рос (видно в баннере), но KPI «Долг»
       // оставался стейл и пользователь думал что оплата не учлась.
       qc.invalidateQueries({ queryKey: ["rental-debt"] });
+      qc.invalidateQueries({ queryKey: ["debtors"] });
       qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
       qc.invalidateQueries({ queryKey: ["activity"] });
     },

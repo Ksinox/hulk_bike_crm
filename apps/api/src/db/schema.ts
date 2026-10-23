@@ -2144,6 +2144,10 @@ export const debtorPayments = pgTable(
     paidMethod: debtorPaymentMethodEnum("paid_method"),
     /** Партия 23.10: часть платежа, ушедшая на пеню по п. 5.7 (не на акт). */
     penaltyAmount: integer("penalty_amount").notNull().default(0),
+    /** Партия 23.10: реальный платёж (аренды/акта), который отражает строка. */
+    sourcePaymentId: bigint("source_payment_id", { mode: "number" }),
+    /** …или платёж по выкупу. */
+    sourceBuyoutPaymentId: bigint("source_buyout_payment_id", { mode: "number" }),
     paidByUserId: bigint("paid_by_user_id", { mode: "number" }).references(
       () => users.id,
       { onDelete: "set null" },

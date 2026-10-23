@@ -20,29 +20,23 @@
  * Закрытые дела (оператором/авто) не трогаем и заново не открываем.
  */
 import { and, eq, inArray, or, sql } from "drizzle-orm";
-import { overdueDailyRate } from "./overdueCharge.js";
 import { db } from "../db/index.js";
 import {
   damageReports,
-  debtEntries,
   debtors,
   debtorPayments,
   debtorStageEvents,
-  parkingSessions,
   payments,
   rentals,
 } from "../db/schema.js";
 import { isClosed, type Stage } from "./debtorStages.js";
+import { reconcileCaseHistory, rentOutstanding } from "./debtorLedger.js";
 import {
   DAMAGE_PAID_REASON,
-  RENT_CASE_MARK,
   loadCaseFinance,
   mskTodayYmd,
 } from "./debtorFinance.js";
 
-const MSK = "Europe/Moscow";
-const toMsk = (d: Date) =>
-  new Date(d.toLocaleString("en-US", { timeZone: MSK }));
 
 export type DebtorSyncResult = {
   created: number;
@@ -108,6 +102,7 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
     reportIds.length > 0
       ? await db
           .select({
+            id: payments.id,
             reportId: payments.damageReportId,
             amount: payments.amount,
             method: payments.method,
@@ -222,6 +217,7 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
           paidAmount: p.amount,
           paidMethod: p.method === "cash" ? "cash" : "transfer",
           paidByUserId: p.receivedByUserId,
+          sourcePaymentId: p.id,
           note: "Оплачено по акту в карточке аренды",
         });
       }
@@ -355,173 +351,69 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
           )
         : eq(rentals.status, "completed"),
     );
-  if (rentalRows.length === 0) return result;
-  const ids = rentalRows.map((r) => r.id);
+  if (rentalRows.length > 0) {
+    const ids = rentalRows.map((r) => r.id);
+    const outstandingBy = await rentOutstanding(ids);
+    const toUpdate: (typeof allCases)[number][] = [];
 
-  const entries = await db
-    .select()
-    .from(debtEntries)
-    .where(inArray(debtEntries.rentalId, ids));
-  const unpaidRent = await db
-    .select({ rentalId: payments.rentalId, amount: payments.amount })
-    .from(payments)
-    .where(
-      and(
-        inArray(payments.rentalId, ids),
-        eq(payments.type, "rent"),
-        eq(payments.paid, false),
-      ),
-    );
-  const parkingRows = await db
-    .select({
-      rentalId: parkingSessions.rentalId,
-      amount: parkingSessions.amount,
-      paidAmount: parkingSessions.paidAmount,
-    })
-    .from(parkingSessions)
-    .where(inArray(parkingSessions.rentalId, ids));
+    for (const r of rentalRows) {
+      const outstanding = outstandingBy.get(r.id) ?? 0;
+      const cases = rentCasesByRental.get(r.id) ?? [];
+      const exist =
+        cases.find((c) => !isClosed(c.stage as Stage)) ?? cases[0] ?? null;
 
-  const rentCaseIds = rentalRows.flatMap(
-    (r) => rentCasesByRental.get(r.id)?.map((c) => c.id) ?? [],
-  );
-  const moduleManaged = new Set<number>();
-  const modulePaidByCase = new Map<number, number>();
-  if (rentCaseIds.length > 0) {
-    const mPays = await db
-      .select({
-        debtorId: debtorPayments.debtorId,
-        paidAmount: debtorPayments.paidAmount,
-        paidAt: debtorPayments.paidAt,
-      })
-      .from(debtorPayments)
-      .where(inArray(debtorPayments.debtorId, rentCaseIds));
-    for (const p of mPays) {
-      moduleManaged.add(p.debtorId);
-      if (p.paidAt)
-        modulePaidByCase.set(
-          p.debtorId,
-          (modulePaidByCase.get(p.debtorId) ?? 0) + (p.paidAmount ?? 0),
-        );
-    }
-  }
-
-  const nowMsk = toMsk(new Date());
-  const todayDate = new Date(
-    nowMsk.getFullYear(),
-    nowMsk.getMonth(),
-    nowMsk.getDate(),
-  );
-
-  for (const r of rentalRows) {
-    const my = entries.filter((e) => e.rentalId === r.id);
-
-    // Просрочка — только у ещё идущей аренды со старым открытым делом.
-    let overdueBalance = 0;
-    if (r.status === "active") {
-      const endMsk = toMsk(r.endPlannedAt);
-      const endDate = new Date(
-        endMsk.getFullYear(),
-        endMsk.getMonth(),
-        endMsk.getDate(),
-      );
-      const overdueDays = Math.max(
-        0,
-        Math.floor((todayDate.getTime() - endDate.getTime()) / 86_400_000),
-      );
-      const dailyRate = overdueDailyRate(r.rate, r.rateUnit, r.equipmentJson);
-      const fineCharge = Math.round(dailyRate * 0.5) * overdueDays;
-      let fineSettled = 0;
-      for (const e of my) {
-        if (e.kind === "overdue_fine_forgive" && !e.appliedToEndPlanned)
-          fineSettled += e.amount;
-        else if (e.kind === "overdue_fine_payment") fineSettled += e.amount;
+      if (!exist) {
+        if (
+          outstanding > 0 &&
+          r.clientId != null &&
+          r.status === "completed" &&
+          !anyCaseRental.has(r.id)
+        ) {
+          await db.insert(debtors).values({
+            caseNumber: nextCaseNumber(),
+            clientId: r.clientId,
+            type: "rental_overdue",
+            stage: "created",
+            totalAmount: outstanding,
+            relatedRentalId: r.id,
+            comment: `Аренда #${pad4(r.id)} закрыта с долгом`,
+          });
+          result.created += 1;
+        }
+        continue;
       }
-      overdueBalance =
-        dailyRate * overdueDays + Math.max(0, fineCharge - fineSettled);
-    }
-
-    let manualCharged = 0;
-    let manualForgiven = 0;
-    for (const e of my) {
-      if (e.kind === "manual_charge") manualCharged += e.amount;
-      else if (e.kind === "manual_forgive") manualForgiven += e.amount;
-    }
-    const manualBalance = Math.max(0, manualCharged - manualForgiven);
-    const parkingBalance = parkingRows
-      .filter((p) => p.rentalId === r.id)
-      .reduce((s, p) => s + Math.max(0, p.amount - p.paidAmount), 0);
-    const rentBalance = unpaidRent
-      .filter((p) => p.rentalId === r.id)
-      .reduce((s, p) => s + p.amount, 0);
-    const outstanding =
-      overdueBalance + manualBalance + parkingBalance + rentBalance;
-
-    const cases = rentCasesByRental.get(r.id) ?? [];
-    const exist =
-      cases.find((c) => !isClosed(c.stage as Stage)) ?? cases[0] ?? null;
-
-    if (!exist) {
-      if (
-        outstanding > 0 &&
-        r.clientId != null &&
-        r.status === "completed" &&
-        !anyCaseRental.has(r.id)
-      ) {
-        await db.insert(debtors).values({
-          caseNumber: nextCaseNumber(),
-          clientId: r.clientId,
-          type: "rental_overdue",
-          stage: "created",
-          totalAmount: outstanding,
-          relatedRentalId: r.id,
-          comment: `Аренда #${pad4(r.id)} закрыта с долгом`,
-        });
-        result.created += 1;
-      }
-      continue;
-    }
-    if (isClosed(exist.stage as Stage)) continue;
-
-    // Дело новой логики («аренда закрыта с долгом») ведётся по самой аренде:
-    // всего = уже принятое в «Должниках» + что ещё должен по аренде; долг
-    // аренды погашен (где угодно) — дело закрыто.
-    if ((exist.comment ?? "").includes(RENT_CASE_MARK)) {
-      const total = (modulePaidByCase.get(exist.id) ?? 0) + outstanding;
+      if (isClosed(exist.stage as Stage)) continue;
+      // Дело ведётся по самой аренде: долга по аренде нет (погасили в
+      // карточке аренды, «Принять платёж», паркинг…) — дело закрыто.
       if (outstanding <= 0) {
-        await closeCase(exist, "Долг за аренду погашен", "авто: долг аренды погашен");
+        await closeCase(
+          exist,
+          "Долг за аренду погашен",
+          "авто: по аренде долга нет (оплачено в карточке аренды)",
+        );
         result.closed += 1;
-      } else if (exist.totalAmount !== total) {
-        await db
-          .update(debtors)
-          .set({ totalAmount: total, updatedAt: sql`now()` })
-          .where(eq(debtors.id, exist.id));
-        result.updated += 1;
+        continue;
       }
-      continue;
+      toUpdate.push(exist);
     }
-
-    // Дело ведётся в модуле (есть график/платежи) — сумму не перетираем,
-    // закрываем, когда в модуле погашено полностью.
-    if (moduleManaged.has(exist.id)) {
-      if ((modulePaidByCase.get(exist.id) ?? 0) >= exist.totalAmount) {
-        await closeCase(exist, "Долг погашен по графику", "авто: график погашен полностью");
-        result.closed += 1;
+    // Сумма дела = оплачено с момента дела + текущий долг аренды.
+    if (toUpdate.length > 0) {
+      const fin = await loadCaseFinance(toUpdate);
+      for (const c of toUpdate) {
+        const f = fin.get(c.id);
+        if (f && c.totalAmount !== f.total) {
+          await db
+            .update(debtors)
+            .set({ totalAmount: f.total, updatedAt: sql`now()` })
+            .where(eq(debtors.id, c.id));
+          result.updated += 1;
+        }
       }
-      continue;
-    }
-    if (outstanding > 0) {
-      if (exist.totalAmount !== outstanding) {
-        await db
-          .update(debtors)
-          .set({ totalAmount: outstanding, updatedAt: sql`now()` })
-          .where(eq(debtors.id, exist.id));
-        result.updated += 1;
-      }
-    } else {
-      await closeCase(exist, "Долг за аренду погашен (авто)", "авто: долг погашен");
-      result.closed += 1;
     }
   }
+
+  // История платежей дел — по реальным платежам (где бы их ни приняли).
+  await reconcileCaseHistory();
 
   return result;
 }
