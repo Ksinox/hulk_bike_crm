@@ -440,18 +440,38 @@ export function MobileClientCard({
           </Banner>
         )}
         {(client.unpaidDamageDebt ?? 0) > 0 && (
-          <Banner tone="red" icon={<AlertTriangle size={16} />}>
-            <b>Долг по ущербу: {fmt(client.unpaidDamageDebt ?? 0)} ₽</b>
-            <div className="text-[12px] opacity-80">
-              по всем актам клиента (включая завершённые аренды)
-            </div>
-          </Banner>
+          // 23.10: ущерб ведётся делом в «Должниках» — тап открывает дело.
+          <button
+            type="button"
+            data-client-damage
+            className="w-full text-left"
+            onClick={() => {
+              const c = (client.debtorCases ?? []).find(
+                (x) => x.type === "damage" && x.active,
+              );
+              navigate(c ? { route: "debtors", debtorId: c.id } : { route: "debtors" });
+            }}
+          >
+            <Banner tone="red" icon={<AlertTriangle size={16} />}>
+              <b>Долг по ущербу: {fmt(client.unpaidDamageDebt ?? 0)} ₽</b>
+              <div className="text-[12px] opacity-80">
+                {(() => {
+                  const ds = (client.debtorCases ?? []).filter(
+                    (x) => x.type === "damage" && x.active,
+                  );
+                  return ds.length > 0
+                    ? `в «Должниках» · ${ds.map((x) => `дело ${x.caseNumber}`).join(", ")} →`
+                    : "по всем актам клиента (включая завершённые аренды)";
+                })()}
+              </div>
+            </Banner>
+          </button>
         )}
         {client.debt > 0 && (
           <Banner tone="orange" icon={<AlertTriangle size={16} />}>
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <b>Долг: {fmt(client.debt)} ₽</b>
+                <b>Долг за аренду: {fmt(client.debt)} ₽</b>
                 <div className="text-[12px] opacity-80">
                   {client.comment || "по последней аренде"}
                 </div>

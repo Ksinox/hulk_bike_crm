@@ -302,11 +302,15 @@ export function useAllClients(): Client[] {
       apiRentals ?? [],
       debtAgg ?? null,
     );
-    const mapped = apiClients.map((a) => ({
-      ...adaptClient(a),
-      rents: rentsByClient.get(a.id) ?? 0,
-      debt: debtByClient.get(a.id) ?? 0,
-    }));
+    const mapped = apiClients.map((a) => {
+      const debt = debtByClient.get(a.id) ?? 0;
+      return {
+        ...adaptClient(a),
+        rents: rentsByClient.get(a.id) ?? 0,
+        debt,
+        allDebt: debt + (a.unpaidDamageDebt ?? 0),
+      };
+    });
     return [...mapped, ...state.addedClients];
   }, [apiClients, apiRentals, debtAgg]);
 }
@@ -348,7 +352,9 @@ function computeStats(
   if (debtAgg && debtAgg.length > 0) {
     for (const it of debtAgg) {
       const cur = debtByClient.get(it.clientId) ?? 0;
-      debtByClient.set(it.clientId, cur + it.totalDebt);
+      // 23.10: долг аренды — без ущерба (ущерб ведётся делом в «Должниках»
+      // и виден на клиенте отдельной плашкой).
+      debtByClient.set(it.clientId, cur + it.totalDebt - (it.damageBalance ?? 0));
     }
     return { rentsByClient, debtByClient };
   }
