@@ -25,6 +25,8 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isTouchPrimary } from "@/lib/useIsMobile";
+import { MixedSplitFields } from "@/components/PayMethodPicker";
 import { toast } from "@/lib/toast";
 import { toastRentalDone } from "./rentalUndo";
 import { useApiEquipment } from "@/lib/api/equipment";
@@ -77,7 +79,8 @@ export function EquipmentChangeDialog({
   const [items, setItems] = useState<EquipItem[]>(initial);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [payNow, setPayNow] = useState<boolean>(true);
-  const [method, setMethod] = useState<"cash" | "transfer">("cash");
+  const [method, setMethod] = useState<"cash" | "transfer" | "mixed">("cash");
+  const [cashPart, setCashPart] = useState(0);
   // Правка 1: куда вернуть разницу при удешевлении.
   const [refundTo, setRefundTo] = useState<"cash" | "deposit">("deposit");
   const [refundMethod, setRefundMethod] = useState<"cash" | "transfer">(
@@ -143,6 +146,7 @@ export function EquipmentChangeDialog({
         newEquipmentJson: items,
         payNow,
         method: payNow ? method : undefined,
+        cashAmount: payNow && method === "mixed" ? cashPart : undefined,
         refundTo: totalDelta < 0 ? refundTo : undefined,
         refundMethod:
           totalDelta < 0 && refundTo === "cash" ? refundMethod : undefined,
@@ -344,7 +348,7 @@ export function EquipmentChangeDialog({
               </div>
               {payNow && (
                 <div className="flex gap-1.5">
-                  {(["cash", "transfer"] as const).map((m) => (
+                  {(["cash", "transfer", "mixed"] as const).map((m) => (
                     <button
                       key={m}
                       type="button"
@@ -356,10 +360,18 @@ export function EquipmentChangeDialog({
                           : "border-border bg-white text-muted",
                       )}
                     >
-                      {m === "cash" ? "Наличные" : "Перевод"}
+                      {m === "cash" ? "Наличные" : m === "transfer" ? "Перевод" : "Смешанно"}
                     </button>
                   ))}
                 </div>
+              )}
+              {payNow && method === "mixed" && (
+                <MixedSplitFields
+                  total={totalDelta}
+                  cash={cashPart}
+                  onCash={setCashPart}
+                  touch={isTouchPrimary()}
+                />
               )}
             </div>
           )}

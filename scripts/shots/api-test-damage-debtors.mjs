@@ -370,6 +370,61 @@ console.log("\n18. Смешанная оплата: нал и перевод —
   ok(d9.stage === "closed_paid" && d9.paid === 1200, "ручное дело погашено и закрыто", { st: d9.stage, paid: d9.paid });
 }
 
+console.log("\n19. «Смешанно» в аренде: залог, паркинг, экипировка — две проводки, «Отменить» снимает обе");
+{
+  const [r2] = await sql`
+    select r.id, r.deposit, r.deposit_original from rentals r
+    where r.status='active' and r.archived_at is null and r.deposit_item is null and r.id <> ${r.id}
+      and r.end_planned_at > now() + interval '3 days'
+      and not exists (select 1 from parking_sessions s where s.rental_id=r.id)
+    order by r.id desc limit 1`;
+  const rid = Number(r2.id);
+  const rowsAfter = async (minId, type) =>
+    sql`select id, method, amount from payments where rental_id=${rid} and type=${type} and id > ${minId} order by id`;
+  const [{ m0 }] = await sql`select coalesce(max(id),0)::bigint m0 from payments`;
+  const undoLast = async (type) => {
+    const [last] = await sql`select id from payments where rental_id=${rid} and type=${type} order by id desc limit 1`;
+    return call("POST", `/api/rentals/${rid}/rollback-payment`, { paymentId: Number(last.id) });
+  };
+  const split = (rows) => ({ cash: rows.find((x) => x.method === "cash")?.amount, transfer: rows.find((x) => x.method === "transfer")?.amount, n: rows.length });
+
+  // залог
+  const t = await call("POST", `/api/rentals/${rid}/security-topup`, { amount: 1000, method: "mixed", cashAmount: 300 });
+  ok(t.status === 200, "залог +1 000 смешанно принят", t.body);
+  const ts = split(await rowsAfter(m0, "deposit"));
+  ok(ts.n === 2 && ts.cash === 300 && ts.transfer === 700, "залог: наличными 300 и переводом 700", ts);
+  const tu = await undoLast("deposit");
+  const [rd] = await sql`select deposit from rentals where id=${rid}`;
+  ok(tu.status === 200 && (await rowsAfter(m0, "deposit")).length === 0 && rd.deposit === r2.deposit,
+    "«Отменить» снял обе проводки, залог как был", { st: tu.status, dep: rd.deposit });
+
+  // паркинг
+  const today = (await sql`select to_char((now() at time zone 'Europe/Moscow')::date, 'YYYY-MM-DD') d`)[0].d;
+  const pk = await call("POST", `/api/rentals/${rid}/parking`, { startDate: today, endDate: today, freeFirstDay: false });
+  ok(pk.status === 200 || pk.status === 201, "паркинг поставлен", pk.body);
+  const due = (await sql`select amount from parking_sessions where rental_id=${rid} order by id desc limit 1`)[0].amount;
+  const pp = await call("POST", `/api/rentals/${rid}/parking/pay`, { amount: due, method: "mixed", cashAmount: 100 });
+  ok(pp.status === 200, `паркинг ${due} смешанно оплачен`, pp.body);
+  const ps = split(await rowsAfter(m0, "parking"));
+  ok(ps.n === 2 && ps.cash === 100 && ps.transfer === due - 100, "паркинг: наличными 100 и переводом остаток", ps);
+  const pu = await undoLast("parking");
+  const [sess] = await sql`select paid_amount from parking_sessions where rental_id=${rid} order by id desc limit 1`;
+  ok(pu.status === 200 && (await rowsAfter(m0, "parking")).length === 0 && sess.paid_amount === 0,
+    "«Отменить» снял обе проводки паркинга, сессия снова не оплачена", { st: pu.status, b: pu.body, paid: sess.paid_amount });
+
+  // экипировка
+  const [eqRow] = await sql`select equipment_json from rentals where id=${rid}`;
+  const items = [...(eqRow.equipment_json ?? []), { name: "ТЕСТ доплата", price: 100, free: false }];
+  const ec = await call("POST", `/api/rentals/${rid}/equipment-change`, { newEquipmentJson: items, payNow: true, method: "mixed", cashAmount: 50 });
+  ok(ec.status === 200, "экипировка с доплатой смешанно", ec.body);
+  const es = split(await rowsAfter(m0, "equipment_fee"));
+  ok(es.n === 2 && es.cash === 50 && es.transfer > 0, "доплата: наличными 50 и переводом остаток", es);
+  const eu = await undoLast("equipment_fee");
+  ok(eu.status === 200 && (await rowsAfter(m0, "equipment_fee")).length === 0, "«Отменить» снял обе проводки доплаты", { st: eu.status, b: eu.body });
+  // уборка: паркинг-сессия теста
+  await sql`delete from parking_sessions where rental_id=${rid} and paid_amount=0 and created_at > now() - interval '1 hour'`;
+}
+
 console.log(`\nИТОГ: ${pass} ✓, ${fail} ✗`);
 await sql.end();
 process.exit(fail ? 1 : 0);

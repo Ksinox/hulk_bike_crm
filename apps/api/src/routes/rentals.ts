@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { insertSplitPayment, splitMethodText } from "../services/splitPayment.js";
 import { db } from "../db/index.js";
 import {
   debtors,
@@ -2591,6 +2592,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
           allocations?: Array<{ sessionId: number; amount: number }>;
           // parking оплачен с депозита клиента — вернуть кошелёк при откате
           depositSpent?: number;
+          // 2.1: «смешанно» — парная проводка (наличная часть), снимаем вместе
+          pairedPaymentIds?: number[];
         };
         if (
           !snap ||
@@ -2617,6 +2620,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
         if (!rentalNow) return { ok: false as const, error: "rental_not_found" as const };
         if (rentalNow.archivedAt)
           return { ok: false as const, error: "archived" as const };
+
+        // 2.1: смешанная оплата — две проводки (нал + перевод); «Отменить»
+        // снимает обе, сумма отката — целиком.
+        const paired = (snap.pairedPaymentIds ?? []).filter((x) => Number.isFinite(x));
+        if (paired.length > 0) {
+          const gone = await tx
+            .delete(payments)
+            .where(and(inArray(payments.id, paired), eq(payments.rentalId, id)))
+            .returning({ amount: payments.amount });
+          pay.amount += gone.reduce((s, g) => s + g.amount, 0);
+        }
 
         // ── Откат продления: восстанавливаем период/дни/сумму/тариф/экип. ──
         if (snap.kind === "extend") {
@@ -3016,7 +3030,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
       const schema = z
         .object({
           amount: z.number().int().positive(),
-          method: z.enum(["cash", "transfer"]),
+          method: z.enum(["cash", "transfer", "mixed"]),
+          /** 2.1: при «смешанно» — сколько наличными. */
+          cashAmount: z.number().int().min(0).optional(),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -3039,21 +3055,26 @@ export async function rentalsRoutes(app: FastifyInstance) {
       }
 
       const result = await db.transaction(async (tx) => {
-        await tx.insert(payments).values({
-          rentalId: id,
-          type: "deposit",
-          amount: parsed.data.amount,
-          method: parsed.data.method,
-          paid: true,
-          paidAt: new Date(),
-          note: "пополнение залога",
+        await insertSplitPayment(
+          tx,
+          {
+            rentalId: id,
+            type: "deposit",
+            paid: true,
+            paidAt: new Date(),
+            receivedByUserId: req.user?.userId ?? null,
+            note: "пополнение залога",
+          },
+          parsed.data.amount,
+          parsed.data.method,
+          parsed.data.cashAmount,
           // Снимок пред-состояния для отката «в день совершения».
-          rollbackSnapshot: {
+          {
             kind: "security",
             deposit: rental.deposit ?? 0,
             depositOriginal: rental.depositOriginal ?? 0,
-          } as unknown as object,
-        });
+          },
+        );
         const newDeposit = (rental.deposit ?? 0) + parsed.data.amount;
         const newOriginal = Math.max(
           rental.depositOriginal ?? 0,
@@ -3076,10 +3097,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entity: "rental",
         entityId: id,
         action: "security_topped_up",
-        summary: `Пополнение залога ${summary} на ${parsed.data.amount} ₽`,
+        summary: `Пополнение залога ${summary} на ${parsed.data.amount} ₽ (${splitMethodText(parsed.data.amount, parsed.data.method, parsed.data.cashAmount)})`,
         meta: {
           amount: parsed.data.amount,
           method: parsed.data.method,
+          cashAmount: parsed.data.cashAmount,
           newDeposit: result?.deposit,
           newOriginal: result?.depositOriginal,
         },
@@ -3126,7 +3148,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .object({
           newEquipmentJson: z.array(EquipmentJsonItem).default([]),
           payNow: z.boolean().default(false),
-          method: z.enum(["cash", "transfer"]).optional(),
+          method: z.enum(["cash", "transfer", "mixed"]).optional(),
+          /** 2.1: при «смешанно» — сколько наличными. */
+          cashAmount: z.number().int().min(0).optional(),
           comment: z.string().max(300).optional(),
           // Правка 1: куда возвращать разницу при удешевлении экипировки.
           refundTo: z.enum(["cash", "deposit"]).default("deposit"),
@@ -3235,19 +3259,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
             if (!parsed.data.method) {
               throw new Error("method required for immediate payment");
             }
-            await tx.insert(payments).values({
-              rentalId: id,
-              type: "equipment_fee",
-              amount: totalDelta,
-              method: parsed.data.method,
-              paid: true,
-              paidAt: new Date(),
-              note: `Доплата за изменение экипировки (${remainingDays} дн × ${dailyDelta} ₽)`,
-              rollbackSnapshot: {
-                ...eqSnapshotBase,
-                refundToDeposit: false,
-              } as unknown as object,
-            });
+            await insertSplitPayment(
+              tx,
+              {
+                rentalId: id,
+                type: "equipment_fee",
+                paid: true,
+                paidAt: new Date(),
+                receivedByUserId: userId,
+                note: `Доплата за изменение экипировки (${remainingDays} дн × ${dailyDelta} ₽)`,
+              },
+              totalDelta,
+              parsed.data.method,
+              parsed.data.cashAmount,
+              { ...eqSnapshotBase, refundToDeposit: false },
+            );
           } else {
             // Висит как ручной долг — оператор примет позже через PaymentAcceptDialog
             await tx.insert(debtEntries).values({
@@ -3330,6 +3356,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
           method:
             totalDelta > 0 && parsed.data.payNow
               ? parsed.data.method
+              : undefined,
+          cashAmount:
+            totalDelta > 0 && parsed.data.payNow && parsed.data.method === "mixed"
+              ? parsed.data.cashAmount
               : undefined,
           refundTo: totalDelta < 0 ? parsed.data.refundTo : undefined,
         },

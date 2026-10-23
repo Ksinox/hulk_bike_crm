@@ -10,6 +10,7 @@ import {
   clients,
 } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
+import { insertSplitPayment, splitMethodText } from "../services/splitPayment.js";
 
 /* ============================================================
  * Паркинг (пауза аренды).
@@ -593,7 +594,9 @@ export async function parkingRoutes(app: FastifyInstance) {
       const Body = z
         .object({
           amount: z.number().int().positive(),
-          method: z.enum(["cash", "card", "transfer", "deposit"]).optional(),
+          method: z.enum(["cash", "card", "transfer", "deposit", "mixed"]).optional(),
+          /** 2.1: при «смешанно» — сколько наличными (остальное переводом). */
+          cashAmount: z.number().int().min(0).optional(),
         })
         .strict();
       const parsed = Body.safeParse(req.body);
@@ -656,23 +659,30 @@ export async function parkingRoutes(app: FastifyInstance) {
             depositSpent = used;
           }
           if (used > 0) {
-            await tx.insert(payments).values({
+            const snapshot = {
+              kind: "parking",
+              allocations,
+              // Для отката оплаты с депозита — вернуть кошелёк клиента.
+              depositSpent,
+              clientId,
+            };
+            const base = {
               rentalId,
-              type: "parking",
-              amount: used,
-              method,
+              type: "parking" as const,
               paid: true,
               paidAt: new Date(),
               receivedByUserId: req.user?.userId ?? null,
               note: "Оплата паркинга",
-              rollbackSnapshot: {
-                kind: "parking",
-                allocations,
-                // Для отката оплаты с депозита — вернуть кошелёк клиента.
-                depositSpent,
-                clientId,
-              } as unknown as object,
-            });
+            };
+            if (method === "mixed" || method === "cash" || method === "transfer")
+              await insertSplitPayment(tx, base, used, method, parsed.data.cashAmount, snapshot);
+            else
+              await tx.insert(payments).values({
+                ...base,
+                amount: used,
+                method,
+                rollbackSnapshot: snapshot as unknown as object,
+              });
           }
           return used;
         });
@@ -695,8 +705,8 @@ export async function parkingRoutes(app: FastifyInstance) {
           entity: "rental",
           entityId: rentalId,
           action: "parking_paid",
-          summary: `Оплата паркинга: ${applied.toLocaleString("ru-RU")} ₽`,
-          meta: { parking: { amount: applied }, method },
+          summary: `Оплата паркинга: ${applied.toLocaleString("ru-RU")} ₽ (${splitMethodText(applied, method, parsed.data.cashAmount)})`,
+          meta: { parking: { amount: applied }, method, cashAmount: parsed.data.cashAmount },
         });
       }
 
