@@ -37,12 +37,15 @@ import {
   STAGE_LABEL,
   TYPE_LABEL,
   formatRub,
+  isAwaitingPayment,
   isClosed,
+  localYmd,
+  needsPaymentCheck,
+  ruDate,
   type CallOutcome,
   type DebtType,
   type Stage,
 } from "@/lib/debtors/types";
-import { DonutProgress } from "@/components/DonutProgress";
 import { ScheduleBuilderDialog } from "./ScheduleBuilderDialog";
 import { DamageDebtorActSection } from "./DamageDebtorActSection";
 import { toast, confirmDialog } from "@/lib/toast";
@@ -180,6 +183,8 @@ const NEXT_TRANSITIONS: Record<DebtType, Partial<Record<Stage, { to: Stage; labe
       { to: "closed_written_off", label: "Списать" },
     ],
   },
+  // Выкуп ведётся как долг за аренду — заполняется ниже.
+  buyout_overdue: {},
   rental_overdue: {
     created: [
       { to: "payment_schedule", label: "Создать график", primary: true },
@@ -205,12 +210,15 @@ const NEXT_TRANSITIONS: Record<DebtType, Partial<Record<Stage, { to: Stage; labe
   },
 };
 
+NEXT_TRANSITIONS.buyout_overdue = NEXT_TRANSITIONS.rental_overdue;
+
 const TYPE_BG: Record<DebtType, string> = {
   dtp_guilty: "bg-red-50 text-red-700 border-red-100",
   dtp_victim: "bg-blue-50 text-blue-700 border-blue-100",
   damage: "bg-orange-50 text-orange-700 border-orange-100",
   theft: "bg-violet-50 text-violet-700 border-violet-100",
   rental_overdue: "bg-slate-50 text-slate-600 border-slate-200",
+  buyout_overdue: "bg-teal-50 text-teal-600 border-teal-200",
 };
 
 export function DebtorCase({
@@ -337,245 +345,602 @@ export function DebtorCase({
     };
   }
 
-  const showNextStep =
-    !closed && (primaryAction != null || secondary.length > 0 || d.recommendation != null);
+  // ── Статус дела одной строкой: что сейчас происходит и что делать ──
+  const today = localYmd();
+  const lastCall = d.calls[0] ?? null;
+  const status: { tone: "green" | "blue" | "red" | "amber"; text: string } = closed
+    ? {
+        tone: "green",
+        text: `Закрыто · ${STAGE_LABEL[d.stage]}${d.closedReason ? ` · ${d.closedReason}` : ""}`,
+      }
+    : isAwaitingPayment(d, today)
+      ? {
+          tone: "blue",
+          text: `Ждём оплату по акту до ${ruDate(d.paymentDueDate)} — звонить пока не нужно`,
+        }
+      : needsPaymentCheck(d, today)
+        ? {
+            tone: "red",
+            text: `Срок оплаты ${ruDate(d.paymentDueDate)} прошёл — отметьте, пришла ли оплата`,
+          }
+        : d.overdueDays > 0
+          ? {
+              tone: "red",
+              text: `Платёж по графику просрочен на ${d.overdueDays} дн · ${formatRub(d.overdueAmount)}`,
+            }
+          : {
+              tone: "amber",
+              text: `В работе · ${STAGE_LABEL[d.stage]}${
+                lastCall
+                  ? ` · звонок ${ruDateTime(lastCall.createdAt)}${
+                      lastCall.outcome === "promised" && lastCall.promisedDate
+                        ? `, обещал к ${ruDate(lastCall.promisedDate)}`
+                        : ""
+                    }`
+                  : " · звонков ещё не было"
+              }`,
+            };
+  const STATUS_CLS = {
+    green: "bg-emerald-50 text-emerald-800 border-emerald-100",
+    blue: "bg-blue-50 text-blue-800 border-blue-100",
+    red: "bg-red-50 text-red-800 border-red-100",
+    amber: "bg-amber-50 text-amber-900 border-amber-100",
+  }[status.tone];
+  const STATUS_DOT = {
+    green: "bg-emerald-500",
+    blue: "bg-blue-500",
+    red: "bg-red-500",
+    amber: "bg-amber-500",
+  }[status.tone];
+  const paidPct =
+    d.totalAmount > 0 ? Math.min(100, Math.round((d.paid / d.totalAmount) * 100)) : 0;
 
-  return (
-    <div className="flex flex-col gap-4">
-      {/* ── Шапка ─────────────────────────────────────────────── */}
-      <header className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
+  // ── Хронология: этапы, звонки, заметки и платежи — одной лентой ──
+  type Ev = { at: string; key: string; tone: string; text: React.ReactNode };
+  const events: Ev[] = [
+    ...d.stageEvents.map((e) => ({
+      at: e.createdAt,
+      key: `s${e.id}`,
+      tone: "bg-amber-400",
+      text: (
+        <>
+          {e.fromStage ? `${STAGE_LABEL[e.fromStage]} → ` : ""}
+          <b className="text-ink">{STAGE_LABEL[e.toStage]}</b>
+          {e.reason && <span className="text-muted"> · {e.reason}</span>}
+        </>
+      ),
+    })),
+    ...d.calls.map((c) => ({
+      at: c.createdAt,
+      key: `c${c.id}`,
+      tone: "bg-blue-500",
+      text: (
+        <>
+          Звонок — <b className="text-ink">{OUTCOME_SHORT[c.outcome]}</b>
+          {c.promisedDate && <> · обещал к {ruDate(c.promisedDate)}</>}
+          {c.note && <span className="text-muted"> · {c.note}</span>}
+        </>
+      ),
+    })),
+    ...d.notes.map((n) => ({
+      at: n.createdAt,
+      key: `n${n.id}`,
+      tone: "bg-slate-400",
+      text: <>{n.text}</>,
+    })),
+    ...d.payments
+      .filter((p) => p.paidAt)
+      .map((p) => ({
+        at: p.paidAt!,
+        key: `p${p.id}`,
+        tone: "bg-emerald-500",
+        text: (
+          <>
+            Платёж <b className="text-emerald-700">{formatRub(p.paidAmount ?? 0)}</b> ·{" "}
+            {p.paidMethod === "cash" ? "наличные" : "перевод"}
+            {p.note && <span className="text-muted"> · {p.note}</span>}
+          </>
+        ),
+      })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
+
+  const canPay = !closed && remaining > 0;
+
+  // ── Блоки ──
+  const hero = (
+    <header
+      data-case-hero
+      className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm"
+    >
+      <div className="p-4 sm:p-6">
         <button
           type="button"
           onClick={onBack}
           className={`${TAP}mb-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted hover:text-ink`}
         >
           <ArrowLeft size={13} />
-          Назад к очереди
+          Все дела
         </button>
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Статус-пилюля ПЕРЕД именем (постура brand-spec) */}
-          <span className="inline-flex h-6 items-center rounded-full border border-amber-100 bg-amber-50 px-2.5 text-[11.5px] font-semibold text-amber-700">
-            {STAGE_LABEL[d.stage]}
-          </span>
-          <span
-            className={`inline-flex h-6 items-center rounded-full border px-2.5 text-[11.5px] font-semibold ${TYPE_BG[d.type]}`}
-          >
-            {TYPE_LABEL[d.type]}
-          </span>
-          <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted-2">
-            {d.caseNumber}
-          </span>
-          {d.overdueDays > 0 && (
-            <span className="inline-flex h-6 items-center rounded-full bg-red-soft px-2.5 text-[11px] font-bold uppercase tracking-[0.04em] text-red-ink">
-              просрочка {d.overdueDays} дн.
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          {/* Кто */}
+          <div className="flex min-w-0 items-start gap-4">
+            <CaseAvatar name={d.displayName} photoKey={d.clientPhotoKey ?? null} />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span
+                  className={`inline-flex h-6 items-center rounded-full border px-2.5 text-[11.5px] font-semibold ${TYPE_BG[d.type]}`}
+                >
+                  {TYPE_LABEL[d.type]}
+                </span>
+                <span className="inline-flex h-6 items-center rounded-full border border-border bg-surface-soft px-2.5 text-[11.5px] font-semibold text-ink-2">
+                  {STAGE_LABEL[d.stage]}
+                </span>
+                <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-muted-2">
+                  {d.caseNumber}
+                </span>
+              </div>
+              <h2 className="mt-1.5 font-display text-[24px] font-bold leading-[1.1] tracking-[-0.02em] text-ink sm:text-[30px]">
+                {d.displayName}
+              </h2>
+              <a
+                href={`tel:${d.displayPhone}`}
+                className={`${TAP}mt-1 inline-flex items-center gap-1.5 text-[14px] font-semibold text-ink-2 hover:text-blue-700`}
+              >
+                <Phone size={14} className="text-blue-600" />
+                {d.displayPhone}
+              </a>
+              {(d.clientId != null || d.relatedRentalId != null) && (
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  {d.clientId != null && (
+                    <button
+                      type="button"
+                      data-open-client
+                      onClick={() =>
+                        navigate({
+                          route: "clients",
+                          clientId: d.clientId!,
+                          from: { route: "debtors" },
+                        })
+                      }
+                      className={`${TAP}inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-white px-3 text-[12.5px] font-semibold text-ink-2 transition-colors hover:border-ink hover:text-ink`}
+                    >
+                      <UserRound size={13} className="text-blue-600" />
+                      Карточка клиента
+                      <ArrowUpRight size={12} className="text-muted-2" />
+                    </button>
+                  )}
+                  {d.relatedRentalId != null && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigate({
+                          route: "rentals",
+                          rentalId: d.relatedRentalId!,
+                          from: { route: "debtors" },
+                        })
+                      }
+                      className={`${TAP}inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-white px-3 text-[12.5px] font-semibold text-ink-2 transition-colors hover:border-ink hover:text-ink`}
+                    >
+                      <Bike size={13} className="text-blue-600" />
+                      Аренда #{String(d.relatedRentalId).padStart(4, "0")}
+                      <ArrowUpRight size={12} className="text-muted-2" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Сколько */}
+          <div className="w-full shrink-0 lg:w-[400px]">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-2">
+                  {closed ? "Итог" : "Осталось взыскать"}
+                </div>
+                <div
+                  data-case-remaining
+                  className={`font-display text-[34px] font-extrabold leading-none tracking-[-0.02em] tabular-nums sm:text-[40px] ${
+                    closed || remaining === 0 ? "text-emerald-700" : "text-red-ink"
+                  }`}
+                >
+                  {formatRub(closed ? d.paid : remaining)}
+                </div>
+              </div>
+              <div className="pb-1 text-right text-[12.5px] leading-snug text-muted">
+                <div>
+                  оплачено <b className="text-emerald-700">{formatRub(d.paid)}</b>
+                </div>
+                <div>
+                  из <b className="text-ink">{formatRub(d.totalAmount)}</b>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-red-100">
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-[width]"
+                style={{ width: `${paidPct}%` }}
+              />
+            </div>
+            <div className="mt-1.5 flex justify-between text-[11.5px] text-muted-2">
+              <span>{paidPct}% погашено</span>
+              {d.penalty > 0 && (
+                <span className="font-semibold text-red-ink">
+                  в т.ч. пеня {formatRub(d.penalty)}
+                </span>
+              )}
+            </div>
+            {!closed && (
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <a
+                  href={`tel:${d.displayPhone}`}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-[12px] border border-emerald-200 bg-emerald-50 text-[14px] font-semibold text-emerald-800 transition-colors hover:border-emerald-400"
+                >
+                  <Phone size={16} /> Позвонить
+                </a>
+                <button
+                  type="button"
+                  data-case-pay
+                  disabled={!canPay}
+                  onClick={() => onOpenPayment()}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-[12px] bg-ink text-[14px] font-semibold text-white shadow-card-sm transition-transform hover:-translate-y-0.5 disabled:opacity-40"
+                >
+                  <Wallet size={16} /> Принять платёж
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      {/* Статус — одной строкой во всю ширину */}
+      <div
+        data-case-status={status.tone}
+        className={`flex items-center gap-2.5 border-t px-4 py-2.5 text-[13px] font-medium sm:px-6 ${STATUS_CLS}`}
+      >
+        <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT}`} />
+        <span className="min-w-0">{status.text}</span>
+      </div>
+    </header>
+  );
+
+  const paymentsCard = (
+    <div className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-[14px] font-semibold text-ink">
+          <Wallet size={16} className="text-muted-2" />
+          Платежи
+          {d.payments.length > 0 && (
+            <span className="text-[12.5px] font-normal text-muted">
+              · {d.payments.filter((p) => p.paidAt).length} из {d.payments.length}
             </span>
           )}
         </div>
-        <div className="mt-3 flex items-center gap-3.5">
-          <CaseAvatar name={d.displayName} photoKey={d.clientPhotoKey ?? null} />
-          <div className="min-w-0 flex-1">
-        <h2 className="font-display text-[26px] font-bold leading-[1.05] tracking-[-0.022em] text-ink sm:text-[30px]">
-          {d.displayName}
-        </h2>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13.5px] text-muted">
-          <a
-            href={`tel:${d.displayPhone}`}
-            className={`${TAP}inline-flex items-center gap-1.5 font-semibold text-ink-2 hover:text-blue-700`}
+        {!closed && (
+          <button
+            type="button"
+            onClick={() => setScheduleOpen(true)}
+            className={`${TAP}inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[12px] font-semibold text-muted hover:border-ink hover:text-ink`}
           >
-            <Phone size={13} className="text-blue-600" />
-            {d.displayPhone}
-          </a>
-          <span className="hidden text-muted-2 sm:inline">·</span>
-          <span>
-            {d.clientStatus === "closed" ? "Закрытый" : "Действующий"} клиент
-          </span>
-          <span className="hidden text-muted-2 sm:inline">·</span>
-          <span>психо-портрет {d.psyRating}/5</span>
-        </div>
-          </div>
-        </div>
-        {/* Переходы: карточка клиента и аренда, откуда долг (23.10). */}
-        {(d.clientId != null || d.relatedRentalId != null) && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {d.clientId != null && (
-              <button
-                type="button"
-                data-open-client
-                onClick={() =>
-                  navigate({
-                    route: "clients",
-                    clientId: d.clientId!,
-                    from: { route: "debtors" },
-                  })
-                }
-                className={`${TAP}inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-white px-3.5 text-[12.5px] font-semibold text-ink-2 transition-colors hover:border-ink hover:text-ink`}
-              >
-                <UserRound size={14} className="text-blue-600" />
-                Карточка клиента
-                <ArrowUpRight size={13} className="text-muted-2" />
-              </button>
-            )}
-            {d.relatedRentalId != null && (
-              <button
-                type="button"
-                onClick={() =>
-                  navigate({
-                    route: "rentals",
-                    rentalId: d.relatedRentalId!,
-                    from: { route: "debtors" },
-                  })
-                }
-                className={`${TAP}inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-white px-3.5 text-[12.5px] font-semibold text-ink-2 transition-colors hover:border-ink hover:text-ink`}
-              >
-                <Bike size={14} className="text-blue-600" />
-                Аренда #{String(d.relatedRentalId).padStart(4, "0")}
-                <ArrowUpRight size={13} className="text-muted-2" />
-              </button>
-            )}
-          </div>
+            <CalendarRange size={12} />
+            {d.payments.some((p) => !p.paidAt) ? "Пересоздать график" : "Разбить на график"}
+          </button>
         )}
-      </header>
-
-      {/* Телефон: «Ждём оплату / Пришла ли оплата?» — сразу под шапкой,
-          а не в конце ленты (правая колонка на узком экране уходит вниз). */}
-      <div className="flex flex-col gap-4 lg:hidden">
-        <DebtorPaymentCheck d={d} />
       </div>
-
-      {/* ── Рабочая зона: две колонки ─────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr] lg:items-start">
-        {/* ЛЕВО — деньги и история */}
-        <div className="flex min-w-0 flex-col gap-4">
-          {/* Прогресс */}
-          {d.totalAmount > 0 && (
-            <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-border bg-surface p-6 shadow-card-sm">
-              <DonutProgress paid={d.paid} total={d.totalAmount} />
-              <div className="grid min-w-[240px] flex-1 grid-cols-2 gap-x-6 gap-y-3.5">
-                <CaseStat
-                  label={d.penalty > 0 ? "Всего (с пеней)" : "Всего долг"}
-                  value={formatRub(d.totalAmount)}
-                />
-                <CaseStat label="Оплачено" value={formatRub(d.paid)} tone="green" />
-                <CaseStat label="Осталось" value={formatRub(remaining)} tone="ink" />
-                {d.overdueAmount > 0 ? (
-                  <CaseStat
-                    label="Просрочка"
-                    value={formatRub(d.overdueAmount)}
-                    tone="red"
-                  />
-                ) : (
-                  <CaseStat
-                    label="Платежей"
-                    value={
-                      d.payments.length > 0
-                        ? `${d.payments.filter((p) => p.paidAt).length} / ${d.payments.length}`
-                        : "нет графика"
+      {d.payments.length === 0 ? (
+        <div className="rounded-[12px] bg-surface-soft px-4 py-3 text-[13px] leading-relaxed text-muted">
+          Платежей ещё не было. Деньги пришли — «Принять платёж». Клиент платит
+          частями — «Разбить на график», и каждый платёж отмечается в строке.
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {d.payments.map((p) => {
+            const paid = p.paidAt != null;
+            const overdue = !paid && p.scheduledDate < today;
+            return (
+              <div
+                key={p.id}
+                className={`grid grid-cols-[1fr_auto_auto] items-center gap-3 rounded-[10px] px-3 py-2 text-[13px] ${
+                  paid ? "bg-emerald-50" : overdue ? "bg-red-50" : "bg-surface-soft/60"
+                }`}
+              >
+                <div className="min-w-0">
+                  <div
+                    className={
+                      paid
+                        ? "font-semibold text-emerald-800"
+                        : overdue
+                          ? "font-semibold text-red-700"
+                          : "font-semibold text-ink"
                     }
-                  />
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* График платежей */}
-          <div className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-[14px] font-semibold text-ink">
-                <Wallet size={16} className="text-muted-2" />
-                График платежей
-                {d.payments.length > 0 && (
-                  <span className="text-[12.5px] font-normal text-muted">
-                    · {d.paid.toLocaleString("ru-RU")} / {d.totalAmount.toLocaleString("ru-RU")} ₽ · {d.progressPercent}%
-                  </span>
-                )}
-              </div>
-              {!closed && d.payments.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setScheduleOpen(true)}
-                  className={`${TAP}inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[12px] font-semibold text-muted hover:border-ink hover:text-ink`}
-                >
-                  <CalendarRange size={12} /> Пересоздать
-                </button>
-              )}
-            </div>
-
-            {d.payments.length === 0 ? (
-              <div>
-                <div className="mb-3 text-[13px] leading-relaxed text-muted">
-                  График ещё не создан. Разбейте долг на платежи — клиент гасит
-                  по графику, вы фиксируете каждый кнопкой «Принять».
+                  >
+                    {paid
+                      ? `${ruDate(p.paidAt!)} · ${p.paidMethod === "transfer" ? "перевод" : "наличные"}`
+                      : `${ruDate(p.scheduledDate)} · ${overdue ? "просрочен" : "по графику"}`}
+                  </div>
+                  {p.note && (
+                    <div className="mt-0.5 truncate text-[11.5px] text-muted">{p.note}</div>
+                  )}
                 </div>
-                {!closed && (
+                <span className="font-display text-[14px] font-bold tabular-nums text-ink">
+                  {formatRub(p.paidAmount ?? p.scheduledAmount)}
+                </span>
+                {paid ? (
+                  <Check size={16} className="text-emerald-600" />
+                ) : (
                   <button
                     type="button"
-                    onClick={() => setScheduleOpen(true)}
-                    className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-ink px-5 text-[14px] font-semibold text-white hover:bg-[#16213a]"
+                    onClick={() => onOpenPayment(p.n)}
+                    className={`${TAP}inline-flex items-center rounded-full bg-ink px-3 py-1 text-[11.5px] font-semibold text-white hover:bg-[#16213a]`}
                   >
-                    <CalendarRange size={16} /> Сформировать график
+                    Принять
                   </button>
                 )}
               </div>
-            ) : (
-              <div className="space-y-1">
-                {d.payments.map((p) => {
-                  const paid = p.paidAt != null;
-                  const overdue = !paid && new Date(p.scheduledDate) < new Date();
-                  return (
-                    <div
-                      key={p.id}
-                      className={`grid grid-cols-[26px_1fr_auto_auto] items-center gap-3 rounded-[10px] px-3 py-2 text-[13px] ${
-                        paid ? "bg-emerald-50" : overdue ? "bg-red-50" : "bg-surface-soft/50"
-                      }`}
-                    >
-                      <span className="font-mono text-[11px] text-muted-2">{p.n}</span>
-                      <div className="min-w-0">
-                        <div
-                          className={
-                            paid
-                              ? "text-emerald-700"
-                              : overdue
-                                ? "font-semibold text-red-700"
-                                : "text-ink"
-                          }
-                        >
-                          {p.scheduledDate}
-                        </div>
-                        <div className="mt-0.5 font-mono text-[10.5px] text-muted">
-                          {paid
-                            ? `оплачен ${p.paidAt?.slice(0, 10)} · ${p.paidMethod === "transfer" ? "перевод" : "наличные"}`
-                            : overdue
-                              ? "просрочка"
-                              : "плановый"}
-                        </div>
-                        {p.note && (
-                          <div className="mt-0.5 text-[11px] italic leading-snug text-ink-2">
-                            {p.note}
-                          </div>
-                        )}
-                      </div>
-                      <span className="font-mono text-[12.5px] font-semibold text-ink tabular-nums">
-                        {(p.paidAmount ?? p.scheduledAmount).toLocaleString("ru-RU")} ₽
-                      </span>
-                      {paid ? (
-                        <span className="h-3.5 w-3.5 rounded-full border-2 border-emerald-600 bg-emerald-600" />
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onOpenPayment(p.n)}
-                          className={`${TAP}inline-flex items-center rounded-full bg-ink px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-[#16213a]`}
-                        >
-                          Принять
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 
-          {/* Финансовый прогноз (для ДТП-потерпевший) */}
+  const nextStepCard = !closed && (moves.length > 0 || closings.length > 0 || primaryAction || d.recommendation) && (
+    <div className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+        Ход дела
+      </div>
+      {d.recommendation && (
+        <div className="mt-2 flex items-start gap-2 rounded-[12px] bg-amber-50 px-3 py-2 text-[12.5px] leading-snug text-amber-800">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
+          <span>{d.recommendation.reason}</span>
+        </div>
+      )}
+      {primaryAction && !primaryAction.pay && (
+        <button
+          type="button"
+          onClick={primaryAction.onClick}
+          disabled={transition.isPending}
+          className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[12px] border border-ink bg-white px-4 text-[14px] font-semibold text-ink transition-colors hover:bg-ink hover:text-white disabled:opacity-50"
+        >
+          <Check size={16} strokeWidth={2} />
+          {primaryAction.label}
+        </button>
+      )}
+      {moves.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+          {moves.map((t) => (
+            <button
+              key={t.to}
+              type="button"
+              onClick={() => handleStep(t.to, t.label)}
+              className={`${TAP}inline-flex items-center text-[13px] font-medium text-muted underline-offset-2 hover:text-ink hover:underline`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {closings.length > 0 && (
+        <div className="mt-4 border-t border-border pt-3">
+          <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+            Закрыть дело без денег
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {closings.map((t) => {
+              const recovered = t.to === "closed_recovered";
+              return (
+                <button
+                  key={t.to}
+                  type="button"
+                  onClick={() => onClose(t.to, t.label)}
+                  className={`inline-flex ${isTouchPrimary() ? "h-11" : "h-9"} items-center gap-1.5 rounded-[10px] border px-3 text-[12.5px] font-semibold transition-colors ${
+                    recovered
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400"
+                      : "border-border bg-white text-ink-2 hover:border-ink"
+                  }`}
+                >
+                  {recovered && <Bike size={13} />}
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const contactCard = !closed && (
+    <div className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+          Итог звонка
+        </div>
+        <div className="text-[11px] text-muted">
+          {lastCall ? `последний ${ruDateTime(lastCall.createdAt)}` : "звонков нет"}
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => onCall("answered")}
+          disabled={logCall.isPending}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border border-emerald-100 bg-emerald-50 text-[13px] font-semibold text-emerald-700 transition-colors hover:border-emerald-300 disabled:opacity-50"
+        >
+          <Phone size={14} /> Ответил
+        </button>
+        <button
+          type="button"
+          onClick={() => onCall("no_answer")}
+          disabled={logCall.isPending}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border border-border bg-white text-[13px] font-semibold text-ink-2 transition-colors hover:border-ink disabled:opacity-50"
+        >
+          <PhoneOff size={14} /> Не дозвонился
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowPromised((s) => !s)}
+          className={`inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border text-[13px] font-semibold transition-colors ${
+            showPromised
+              ? "border-blue-600 bg-blue-600 text-white"
+              : "border-blue-100 bg-blue-50 text-blue-700 hover:border-blue-300"
+          }`}
+        >
+          <CalendarClock size={14} /> Обещал
+        </button>
+        <button
+          type="button"
+          onClick={() => onCall("refused")}
+          disabled={logCall.isPending}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border border-red-100 bg-red-50 text-[13px] font-semibold text-red-700 transition-colors hover:border-red-300 disabled:opacity-50"
+        >
+          <Ban size={14} /> Отказался
+        </button>
+      </div>
+      {showPromised && (
+        <div className="mt-3 flex flex-wrap items-end gap-3 rounded-[12px] bg-blue-50/60 p-3.5">
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-blue-700">
+              Обещал заплатить к дате
+            </label>
+            <DatePicker
+              value={promisedDate || null}
+              onChange={(v) => setPromisedDate(v ?? "")}
+            />
+          </div>
+          <button
+            type="button"
+            disabled={!promisedDate || logCall.isPending}
+            onClick={() => onCall("promised", { promisedDate })}
+            className="inline-flex h-10 items-center gap-2 rounded-[10px] bg-blue-600 px-4 text-[13px] font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+          >
+            <Check size={14} /> Записать обещание
+          </button>
+        </div>
+      )}
+      <input
+        value={callNote}
+        onChange={(e) => setCallNote(e.target.value)}
+        placeholder="Что сказал по телефону (необязательно)"
+        className="mt-3 h-11 w-full rounded-[10px] border border-border bg-white px-3.5 text-[13px] text-ink outline-none focus:border-ink"
+      />
+      <div className="mt-4 border-t border-border pt-4">
+        <textarea
+          rows={2}
+          value={noteText}
+          onChange={(e) => setNoteText(e.target.value)}
+          placeholder="Заметка по делу: договорённость, контакт родственника…"
+          className="w-full resize-none rounded-[10px] border border-border bg-white p-3 text-[13px] text-ink outline-none focus:border-ink"
+        />
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            disabled={!noteText.trim() || addNote.isPending}
+            onClick={onSaveNote}
+            className="inline-flex h-10 items-center gap-2 rounded-[10px] bg-ink px-4 text-[13px] font-semibold text-white hover:bg-[#16213a] disabled:opacity-40"
+          >
+            <StickyNote size={14} /> Добавить заметку
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const historyCard = (
+    <div className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
+      <div className="mb-3 text-[14px] font-semibold text-ink">Хронология</div>
+      {events.length === 0 ? (
+        <div className="text-[12.5px] text-muted-2">Событий пока нет.</div>
+      ) : (
+        <ol className="max-h-[340px] space-y-2.5 overflow-auto pr-1">
+          {events.map((e) => (
+            <li key={e.key} className="flex gap-3 text-[12.5px] leading-snug text-ink-2">
+              <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${e.tone}`} />
+              <div className="min-w-0">
+                <div className="font-mono text-[10.5px] text-muted-2">{ruDateTime(e.at)}</div>
+                <div>{e.text}</div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+
+  const bd = d.buyoutDeal ?? null;
+  const actCard = bd ? (
+    <div data-case-source="buyout" className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="text-[14px] font-semibold text-ink">
+          Выкуп #{String(bd.id).padStart(4, "0")}
+          {bd.scooterName && <span className="font-normal text-muted"> · {bd.scooterName}</span>}
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate({ route: "rassrochki", buyoutDealId: bd.id })}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 transition-colors hover:bg-blue-100"
+        >
+          Открыть сделку <ArrowUpRight size={12} />
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-[13px] sm:grid-cols-4">
+        <div>
+          <div className="text-[11px] text-muted-2">Просрочено</div>
+          <div className="font-display text-[17px] font-bold tabular-nums text-red-ink">
+            {formatRub(bd.overdueAmount)}
+          </div>
+          <div className="text-[11px] text-muted">
+            {bd.overdueCount} плат. · {bd.overdueDays} дн
+          </div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-2">Осталось по сделке</div>
+          <div className="font-display text-[17px] font-bold tabular-nums text-ink">
+            {formatRub(bd.left)}
+          </div>
+          <div className="text-[11px] text-muted">из {formatRub(bd.total)}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-2">Платежей</div>
+          <div className="font-display text-[17px] font-bold tabular-nums text-ink">
+            {bd.paidCount} из {bd.count}
+          </div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-2">Следующий</div>
+          <div className="font-display text-[17px] font-bold tabular-nums text-ink">
+            {bd.nextDue ? ruDate(bd.nextDue) : "—"}
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 rounded-[10px] bg-surface-soft px-3 py-2 text-[12px] leading-snug text-muted">
+        {bd.status === "defaulted"
+          ? "Сделка сорвана — к взысканию весь остаток."
+          : "К взысканию — просроченные платежи. Платёж здесь гасит ближайшие строки графика выкупа; клиент догнал график — дело закроется само."}
+      </div>
+    </div>
+  ) : d.damageReportId != null ? (
+      <DamageDebtorActSection rentalId={d.relatedRentalId} reportId={d.damageReportId} />
+    ) : d.comment ? (
+      <div className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
+        <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+          Откуда долг
+        </div>
+        <div className="text-[13.5px] leading-relaxed text-ink-2">{d.comment}</div>
+      </div>
+    ) : null;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {hero}
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start">
+        {/* ЛЕВО — деньги и откуда долг */}
+        <div className="flex min-w-0 flex-col gap-4">
+          {/* «Ждём оплату / Пришла ли оплата?» — первым, это главный вопрос дела */}
+          <DebtorPaymentCheck d={d} part="check" />
+          {paymentsCard}
+          {actCard}
+          {/* Финансовый прогноз (ДТП-потерпевший) */}
           {d.forecast && (
             <div className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
               <div className="mb-3 flex items-center justify-between text-[14px] font-semibold text-ink">
@@ -600,280 +965,18 @@ export function DebtorCase({
                   <span className="text-muted">Себестоимость ремонта</span>
                   <b className="font-mono">{d.forecast.repairCost != null ? formatRub(d.forecast.repairCost) : "—"}</b>
                 </div>
-                <div className="flex justify-between border-t border-border pt-2">
-                  <span className="font-semibold text-ink">Прибыль</span>
-                  <b className="font-display text-[16px] text-emerald-700">
-                    {d.forecast.profit != null ? formatRub(d.forecast.profit) : "—"}
-                  </b>
-                </div>
               </div>
             </div>
           )}
-
-          {/* Этап 3: связанный акт о повреждениях — медиа-доказательства +
-              печать претензии прямо из дела. */}
-          {d.damageReportId != null && (
-            <DamageDebtorActSection
-              rentalId={d.relatedRentalId}
-              reportId={d.damageReportId}
-            />
-          )}
-
-          {/* Хронология */}
-          <div className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
-            <div className="mb-3 text-[14px] font-semibold text-ink">
-              Хронология
-            </div>
-            {d.stageEvents.length + d.calls.length + d.notes.length === 0 ? (
-              <div className="text-[12.5px] text-muted-2">Событий пока нет.</div>
-            ) : (
-              <div className="max-h-[300px] space-y-1.5 overflow-auto pr-1">
-                {d.stageEvents.map((e) => (
-                  <div key={`s-${e.id}`} className="text-[12.5px] text-ink-2">
-                    <span className="mr-2 font-mono text-[10.5px] uppercase tracking-[0.04em] text-muted-2">
-                      {e.createdAt.slice(0, 10)}
-                    </span>
-                    {e.fromStage ? STAGE_LABEL[e.fromStage] + " → " : ""}
-                    <b className="text-ink">{STAGE_LABEL[e.toStage]}</b>
-                    {e.reason && <span className="text-muted"> · {e.reason}</span>}
-                  </div>
-                ))}
-                {d.calls.map((c) => (
-                  <div key={`c-${c.id}`} className="text-[12.5px] text-ink-2">
-                    <span className="mr-2 font-mono text-[10.5px] uppercase tracking-[0.04em] text-muted-2">
-                      {c.createdAt.slice(0, 10)}
-                    </span>
-                    Звонок — {c.outcome === "answered" ? "ответил" : c.outcome === "no_answer" ? "не ответил" : c.outcome === "promised" ? "обещал" : "отказался"}
-                    {c.note && <span className="text-muted"> · {c.note}</span>}
-                  </div>
-                ))}
-                {d.notes.map((n) => (
-                  <div key={`n-${n.id}`} className="text-[12.5px] text-ink-2">
-                    <span className="mr-2 font-mono text-[10.5px] uppercase tracking-[0.04em] text-muted-2">
-                      {n.createdAt.slice(0, 10)}
-                    </span>
-                    {n.text}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <div className="hidden lg:block">{historyCard}</div>
         </div>
 
-        {/* ПРАВО — действия и связь */}
-        <div className="flex flex-col gap-4 lg:sticky lg:top-4">
-          {/* 23.10: «Ждём оплату до …» / «Пришла ли оплата?» + пеня п. 5.7 */}
-          <div className="hidden flex-col gap-4 lg:flex">
-            <DebtorPaymentCheck d={d} />
-          </div>
-          {closed && (
-            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5 text-[13px] text-emerald-800 shadow-card-sm">
-              <div className="font-display text-[16px] font-semibold">
-                Дело закрыто
-              </div>
-              <div className="mt-1">
-                {STAGE_LABEL[d.stage]}
-                {d.closedReason ? ` · ${d.closedReason}` : ""}
-              </div>
-            </div>
-          )}
-
-          {showNextStep && (
-            <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm">
-              <div className="border-l-[3px] border-amber-400 p-5">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
-                  Следующий шаг
-                </div>
-
-                {d.recommendation && (
-                  <div className="mt-2 flex items-start gap-2 rounded-[12px] bg-amber-50 px-3 py-2 text-[12.5px] leading-snug text-amber-800">
-                    <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
-                    <span>{d.recommendation.reason}</span>
-                  </div>
-                )}
-
-                {primaryAction && (
-                  <div className="mt-3 flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={primaryAction.onClick}
-                      disabled={transition.isPending}
-                      className="inline-flex h-12 items-center justify-center gap-2 rounded-[12px] bg-ink px-5 text-[15px] font-semibold text-white shadow-card-sm transition-transform hover:-translate-y-0.5 disabled:opacity-50"
-                    >
-                      {primaryAction.pay ? (
-                        <Wallet size={16} />
-                      ) : (
-                        <Check size={17} strokeWidth={2} />
-                      )}
-                      {primaryAction.label}
-                    </button>
-                  </div>
-                )}
-
-                {/* Альтернативные ходы по делу — тихие ссылки */}
-                {moves.length > 0 && (
-                  <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-border pt-3">
-                    {moves.map((t) => (
-                      <button
-                        key={t.to}
-                        type="button"
-                        onClick={() => handleStep(t.to, t.label)}
-                        className={`${TAP}inline-flex items-center text-[13px] font-medium text-muted hover:text-ink`}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Закрыть дело — управленческие исходы без денег. Отдельная
-                    группа с outline-кнопками, каждая с подтверждением. */}
-                {closings.length > 0 && (
-                  <div className="mt-4 border-t border-border pt-3">
-                    <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-2">
-                      Закрыть дело
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {closings.map((t) => {
-                        const recovered = t.to === "closed_recovered";
-                        return (
-                          <button
-                            key={t.to}
-                            type="button"
-                            onClick={() => onClose(t.to, t.label)}
-                            className={`inline-flex ${isTouchPrimary() ? "h-11" : "h-9"} items-center gap-1.5 rounded-[10px] border px-3 text-[12.5px] font-semibold transition-colors ${
-                              recovered
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400"
-                                : "border-border bg-white text-ink-2 hover:border-ink"
-                            }`}
-                          >
-                            {recovered && <Bike size={13} />}
-                            {t.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Связь с должником */}
-          {!closed && (
-            <div className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
-              <div className="flex items-end justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
-                    Связь с должником
-                  </div>
-                  <a
-                    href={`tel:${d.displayPhone}`}
-                    className="mt-1 inline-flex items-center gap-2 whitespace-nowrap font-display text-[19px] font-bold tracking-[-0.01em] text-ink hover:text-blue-700 xl:text-[22px]"
-                  >
-                    <Phone size={17} className="text-blue-600" />
-                    {d.displayPhone}
-                  </a>
-                </div>
-                <div className="shrink-0 text-right text-[11px] text-muted">
-                  {d.calls.length > 0
-                    ? `звонок ${d.calls[0]!.createdAt.slice(0, 10)}`
-                    : "звонков нет"}
-                </div>
-              </div>
-
-              {/* Исход звонка */}
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => onCall("answered")}
-                  disabled={logCall.isPending}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border border-emerald-100 bg-emerald-50 text-[13px] font-semibold text-emerald-700 transition-colors hover:border-emerald-300 disabled:opacity-50"
-                >
-                  <Phone size={14} /> Ответил
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onCall("no_answer")}
-                  disabled={logCall.isPending}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border border-border bg-white text-[13px] font-semibold text-ink-2 transition-colors hover:border-ink disabled:opacity-50"
-                >
-                  <PhoneOff size={14} /> Не дозвонился
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowPromised((s) => !s)}
-                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border text-[13px] font-semibold transition-colors ${
-                    showPromised
-                      ? "border-blue-600 bg-blue-600 text-white"
-                      : "border-blue-100 bg-blue-50 text-blue-700 hover:border-blue-300"
-                  }`}
-                >
-                  <CalendarClock size={14} /> Обещал
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onCall("refused")}
-                  disabled={logCall.isPending}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border border-red-100 bg-red-50 text-[13px] font-semibold text-red-700 transition-colors hover:border-red-300 disabled:opacity-50"
-                >
-                  <Ban size={14} /> Отказался
-                </button>
-              </div>
-
-              {showPromised && (
-                <div className="mt-3 flex flex-wrap items-end gap-3 rounded-[12px] bg-blue-50/60 p-3.5">
-                  <div>
-                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-blue-700">
-                      Обещал заплатить к дате
-                    </label>
-                    <DatePicker
-                      value={promisedDate || null}
-                      onChange={(v) => setPromisedDate(v ?? "")}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!promisedDate || logCall.isPending}
-                    onClick={() => onCall("promised", { promisedDate })}
-                    className="inline-flex h-10 items-center gap-2 rounded-[10px] bg-blue-600 px-4 text-[13px] font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
-                  >
-                    <Check size={14} /> Записать обещание
-                  </button>
-                </div>
-              )}
-
-              <input
-                value={callNote}
-                onChange={(e) => setCallNote(e.target.value)}
-                placeholder="Что сказал по телефону (необязательно)"
-                className="mt-3 h-11 w-full rounded-[10px] border border-border bg-white px-3.5 text-[13px] text-ink outline-none focus:border-ink"
-              />
-
-              <div className="mt-4 border-t border-border pt-4">
-                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-                  Заметка по делу
-                </label>
-                <textarea
-                  rows={2}
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
-                  placeholder="Договорённость, контакт родственника, важные детали…"
-                  className="w-full resize-none rounded-[10px] border border-border bg-white p-3 text-[13px] text-ink outline-none focus:border-ink"
-                />
-                <div className="mt-2 flex justify-end">
-                  <button
-                    type="button"
-                    disabled={!noteText.trim() || addNote.isPending}
-                    onClick={onSaveNote}
-                    className="inline-flex h-10 items-center gap-2 rounded-[10px] bg-ink px-4 text-[13px] font-semibold text-white hover:bg-[#16213a] disabled:opacity-40"
-                  >
-                    <StickyNote size={14} /> Добавить заметку
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+        {/* ПРАВО — что делать */}
+        <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-4">
+          {contactCard}
+          <DebtorPaymentCheck d={d} part="penalty" />
+          {nextStepCard}
+          <div className="lg:hidden">{historyCard}</div>
         </div>
       </div>
 
@@ -888,6 +991,25 @@ export function DebtorCase({
       )}
     </div>
   );
+}
+
+const OUTCOME_SHORT: Record<CallOutcome, string> = {
+  answered: "ответил",
+  no_answer: "не дозвонился",
+  promised: "обещал заплатить",
+  refused: "отказался",
+};
+
+function ruDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return d.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /** Аватар дела — фото из карточки клиента (23.10), иначе инициалы. */
@@ -915,35 +1037,6 @@ function CaseAvatar({ name, photoKey }: { name: string; photoKey: string | null 
       className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-50 to-surface-soft text-[17px] font-bold text-blue-700"
     >
       {initials}
-    </div>
-  );
-}
-
-function CaseStat({
-  label,
-  value,
-  tone = "muted",
-}: {
-  label: string;
-  value: string;
-  tone?: "muted" | "ink" | "green" | "red";
-}) {
-  const valueColor =
-    tone === "green"
-      ? "text-emerald-700"
-      : tone === "red"
-        ? "text-red-700"
-        : "text-ink";
-  return (
-    <div className="min-w-0">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-2">
-        {label}
-      </div>
-      <div
-        className={`mt-1 font-display text-[18px] font-bold leading-none tracking-[-0.01em] tabular-nums ${valueColor}`}
-      >
-        {value}
-      </div>
     </div>
   );
 }

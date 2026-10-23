@@ -22,6 +22,7 @@ import {
   buyoutContractUrl,
   useBuyoutPayment,
   useBuyoutPayments,
+  useBuyoutToDebtors,
   useCancelBuyoutDeal,
   useDeleteBuyoutDeal,
   BUYOUT_STATUS_CLASS,
@@ -31,6 +32,7 @@ import {
 import { fmt, ruDate } from "@/pages/sales/salesUtils";
 import { BuyoutContractPreview } from "./BuyoutContractPreview";
 import { DatePicker } from "@/components/ui/date-picker";
+import { navigate } from "@/app/navigationStore";
 
 /**
  * Карточка сделки выкупа (01.09).
@@ -58,6 +60,10 @@ export function BuyoutDealCard({
   const cancel = useCancelBuyoutDeal();
   const del = useDeleteBuyoutDeal();
   const [payOpen, setPayOpen] = useState(false);
+  // 23.10: «Передать в «Должники»» — окно с обязательным комментарием.
+  const toDebtors = useBuyoutToDebtors();
+  const [debtorsOpen, setDebtorsOpen] = useState(false);
+  const [debtorsComment, setDebtorsComment] = useState("");
   /** Договор в окне CRM (06.09, п.12). */
   const [contractOpen, setContractOpen] = useState(false);
 
@@ -337,6 +343,25 @@ export function BuyoutDealCard({
             <Wallet size={15} /> Принять платёж
           </button>
         )}
+        {deal.debtorCase ? (
+          <button
+            type="button"
+            onClick={() => navigate({ route: "debtors", debtorId: deal.debtorCase!.id })}
+            className="inline-flex h-10 items-center gap-1.5 rounded-full border border-red-200 bg-red-soft/40 px-4 text-[12.5px] font-bold text-red-ink"
+          >
+            В «Должниках» · дело {deal.debtorCase.caseNumber}
+            <ChevronRight size={14} />
+          </button>
+        ) : (active && p.overdueAmount > 0) || deal.status === "defaulted" ? (
+          <button
+            type="button"
+            data-to-debtors
+            onClick={() => setDebtorsOpen(true)}
+            className="inline-flex h-10 items-center gap-1.5 rounded-full border border-border px-4 text-[12.5px] font-semibold text-ink-2 hover:border-red-300 hover:text-red-ink"
+          >
+            Передать в «Должники»
+          </button>
+        ) : null}
         <div className="flex-1" />
         {deal.status !== "cancelled" && deal.status !== "closed" && (
           <button
@@ -397,6 +422,58 @@ export function BuyoutDealCard({
 
       {payOpen && (
         <PaymentDialog deal={deal} onClose={() => setPayOpen(false)} />
+      )}
+      {debtorsOpen && (
+        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-ink/45 p-0 sm:items-center sm:p-4">
+          <div className="w-full max-w-[460px] rounded-t-2xl bg-surface p-5 shadow-card-lg sm:rounded-2xl">
+            <div className="text-[16px] font-bold text-ink">Передать в «Должники»</div>
+            <div className="mt-1 text-[13px] leading-snug text-muted">
+              {deal.status === "defaulted"
+                ? `Сделка сорвана — к взысканию весь остаток ${fmt(p.left)} ₽.`
+                : `Просрочено ${p.overdueCount} плат. на ${fmt(p.overdueAmount)} ₽ (${p.overdueDays} дн). Платёж в «Должниках» погасит строки графика выкупа, догнал график — дело закроется само.`}
+            </div>
+            <textarea
+              autoFocus
+              rows={3}
+              value={debtorsComment}
+              onChange={(e) => setDebtorsComment(e.target.value)}
+              placeholder="Что случилось и о чём договорились (обязательно)"
+              className="mt-3 w-full resize-none rounded-[10px] border border-border bg-white p-3 text-[13px] text-ink outline-none focus:border-ink"
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDebtorsOpen(false)}
+                className="h-11 rounded-full px-4 text-[13px] font-semibold text-muted hover:text-ink"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={debtorsComment.trim().length < 3 || toDebtors.isPending}
+                onClick={async () => {
+                  try {
+                    const r = await toDebtors.mutateAsync({
+                      id: deal.id,
+                      comment: debtorsComment.trim(),
+                    });
+                    toast.success(
+                      r.existed ? "Дело уже есть" : "Передано в «Должники»",
+                      `Дело ${r.debtor.caseNumber}`,
+                    );
+                    setDebtorsOpen(false);
+                    navigate({ route: "debtors", debtorId: r.debtor.id });
+                  } catch (e) {
+                    toast.error("Не удалось", (e as Error).message);
+                  }
+                }}
+                className="h-11 rounded-full bg-ink px-5 text-[13px] font-bold text-white disabled:opacity-40"
+              >
+                Передать
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

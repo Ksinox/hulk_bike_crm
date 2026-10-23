@@ -17,6 +17,7 @@ import {
   clients,
   damageReportItems,
   damageReports,
+  debtors,
   payments,
   rentals,
   scooterModels,
@@ -24,6 +25,7 @@ import {
   users,
 } from "../db/schema.js";
 import { LANDLORD } from "./landlord.js";
+import { loadCaseFinance } from "../services/debtorFinance.js";
 
 type PaymentRow = typeof payments.$inferSelect & {
   receivedByName: string | null;
@@ -39,6 +41,8 @@ type DamageRow = typeof damageReports.$inferSelect & {
   paymentsForReport: PaymentRow[];
   paidSum: number;
   debt: number;
+  /** 23.10: дело в «Должниках» закрыто без оплаты (списано/мировая…). */
+  closedNote: string | null;
 };
 
 type StatementBundle = {
@@ -167,8 +171,32 @@ export async function loadStatementBundle(
       paymentsForReport,
       paidSum,
       debt,
+      closedNote: null as string | null,
     };
   });
+  // 23.10: долг по акту ведётся делом в «Должниках». Дело закрыто без денег
+  // (списано, мировая, суд) — долга по акту больше нет; открытое дело с пеней
+  // по п. 5.7 — остаток вместе с пеней.
+  if (damageFull.length > 0) {
+    const cases = await db
+      .select()
+      .from(debtors)
+      .where(inArray(debtors.damageReportId, damageFull.map((d) => d.id)));
+    const fin = await loadCaseFinance(cases);
+    for (const d of damageFull) {
+      const c = cases.find((x) => x.damageReportId === d.id);
+      if (!c) continue;
+      if (String(c.stage).startsWith("closed_")) {
+        // Дело закрыто — долга по акту нет (старые дела могли быть оплачены
+        // только в «Должниках», акт этого не видел).
+        if (c.stage !== "closed_paid")
+          d.closedNote = `дело ${c.caseNumber} закрыто: ${c.closedReason ?? "без оплаты"}`;
+        d.debt = 0;
+      } else if (!String(c.stage).startsWith("closed_")) {
+        d.debt = fin.get(c.id)?.remaining ?? d.debt;
+      }
+    }
+  }
 
   return {
     client,
@@ -367,7 +395,9 @@ export function renderStatementHtml(b: StatementBundle): string {
             <div class="small">
               Зачтено из залога: ${fmtMoney(d.depositCovered)} ₽ ·
               Уплачено: ${fmtMoney(d.paidSum)} ₽ ·
-              <b style="color:${d.debt > 0 ? "#a00" : "#070"}">Остаток долга: ${fmtMoney(d.debt)} ₽</b>
+              <b style="color:${d.debt > 0 ? "#a00" : "#070"}">Остаток долга: ${fmtMoney(d.debt)} ₽</b>${
+                d.closedNote ? ` <span class="small">(${d.closedNote})</span>` : ""
+              }
             </div>
             ${
               d.paymentsForReport.length > 0

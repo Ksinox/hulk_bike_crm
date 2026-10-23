@@ -308,7 +308,14 @@ export function useAllClients(): Client[] {
         ...adaptClient(a),
         rents: rentsByClient.get(a.id) ?? 0,
         debt,
-        allDebt: debt + (a.unpaidDamageDebt ?? 0),
+        // + ущерб и открытые дела «долг за аренду» по закрытым арендам
+        // (их нет в агрегате живых аренд).
+        allDebt:
+          debt +
+          (a.unpaidDamageDebt ?? 0) +
+          (a.debtorCases ?? [])
+            .filter((x) => x.active && x.type !== "damage")
+            .reduce((s, x) => s + Math.max(0, x.totalAmount - x.paid), 0),
       };
     });
     return [...mapped, ...state.addedClients];

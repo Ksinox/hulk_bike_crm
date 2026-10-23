@@ -22,7 +22,7 @@ import {
 } from "../db/schema.js";
 import { logActivity } from "./activityLog.js";
 import { isClosed, type Stage } from "./debtorStages.js";
-import { loadCaseFinance } from "./debtorFinance.js";
+import { DAMAGE_PAID_REASON, loadCaseFinance } from "./debtorFinance.js";
 
 /** Типы платежей по аренде, которые гасят «долг» (а не залог/возврат). */
 const MIRROR_TYPES = new Set(["rent", "fine", "damage"]);
@@ -122,7 +122,10 @@ export async function mirrorRentalPaymentToDebtor(
         clientStatus: "closed",
         stageEnteredAt: now,
         closedAt: now,
-        closedReason: "Долг погашен (через карточку аренды)",
+        closedReason:
+          d.damageReportId != null
+            ? DAMAGE_PAID_REASON
+            : "Долг погашен (через карточку аренды)",
         updatedAt: now,
       })
       .where(eq(debtors.id, d.id));

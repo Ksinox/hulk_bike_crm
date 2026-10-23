@@ -25,7 +25,8 @@ export function DebtorPaymentScreen({
       ? q.data?.payments.find((p) => p.n === paymentN && p.paidAt == null)
       : undefined;
   const nextPlanned = target ?? q.data?.payments.find((p) => p.paidAt == null);
-  const remaining = q.data ? q.data.totalAmount - q.data.paid : 0;
+  // 23.10: остаток считает сервер (у дела ущерба — по акту + пеня).
+  const remaining = q.data ? q.data.remaining ?? q.data.totalAmount - q.data.paid : 0;
 
   const [amount, setAmount] = useState<string>("");
   const [method, setMethod] = useState<PaymentMethod>("transfer");
@@ -81,9 +82,9 @@ export function DebtorPaymentScreen({
     Math.floor(n).toLocaleString("ru-RU");
 
   return (
-    <section className="grid min-h-[600px] place-items-center bg-surface-soft p-10">
+    <section className="grid min-h-[600px] place-items-center bg-surface-soft p-3 sm:p-10">
       <div className="w-full max-w-[520px] overflow-hidden rounded-[20px] bg-white shadow-card-lg">
-        <header className="border-b border-border p-7 pb-5">
+        <header className="border-b border-border p-5 pb-4 sm:p-7 sm:pb-5">
           <div className="mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted">
             Платёж от <b className="font-bold text-ink">{q.data.displayName}</b> · дело {q.data.caseNumber}
           </div>
@@ -97,7 +98,7 @@ export function DebtorPaymentScreen({
           </div>
         </header>
 
-        <div className="p-7">
+        <div className="p-5 sm:p-7">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
             Сумма
           </div>
@@ -120,7 +121,7 @@ export function DebtorPaymentScreen({
             </span>
           </div>
 
-          <div className="mb-5 grid grid-cols-3 gap-1.5">
+          <div className="mb-5 grid grid-cols-2 gap-2">
             {nextPlanned && (
               <button
                 type="button"
@@ -146,7 +147,7 @@ export function DebtorPaymentScreen({
                   : "border-border text-ink-2 hover:border-ink"
               }`}
             >
-              Закрыть всё
+              Весь остаток
               <span className={`font-mono text-[10.5px] ${numAmount === remaining ? "text-white/70" : "text-muted"}`}>
                 {fmtNum(remaining)}
               </span>
@@ -278,7 +279,7 @@ export function DebtorPaymentScreen({
             <div className="mt-1 flex justify-between border-t border-emerald-100 pt-2 text-[14px] font-semibold">
               <span className="text-ink-2">Статус дела</span>
               <b className="font-display text-[18px] font-bold text-emerald-700">
-                {willClose ? "готово к закрытию" : "снова в графике"}
+                {willClose ? "закроется само" : nextPlanned ? "по графику" : "останется долг"}
               </b>
             </div>
           </div>

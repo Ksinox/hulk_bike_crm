@@ -3,6 +3,7 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
+  debtors,
   activityLog,
   clients,
   damageReports,
@@ -59,6 +60,8 @@ import {
 } from "../services/approvalBrief.js";
 import { rentalStatusLabel, scooterStatusLabel } from "../services/activityMessages.js";
 import { overdueDailyRate } from "../services/overdueCharge.js";
+import { syncRentalDebtorCases } from "../services/debtorSync.js";
+import { addDaysYmd, mskTodayYmd } from "../services/debtorFinance.js";
 
 const RentalStatusEnum = z.enum(["active", "completed"]);
 
@@ -1522,6 +1525,25 @@ export async function rentalsRoutes(app: FastifyInstance) {
       ).map((c) => c.id);
       const allIds = [id, ...childIds];
 
+      // 23.10: открытые дела «Должников» по этой аренде закрываем с пометкой —
+      // после удаления аренды они остались бы сиротами с суммой без источника.
+      await db
+        .update(debtors)
+        .set({
+          stage: "closed_written_off",
+          clientStatus: "closed",
+          closedAt: new Date(),
+          stageEnteredAt: new Date(),
+          closedReason: `Аренда #${String(id).padStart(4, "0")} удалена полностью`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            inArray(debtors.relatedRentalId, allIds),
+            sql`${debtors.stage}::text NOT LIKE 'closed_%'`,
+          ),
+        );
+
       for (const rid of allIds) {
         await db
           .delete(activityLog)
@@ -1735,6 +1757,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
               total: d.damageAmount,
               depositCovered: 0,
               note: d.damageNotes ?? "Ущерб зафиксирован при возврате",
+              // 23.10: срок оплаты по акту (п. 2.3.15) — 7 дней.
+              payDueDate: addDaysYmd(mskTodayYmd(), 7),
             })
             .returning();
           if (report) {
@@ -1914,6 +1938,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
           });
         }
       }
+      // 23.10: закрыли аренду с ущербом/долгом — дела в «Должниках» сразу.
+      await syncRentalDebtorCases().catch((e) =>
+        req.log.warn({ err: e }, "debtor sync after complete failed"),
+      );
       return result.rental;
     },
   );

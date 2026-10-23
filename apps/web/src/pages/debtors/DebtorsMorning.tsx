@@ -20,9 +20,9 @@ import { fileUrl } from "@/lib/files";
 import { cn } from "@/lib/utils";
 import {
   STAGE_LABEL,
-  TYPE_LABEL,
   formatRub,
   isAwaitingPayment,
+  localYmd,
   ruDate,
   type DebtType,
   type TodayAction,
@@ -36,14 +36,6 @@ function greetingFor(now: Date): string {
   if (h < 22) return "Добрый вечер";
   return "Доброй ночи";
 }
-
-const TYPE_DOT: Record<DebtType, string> = {
-  dtp_guilty: "bg-red-500",
-  dtp_victim: "bg-blue-500",
-  damage: "bg-orange-500",
-  theft: "bg-violet-500",
-  rental_overdue: "bg-slate-500",
-};
 
 const PRIO_DOT: Record<"hot" | "warm" | "cool", string> = {
   hot: "bg-red-600",
@@ -85,7 +77,7 @@ export function DebtorsMorning({
   }
   if (!todayQ.data) return null;
 
-  const { hottest, queue, totalActiveCount, totalActiveSum } = todayQ.data;
+  const { hottest, queue, totalActiveSum } = todayQ.data;
   const calls = [...(hottest ? [hottest] : []), ...queue];
   const active =
     todayQ.data.active ??
@@ -169,64 +161,98 @@ export function DebtorsMorning({
     </section>
   );
 
+  // Один человек — одна строка: чипы-причины (у кого что: ущерб, аренда,
+  // выкуп…) с суммами, последний платёж и как идёт график (заказчик 23.10:
+  // «чтобы менеджер сразу сориентировался, у кого какая проблема»).
+  const people = groupByPerson(active.map((a) => ({ ...a.debtor, action: a.action })));
+
   const casesBlock = (
     <section data-debtors-active className="min-w-0">
       <BlockTitle
         icon={<Clock size={14} />}
-        title="Все активные дела"
-        count={totalActiveCount}
+        title="Все должники"
+        count={people.length}
         extra={formatRub(totalActiveSum)}
       />
       <div className="flex flex-col gap-1.5">
-        {active.map(({ debtor, action }) => {
-          const awaiting = isAwaitingPayment(debtor);
-          const status = awaiting
-            ? `ждём оплату до ${ruDate(debtor.paymentDueDate)}`
-            : action?.kind === "payment_check"
-              ? "пора спросить: пришла ли оплата?"
-              : STAGE_LABEL[debtor.stage];
+        {people.map((p) => {
+          const lead = p.cases[0]!;
           return (
-            <button
-              key={debtor.id}
-              type="button"
-              data-case-row={debtor.caseNumber}
-              onClick={() => onOpenCase(debtor.id)}
-              className="grid grid-cols-[36px_1fr_auto] items-center gap-3 rounded-[12px] border border-border bg-white px-3 py-2.5 text-left transition-all hover:translate-x-0.5 hover:border-ink hover:shadow-card"
+            <div
+              key={p.key}
+              role="button"
+              tabIndex={0}
+              data-person-row={p.name}
+              onClick={() => onOpenCase(lead.id)}
+              onKeyDown={(e) => e.key === "Enter" && onOpenCase(lead.id)}
+              className="grid cursor-pointer grid-cols-[36px_1fr_auto] items-start gap-3 rounded-[12px] border border-border bg-white px-3 py-3 text-left transition-all hover:border-ink hover:shadow-card"
             >
-              <Avatar name={debtor.clientName} photoKey={debtor.clientPhotoKey} />
+              <Avatar name={p.name} photoKey={p.photoKey} />
               <div className="min-w-0">
                 <div className="truncate text-[14px] font-semibold leading-tight text-ink">
-                  {debtor.clientName}
+                  {p.name}
                 </div>
-                <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12px] text-muted sm:flex-nowrap">
-                  <i
-                    className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${TYPE_DOT[debtor.type]}`}
-                  />
-                  <span className="shrink-0">{TYPE_LABEL[debtor.type]}</span>
-                  <span className="text-muted-2">·</span>
-                  <span
-                    className={cn(
-                      "sm:truncate",
-                      awaiting
-                        ? "text-blue-700"
-                        : action?.kind === "payment_check"
-                          ? "font-semibold text-red-ink"
-                          : "",
-                    )}
-                  >
-                    {status}
+                {/* Причины — чипами, каждый открывает своё дело */}
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {p.cases.map((c) => {
+                    const awaiting = isAwaitingPayment(c);
+                    const check = c.action?.kind === "payment_check";
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        data-reason-chip={c.caseNumber}
+                        title={`${c.caseNumber} · ${STAGE_LABEL[c.stage]}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenCase(c.id);
+                        }}
+                        className={cn(
+                          "inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-[11.5px] font-semibold transition-colors hover:brightness-95",
+                          REASON_CHIP[c.type],
+                        )}
+                      >
+                        {REASON_LABEL[c.type]}
+                        <span className="tabular-nums">{formatRub(c.remaining ?? c.totalAmount)}</span>
+                        {awaiting && (
+                          <span className="font-medium opacity-75">
+                            · до {ruDate(c.paymentDueDate).slice(0, 5)}
+                          </span>
+                        )}
+                        {check && <span className="font-bold text-red-700">· срок прошёл</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Как платит: последний платёж и график */}
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-muted">
+                  <span>
+                    {p.lastPaid
+                      ? `посл. платёж ${ruDate(p.lastPaid.at)} · ${formatRub(p.lastPaid.amount)}`
+                      : "платежей не было"}
                   </span>
+                  {p.overdueDays > 0 ? (
+                    <span className="font-semibold text-red-700">
+                      график: просрочка {p.overdueDays} дн
+                    </span>
+                  ) : p.nextDue ? (
+                    <span className="text-emerald-700">
+                      график соблюдает · след. {ruDate(p.nextDue).slice(0, 5)}
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <div className="text-right">
-                <div className="font-display text-[15px] font-semibold tabular-nums text-ink">
-                  {formatRub(left(debtor))}
+                <div className="font-display text-[16px] font-bold tabular-nums text-ink">
+                  {formatRub(p.remaining)}
                 </div>
-                <div className="font-mono text-[10.5px] text-muted-2">
-                  {debtor.caseNumber}
-                </div>
+                {p.paid > 0 && (
+                  <div className="text-[11px] text-emerald-700">
+                    оплачено {formatRub(p.paid)}
+                  </div>
+                )}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -346,4 +372,81 @@ function Avatar({ name, photoKey }: { name: string; photoKey?: string | null }) 
       {(name ?? "?").slice(0, 2).toUpperCase()}
     </div>
   );
+}
+
+type CaseRow = TodayDebtor & { action: TodayAction | null };
+
+const REASON_LABEL: Record<DebtType, string> = {
+  damage: "Ущерб",
+  rental_overdue: "Аренда",
+  buyout_overdue: "Выкуп",
+  dtp_guilty: "ДТП",
+  dtp_victim: "ДТП (страховая)",
+  theft: "Угон",
+};
+
+const REASON_CHIP: Record<DebtType, string> = {
+  damage: "border-orange-200 bg-orange-50 text-orange-800",
+  rental_overdue: "border-slate-200 bg-slate-50 text-slate-700",
+  buyout_overdue: "border-teal-200 bg-teal-50 text-teal-700",
+  dtp_guilty: "border-red-200 bg-red-50 text-red-700",
+  dtp_victim: "border-blue-200 bg-blue-50 text-blue-700",
+  theft: "border-violet-200 bg-violet-50 text-violet-700",
+};
+
+type Person = {
+  key: string;
+  name: string;
+  photoKey: string | null;
+  cases: CaseRow[];
+  remaining: number;
+  paid: number;
+  lastPaid: { at: string; amount: number } | null;
+  overdueDays: number;
+  nextDue: string | null;
+};
+
+/** Дела одного клиента — в одну строку; сортировка по сумме долга. */
+function groupByPerson(rows: CaseRow[]): Person[] {
+  const today = localYmd();
+  const map = new Map<string, Person>();
+  for (const c of rows) {
+    const key = c.clientId != null ? `c${c.clientId}` : `d${c.id}`;
+    const p =
+      map.get(key) ??
+      ({
+        key,
+        name: c.clientName,
+        photoKey: c.clientPhotoKey ?? null,
+        cases: [],
+        remaining: 0,
+        paid: 0,
+        lastPaid: null,
+        overdueDays: 0,
+        nextDue: null,
+      } as Person);
+    p.cases.push(c);
+    p.remaining += c.remaining ?? c.totalAmount;
+    p.paid += c.paid ?? 0;
+    p.photoKey = p.photoKey ?? c.clientPhotoKey ?? null;
+    for (const pay of c.payments ?? []) {
+      if (pay.paidAt) {
+        if (!p.lastPaid || pay.paidAt > p.lastPaid.at)
+          p.lastPaid = { at: pay.paidAt, amount: pay.paidAmount ?? pay.scheduledAmount };
+      } else {
+        const d = pay.scheduledDate.slice(0, 10);
+        if (d < today) {
+          const days = Math.round(
+            (new Date(`${today}T00:00:00Z`).getTime() - new Date(`${d}T00:00:00Z`).getTime()) /
+              86_400_000,
+          );
+          p.overdueDays = Math.max(p.overdueDays, days);
+        } else if (!p.nextDue || d < p.nextDue) p.nextDue = d;
+      }
+    }
+    map.set(key, p);
+  }
+  for (const p of map.values())
+    p.cases.sort((a, b) => (b.remaining ?? b.totalAmount) - (a.remaining ?? a.totalAmount));
+  return [...map.values()].sort((a, b) => b.remaining - a.remaining);
 }

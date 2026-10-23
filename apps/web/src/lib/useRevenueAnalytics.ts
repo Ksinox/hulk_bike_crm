@@ -317,7 +317,7 @@ export function useRevenueAnalytics(opts: {
       (s, d) =>
         s +
         (d.overdueBalance ?? 0) +
-        (d.damageBalance ?? 0) +
+        // 23.10: ущерб — не долг аренды, он в «Должниках».
         (d.manualBalance ?? 0),
       0,
     );

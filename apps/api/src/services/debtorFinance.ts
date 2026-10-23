@@ -16,7 +16,30 @@
  */
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { damageReports, debtorPayments, payments } from "../db/schema.js";
+import {
+  buyoutDeals,
+  buyoutPayments,
+  buyoutSchedule,
+  damageReports,
+  debtorPayments,
+  payments,
+} from "../db/schema.js";
+import { computeProgress } from "./buyoutMath.js";
+
+/**
+ * Причина авто-закрытия дела ущерба «акт оплачен». По ней (и только по ней)
+ * sync снова открывает дело, если оплату отменили или акт увеличили —
+ * старые закрытия с другими причинами не трогаем.
+ */
+export const DAMAGE_PAID_REASON = "Ущерб возмещён полностью";
+
+/**
+ * Метка в комментарии дела «долг за аренду», заведённого новой логикой
+ * (аренду закрыли с долгом). Такие дела ведутся по самой аренде: платёж в
+ * «Должниках» гасит долг аренды, оплата в аренде закрывает дело. Старые дела
+ * (до 23.10) с графиками менеджеров не трогаем.
+ */
+export const RENT_CASE_MARK = "закрыта с долгом";
 
 /** П. 5.7 договора: 1 000 ₽ за каждый день неоплаты ущерба. */
 export const PENALTY_PER_DAY = 1000;
@@ -57,6 +80,8 @@ type CaseRow = {
   id: number;
   totalAmount: number;
   damageReportId: number | null;
+  buyoutDealId?: number | null;
+  createdAt?: Date;
   penaltyEnabled: boolean;
   penaltyFrom: string | null;
   penaltyUntil: string | null;
@@ -129,7 +154,46 @@ export async function loadCaseFinance(
     }
   }
 
+  // Выкуп: долг = просроченные платежи графика (у сорванной сделки — весь
+  // остаток); оплачено = платежи по сделке с момента передачи в «Должники».
+  const dealIds = rows.map((r) => r.buyoutDealId).filter((x): x is number => x != null);
+  const buyout = new Map<number, { debt: number; paidSince: (since: Date) => number }>();
+  if (dealIds.length > 0) {
+    const deals = await db.select().from(buyoutDeals).where(inArray(buyoutDeals.id, dealIds));
+    const sched = await db.select().from(buyoutSchedule).where(inArray(buyoutSchedule.dealId, dealIds));
+    const bp = await db.select().from(buyoutPayments).where(inArray(buyoutPayments.dealId, dealIds));
+    for (const dl of deals) {
+      const pr = computeProgress(dl, sched.filter((x) => x.dealId === dl.id));
+      const debt =
+        dl.status === "defaulted"
+          ? pr.left
+          : dl.status === "active"
+            ? pr.overdueAmount
+            : 0;
+      const pays = bp.filter((x) => x.dealId === dl.id);
+      buyout.set(dl.id, {
+        debt,
+        paidSince: (since) =>
+          pays.filter((x) => x.paidAt >= since).reduce((s, x) => s + x.amount, 0),
+      });
+    }
+  }
+
   for (const r of rows) {
+    const bo = r.buyoutDealId != null ? buyout.get(r.buyoutDealId) : undefined;
+    if (bo) {
+      const paid = bo.paidSince(r.createdAt ?? new Date(0));
+      out.set(r.id, {
+        base: paid + bo.debt,
+        penalty: 0,
+        penaltyDays: 0,
+        total: paid + bo.debt,
+        paid,
+        remaining: bo.debt,
+        reportBalance: null,
+      });
+      continue;
+    }
     const rep = r.damageReportId != null ? reports.get(r.damageReportId) : undefined;
     if (rep) {
       const base = Math.max(0, rep.total - rep.depositCovered);

@@ -11,6 +11,7 @@ import {
   damageReportItems,
   damageReportMedia,
   damageReportRevisions,
+  debtorStageEvents,
   debtors,
   payments,
   rentals,
@@ -987,6 +988,32 @@ export async function damageReportsRoutes(app: FastifyInstance) {
             deposit: Math.min(original, cur + (report.depositCovered ?? 0)),
           })
           .where(eq(rentals.id, report.rentalId));
+      }
+    }
+    // Партия 23.10: акт удалён (проверки пройдены) — его дело в «Должниках» закрываем с пометкой,
+    // иначе оно осталось бы сиротой с суммой без акта.
+    {
+      const cs = await db.select().from(debtors).where(eq(debtors.damageReportId, id));
+      for (const c of cs) {
+        if (String(c.stage).startsWith("closed_")) continue;
+        await db
+          .update(debtors)
+          .set({
+            stage: "closed_written_off",
+            clientStatus: "closed",
+            stageEnteredAt: new Date(),
+            closedAt: new Date(),
+            closedReason: `Акт о повреждениях #${id} удалён`,
+            updatedAt: new Date(),
+          })
+          .where(eq(debtors.id, c.id));
+        await db.insert(debtorStageEvents).values({
+          debtorId: c.id,
+          fromStage: c.stage,
+          toStage: "closed_written_off",
+          reason: `акт о повреждениях #${id} удалён`,
+          userId: getUserId(req),
+        });
       }
     }
     await db.delete(damageReports).where(eq(damageReports.id, id));

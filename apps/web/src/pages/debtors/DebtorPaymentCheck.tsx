@@ -29,7 +29,14 @@ const H = isTouchPrimary() ? "h-12" : "h-10";
 
 type Answer = "yes" | "partial" | "no";
 
-export function DebtorPaymentCheck({ d }: { d: DebtorDetail }) {
+export function DebtorPaymentCheck({
+  d,
+  part = "all",
+}: {
+  d: DebtorDetail;
+  /** check — только «Ждём / Пришла ли оплата?», penalty — только пеня. */
+  part?: "all" | "check" | "penalty";
+}) {
   const check = usePaymentCheck();
   const patch = usePatchDebtor();
   const [answer, setAnswer] = useState<Answer | null>(null);
@@ -40,6 +47,8 @@ export function DebtorPaymentCheck({ d }: { d: DebtorDetail }) {
   const [newDue, setNewDue] = useState<string | null>(d.paymentDueDate);
 
   if (isClosed(d.stage)) return null;
+  if (part === "penalty")
+    return d.type === "damage" && d.damageReport ? <PenaltyToggle d={d} /> : null;
   const awaiting = isAwaitingPayment(d);
   const due = needsPaymentCheck(d);
   const amount = Math.max(0, parseInt(amountStr.replace(/\D/g, "") || "0", 10));
@@ -113,14 +122,12 @@ export function DebtorPaymentCheck({ d }: { d: DebtorDetail }) {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="font-display text-[17px] font-bold leading-tight text-ink">
-                  {due
-                    ? "Пришла ли оплата?"
-                    : `Ждём оплату до ${ruDate(d.paymentDueDate)}`}
+                  {due ? "Пришла ли оплата?" : "Оплата по акту"}
                 </div>
                 <div className="mt-1 text-[12.5px] leading-snug text-muted">
                   {due
                     ? `Срок по акту — ${ruDate(d.paymentDueDate)}. К оплате ${formatRub(d.remaining)}.`
-                    : `По акту о повреждениях — ${formatRub(d.remaining)}. В этот день CRM спросит, пришли ли деньги; до этого звонить не нужно.`}
+                    : `Срок — до ${ruDate(d.paymentDueDate)}. Деньги пришли раньше — отметьте; нужен другой срок — поменяйте.`}
                 </div>
               </div>
             </div>
@@ -288,7 +295,9 @@ export function DebtorPaymentCheck({ d }: { d: DebtorDetail }) {
         </div>
       )}
 
-      {d.type === "damage" && d.damageReport && <PenaltyToggle d={d} />}
+      {part === "all" && d.type === "damage" && d.damageReport && (
+        <PenaltyToggle d={d} />
+      )}
     </>
   );
 }

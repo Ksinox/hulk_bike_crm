@@ -786,6 +786,21 @@ export function RentalCard({
   const withholdDepositMut = useWithholdDeposit();
   const forgiveOverdueMut = useForgiveOverdue();
   const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
+  // 23.10: дело списали/закрыли миром — в блоке акта не «Долг», а «Закрыто
+  // без оплаты» (долг по акту при этом больше не висит).
+  // Любое закрытое дело — долга по акту больше нет (в т.ч. старые дела,
+  // где оплату принимали только в «Должниках» и акт её не видел).
+  const closedDamageCases = (rentalCasesQ.data ?? []).filter(
+    (c) => c.type === "damage" && c.stage.startsWith("closed_"),
+  );
+  const closedNoPayCases = closedDamageCases.filter((c) => c.stage !== "closed_paid");
+  const reportsForBlock = reports.map((r) =>
+    closedDamageCases.some((c) => c.damageReportId === r.id) ? { ...r, debt: 0 } : r,
+  );
+  const damageClosedNote =
+    closedNoPayCases.length > 0 && reportsForBlock.every((r) => r.debt === 0)
+      ? `Дело ${closedNoPayCases.map((c) => c.caseNumber).join(", ")} в «Должниках» закрыто без оплаты`
+      : null;
   // Партия 23.10: ссылка «Ущерб → в «Должниках»» — открыть дело ущерба
   // (самое крупное открытое; если дела ещё нет — заведём по акту).
   const openDamageCase = () => {
@@ -1808,7 +1823,8 @@ export function RentalCard({
   // а в поповере раскрываем отдельной секцией. combinedDebt = долг этой
   // аренды + сквозной.
   const crossDebtTotal = crossDebtSources.reduce((s, x) => s + x.amount, 0);
-  const combinedDebt = debtTotal + crossDebtTotal;
+  // 23.10: «Долг» аренды — без ущерба прошлых аренд (это дела «Должников»).
+  const combinedDebt = debtTotal;
   // Значок-алёрт ⚠ убран как дубль: сквозной долг теперь виден в KPI «Долг»
   // (со звёздочкой + раскрытие) и строкой в «Финансовой информации» (с
   // переходом в аренду-источник). crossDebtSources используются там.
@@ -1936,7 +1952,7 @@ export function RentalCard({
         // Звёздочка сигналит, что в сумме есть долг с других аренд.
         value={
           combinedDebt > 0
-            ? `${fmt(combinedDebt)} ₽${crossDebtTotal > 0 ? "*" : ""}`
+            ? `${fmt(combinedDebt)} ₽`
             : "0 ₽"
         }
         // C4: при долге показываем ТОЛЬКО сумму (без длинной строки состава —
@@ -1944,9 +1960,7 @@ export function RentalCard({
         // сниппете на мобиле. Когда долга нет — короткий «нет долгов».
         hint={
           combinedDebt > 0
-            ? crossDebtTotal > 0
-              ? "* вкл. прошлые аренды"
-              : undefined
+            ? undefined
             : "нет долгов"
         }
         accent={combinedDebt > 0 ? "red" : "muted"}
@@ -1958,13 +1972,6 @@ export function RentalCard({
                   ? `Состав долга — ${fmt(combinedDebt)} ₽`
                   : "Долга по аренде нет"}
               </div>
-              {/* Долг ЭТОЙ аренды. Подзаголовок показываем только когда есть и
-                  сквозной долг — иначе и так понятно. */}
-              {debtTotal > 0 && crossDebtTotal > 0 && (
-                <div className="font-semibold text-ink-2">
-                  Эта аренда — {fmt(debtTotal)} ₽
-                </div>
-              )}
               {swapFeePending > 0 && (
                 <div>
                   пересчёт по замене модели: <b>{fmt(swapFeePending)} ₽</b>
@@ -2039,7 +2046,7 @@ export function RentalCard({
               {crossDebtTotal > 0 && (
                 <div className="mt-1.5 border-t border-border pt-1.5">
                   <div className="font-semibold text-amber-700">
-                    * С прошлых аренд — {fmt(crossDebtTotal)} ₽
+                    Ущерб с прошлых аренд — {fmt(crossDebtTotal)} ₽ (не в долге аренды)
                   </div>
                   {crossDebtSources.map((s) => (
                     <div
@@ -2691,7 +2698,8 @@ export function RentalCard({
               }
             >
               <DamageActBlock
-                reports={reports}
+                reports={reportsForBlock}
+                closedWithoutPay={damageClosedNote}
                 onEditReport={(id) => setEditingReportId(id)}
                 onPrintReport={(id) => setPreviewDamageId(id)}
                 // Пока «Должники» не доделаны: кнопка печатает досудебную
@@ -2712,7 +2720,7 @@ export function RentalCard({
             badge={
               combinedDebt > 0 ? (
                 <span className="rounded-full bg-red-soft px-2 py-0.5 text-[11px] font-bold text-red-ink tabular-nums">
-                  {fmt(combinedDebt)} ₽{crossDebtTotal > 0 ? "*" : ""}
+                  {fmt(combinedDebt)} ₽
                 </span>
               ) : undefined
             }
