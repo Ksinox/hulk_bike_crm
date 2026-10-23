@@ -129,14 +129,18 @@ export function DebtorsMorning({
                   <div className="truncate text-[14px] font-semibold leading-tight text-ink">
                     {debtor.clientName}
                   </div>
-                  <div className="mt-0.5 truncate text-[12px] leading-snug text-muted">
+                  <div className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-muted sm:truncate">
                     <span
                       className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle ${PRIO_DOT[action.priority]}`}
                     />
+                    {/* Телефон: сумма — в этой строке, чтобы имя не резалось. */}
+                    <b className="mr-1 font-semibold text-ink sm:hidden">
+                      {formatRub(left(debtor))} ·
+                    </b>
                     {action.text}
                   </div>
                 </div>
-                <div className="shrink-0 font-display text-[15px] font-semibold tabular-nums text-ink">
+                <div className="hidden shrink-0 font-display text-[15px] font-semibold tabular-nums text-ink sm:block">
                   {formatRub(left(debtor))}
                 </div>
               </button>
@@ -194,7 +198,7 @@ export function DebtorsMorning({
                 <div className="truncate text-[14px] font-semibold leading-tight text-ink">
                   {debtor.clientName}
                 </div>
-                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-muted">
+                <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12px] text-muted sm:flex-nowrap">
                   <i
                     className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${TYPE_DOT[debtor.type]}`}
                   />
@@ -202,7 +206,7 @@ export function DebtorsMorning({
                   <span className="text-muted-2">·</span>
                   <span
                     className={cn(
-                      "truncate",
+                      "sm:truncate",
                       awaiting
                         ? "text-blue-700"
                         : action?.kind === "payment_check"
@@ -251,7 +255,8 @@ export function DebtorsMorning({
             className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] border border-border bg-white px-3.5 text-[13px] font-semibold text-ink hover:border-border-strong sm:h-9 sm:flex-none"
           >
             <Filter size={14} />
-            Все дела и архив
+            <span className="sm:hidden">Все дела</span>
+            <span className="hidden sm:inline">Все дела и архив</span>
           </button>
           {/* На планшете «Новое дело» живёт в нижней панели справа (21.09). */}
           {!tabletLayout && (

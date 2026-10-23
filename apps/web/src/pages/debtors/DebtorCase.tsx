@@ -436,6 +436,12 @@ export function DebtorCase({
         )}
       </header>
 
+      {/* Телефон: «Ждём оплату / Пришла ли оплата?» — сразу под шапкой,
+          а не в конце ленты (правая колонка на узком экране уходит вниз). */}
+      <div className="flex flex-col gap-4 lg:hidden">
+        <DebtorPaymentCheck d={d} />
+      </div>
+
       {/* ── Рабочая зона: две колонки ─────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr] lg:items-start">
         {/* ЛЕВО — деньги и история */}
@@ -657,7 +663,9 @@ export function DebtorCase({
         {/* ПРАВО — действия и связь */}
         <div className="flex flex-col gap-4 lg:sticky lg:top-4">
           {/* 23.10: «Ждём оплату до …» / «Пришла ли оплата?» + пеня п. 5.7 */}
-          <DebtorPaymentCheck d={d} />
+          <div className="hidden flex-col gap-4 lg:flex">
+            <DebtorPaymentCheck d={d} />
+          </div>
           {closed && (
             <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5 text-[13px] text-emerald-800 shadow-card-sm">
               <div className="font-display text-[16px] font-semibold">
