@@ -34,6 +34,7 @@ const TYPE_BG: Record<DebtType, string> = {
   damage: "bg-orange-50 text-orange-700 border-orange-100",
   theft: "bg-violet-50 text-violet-700 border-violet-100",
   rental_overdue: "bg-slate-50 text-slate-600 border-slate-200",
+  buyout_overdue: "bg-teal-50 text-teal-600 border-teal-200",
 };
 const TYPE_DOT: Record<DebtType, string> = {
   dtp_guilty: "bg-red-500",
@@ -41,6 +42,7 @@ const TYPE_DOT: Record<DebtType, string> = {
   damage: "bg-orange-500",
   theft: "bg-violet-500",
   rental_overdue: "bg-slate-500",
+  buyout_overdue: "bg-teal-500",
 };
 
 export function DebtorsList({

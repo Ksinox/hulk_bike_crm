@@ -63,6 +63,8 @@ export type DebtorForToday = {
   reminderDate?: Date | string | null;
   /** Партия 23.10: остаток к взысканию (с учётом оплат и пени). */
   remaining?: number;
+  paid?: number;
+  clientId?: number | null;
   /** «Ждём оплату до» (YYYY-MM-DD) — пока не наступило, звонить не нужно. */
   paymentDueDate?: string | null;
   clientPhone?: string;

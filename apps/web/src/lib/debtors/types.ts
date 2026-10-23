@@ -8,7 +8,9 @@ export type DebtType =
   | "dtp_victim"
   | "damage"
   | "theft"
-  | "rental_overdue";
+  | "rental_overdue"
+  /** Партия 23.10: долг по выкупу (передан кнопкой из сделки). */
+  | "buyout_overdue";
 
 export type Stage =
   | "created"
@@ -53,6 +55,8 @@ export type Debtor = {
   relatedRentalId: number | null;
   /** Этап 3: акт о повреждениях, из которого заведено дело. */
   damageReportId: number | null;
+  /** Партия 23.10: сделка выкупа, переданная в «Должники». */
+  buyoutDealId?: number | null;
   closedAt: string | null;
   closedReason: string | null;
   createdAt: string;
@@ -193,6 +197,19 @@ export type DebtorDetail = Debtor & {
     total: number;
     depositCovered: number;
   } | null;
+  buyoutDeal?: {
+    id: number;
+    scooterName: string | null;
+    status: string;
+    total: number;
+    left: number;
+    overdueAmount: number;
+    overdueCount: number;
+    overdueDays: number;
+    nextDue: string | null;
+    paidCount: number;
+    count: number;
+  } | null;
 };
 
 export type TodayAction = {
@@ -221,7 +238,16 @@ export type TodayDebtor = {
   clientStatus: ClientStatus;
   /** Партия 23.10: остаток к взысканию. */
   remaining?: number;
+  paid?: number;
+  clientId?: number | null;
   paymentDueDate?: string | null;
+  /** Платежи дела: график и факт — для «последний платёж» и «соблюдает ли график». */
+  payments?: {
+    scheduledDate: string;
+    scheduledAmount: number;
+    paidAt: string | null;
+    paidAmount?: number | null;
+  }[];
   clientPhone?: string;
   clientPhotoKey?: string | null;
 };
@@ -243,6 +269,7 @@ export const TYPE_LABEL: Record<DebtType, string> = {
   damage: "Ущерб",
   theft: "Угон",
   rental_overdue: "Долг за аренду",
+  buyout_overdue: "Долг по выкупу",
 };
 
 export const STAGE_LABEL: Record<Stage, string> = {

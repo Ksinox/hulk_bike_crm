@@ -1,6 +1,6 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { activeRentalIds, activeRentalConflict } from "../services/rentalGuard.js";
 import {
@@ -9,6 +9,8 @@ import {
   buyoutPayments,
   buyoutSchedule,
   clients,
+  debtorStageEvents,
+  debtors,
   saleManagers,
   scooterModels,
   scooters,
@@ -188,12 +190,26 @@ export async function buyoutRoutes(app: FastifyInstance) {
       list.push(r);
       byDeal.set(r.dealId, list);
     }
+    // 23.10: открытое дело в «Должниках» по сделке — для кнопки «Открыть дело».
+    const openCases = ids.length
+      ? await db
+          .select({ id: debtors.id, caseNumber: debtors.caseNumber, dealId: debtors.buyoutDealId })
+          .from(debtors)
+          .where(
+            and(
+              inArray(debtors.buyoutDealId, ids),
+              sql`${debtors.stage}::text NOT LIKE 'closed_%'`,
+            ),
+          )
+      : [];
 
     return {
       items: rows.map((r) => {
         const rows2 = byDeal.get(r.deal.id) ?? [];
+        const dc = openCases.find((c) => c.dealId === r.deal.id);
         return {
           ...r.deal,
+          debtorCase: dc ? { id: dc.id, caseNumber: dc.caseNumber } : null,
           clientName: r.clientName,
           clientPhone: r.clientPhone,
           clientBlacklisted: r.blacklisted ?? false,
@@ -491,126 +507,93 @@ export async function buyoutRoutes(app: FastifyInstance) {
       if (!parsed.success || !Number.isFinite(id)) {
         return reply.code(400).send({ error: "bad request" });
       }
-      const [deal] = await db
-        .select()
-        .from(buyoutDeals)
-        .where(eq(buyoutDeals.id, id));
-      if (!deal) return reply.code(404).send({ error: "not found" });
-      if (deal.status !== "active") {
-        return reply.code(409).send({ error: "deal_not_active" });
-      }
-
-      const rows = await db
-        .select()
-        .from(buyoutSchedule)
-        .where(eq(buyoutSchedule.dealId, id))
-        .orderBy(asc(buyoutSchedule.seq));
-      const progress = computeProgress(deal, rows);
-      const amount = parsed.data.payoff ? progress.left : parsed.data.amount;
-      if (amount <= 0) return reply.code(409).send({ error: "nothing_to_pay" });
-
-      const { updates } = applyPayment(
-        rows.map((r) => ({ id: r.id, amount: r.amount, paidAmount: r.paidAmount })),
-        amount,
-      );
-      const now = parsed.data.paidAt
-        ? new Date(
-            parsed.data.paidAt.length === 10
-              ? `${parsed.data.paidAt}T12:00:00`
-              : parsed.data.paidAt,
-          )
-        : new Date();
-      if (Number.isNaN(now.getTime())) {
-        return reply.code(400).send({ error: "bad paidAt" });
-      }
-      for (const u of updates) {
-        await db
-          .update(buyoutSchedule)
-          .set({ paidAmount: u.paidAmount, paidAt: u.closed ? now : null })
-          .where(eq(buyoutSchedule.id, u.id));
-      }
-
-      const kind = parsed.data.payoff
-        ? "early_full"
-        : updates.length > 1
-          ? "early_partial"
-          : "regular";
-      // Доли считаем здесь: при «наличными» всё в кассу, при «переводом» —
-      // всё на счёт, при смешанной берём указанное и добираем остаток.
-      const method = parsed.data.method ?? "cash";
-      const cashPart =
-        method === "cash"
-          ? amount
-          : method === "transfer"
-            ? 0
-            : Math.min(amount, Math.max(0, parsed.data.cashAmount ?? 0));
-      const transferPart = amount - cashPart;
-      await db.insert(buyoutPayments).values({
-        dealId: id,
-        amount,
-        method,
-        cashAmount: cashPart,
-        transferAmount: transferPart,
-        kind,
-        paidAt: now,
-        userId: req.user?.userId ?? null,
-        note: parsed.data.note ?? null,
-      });
-
-      const after = await db
-        .select()
-        .from(buyoutSchedule)
-        .where(eq(buyoutSchedule.dealId, id))
-        .orderBy(asc(buyoutSchedule.seq));
-      const p2 = computeProgress(deal, after);
-      let closed = false;
-      if (p2.left <= 0) {
-        closed = true;
-        await db
-          .update(buyoutDeals)
-          .set({ status: "closed", closedAt: now, updatedAt: now })
-          .where(eq(buyoutDeals.id, id));
-        // Техника окончательно уходит клиенту.
-        if (deal.scooterId) {
-          const [sc] = await db
-            .select()
-            .from(scooters)
-            .where(eq(scooters.id, deal.scooterId));
-          if (sc) {
-            await db
-              .update(scooters)
-              .set({ baseStatus: "sold" })
-              .where(eq(scooters.id, deal.scooterId));
-            await logActivity(req, {
-              entity: "scooter",
-              entityId: deal.scooterId,
-              action: "status_changed",
-              summary: `Статус ${scooterLabel(sc.name, sc.rentalSlot)}: «Выкуп» → «Продан» · выкуп #${String(id).padStart(4, "0")} закрыт, техника перешла клиенту`,
-              meta: { statusFrom: sc.baseStatus, statusTo: "sold", buyoutId: id },
-            });
-          }
-        }
-      }
-
-      await logActivity(req, {
-        entity: "buyout",
-        entityId: id,
-        action: closed ? "closed" : "payment",
-        summary: closed
-          ? `ВЫКУП ЗАКРЫТ: ${dealLabel(deal)} · последний платёж ${fmtMoney(amount)} ₽ · выплачено полностью ${fmtMoney(deal.total)} ₽`
-          : `Платёж по выкупу ${fmtMoney(amount)} ₽ · ${dealLabel(deal)} · ` +
-            (method === "mixed"
-              ? `наличными ${fmtMoney(cashPart)} ₽ + переводом ${fmtMoney(transferPart)} ₽ · `
-              : method === "transfer"
-                ? "переводом · "
-                : "наличными · ") +
-            `закрыто ${p2.paidCount} из ${after.length} · остаток ${fmtMoney(p2.left)} ₽` +
-            (kind === "early_partial" ? " · досрочно" : ""),
-        meta: { amount, kind, method, cashPart, transferPart, left: p2.left },
-      });
-      return { ok: true, closed, progress: p2 };
+      const r = await recordBuyoutPayment(req, id, parsed.data);
+      if (r.status !== 200) return reply.code(r.status).send(r.body);
+      return r.body;
     },
   );
+
+  // ---------- POST /deals/:id/to-debtors (партия 23.10) ----------
+  // «Передать в «Должники»»: дело по выкупу. Долг — просроченные платежи
+  // графика (у сорванной сделки — весь остаток). Комментарий обязателен.
+  app.post<{ Params: { id: string } }>("/deals/:id/to-debtors", async (req, reply) => {
+    const Body = z.object({ comment: z.string().min(3).max(2000) });
+    const parsed = Body.safeParse(req.body);
+    const id = Number(req.params.id);
+    if (!parsed.success || !Number.isFinite(id))
+      return reply.code(400).send({
+        error: "comment_required",
+        message: "Добавьте комментарий: что случилось и о чём договорились",
+      });
+    const [deal] = await db.select().from(buyoutDeals).where(eq(buyoutDeals.id, id));
+    if (!deal) return reply.code(404).send({ error: "not found" });
+    const [open] = await db
+      .select()
+      .from(debtors)
+      .where(
+        and(eq(debtors.buyoutDealId, id), sql`${debtors.stage}::text NOT LIKE 'closed_%'`),
+      );
+    if (open) return { debtor: open, existed: true };
+    const rows = await db
+      .select()
+      .from(buyoutSchedule)
+      .where(eq(buyoutSchedule.dealId, id))
+      .orderBy(asc(buyoutSchedule.seq));
+    const pr = computeProgress(deal, rows);
+    const debt =
+      deal.status === "defaulted" ? pr.left : deal.status === "active" ? pr.overdueAmount : 0;
+    if (debt <= 0)
+      return reply.code(409).send({
+        error: "no_debt",
+        message: "По графику выкупа сейчас нет просрочки — передавать нечего",
+      });
+    const [mx] = await db
+      .select({
+        n: sql<number>`COALESCE(MAX(CAST(SUBSTRING(case_number FROM 3) AS INTEGER)), 0)`,
+      })
+      .from(debtors);
+    const caseNumber = `D-${String(Number(mx?.n ?? 0) + 1).padStart(3, "0")}`;
+    const userId = req.user?.userId ?? null;
+    const [row] = await db
+      .insert(debtors)
+      .values({
+        caseNumber,
+        clientId: deal.clientId,
+        type: "buyout_overdue",
+        stage: "created",
+        totalAmount: debt,
+        buyoutDealId: id,
+        comment: parsed.data.comment,
+        createdByUserId: userId,
+      })
+      .returning();
+    if (!row) return reply.code(500).send({ error: "insert failed" });
+    await db.insert(debtorStageEvents).values({
+      debtorId: row.id,
+      fromStage: null,
+      toStage: "created",
+      reason: `передано из выкупа #${String(id).padStart(4, "0")}`,
+      userId,
+    });
+    const what =
+      deal.status === "defaulted"
+        ? `сделка сорвана, весь остаток ${fmtMoney(debt)} ₽`
+        : `просрочено ${pr.overdueCount} плат. на ${fmtMoney(debt)} ₽ (${pr.overdueDays} дн)`;
+    await logActivity(req, {
+      entity: "buyout",
+      entityId: id,
+      action: "to_debtors",
+      summary: `Выкуп ${dealLabel(deal)} передан в «Должники» — дело ${caseNumber}: ${what}`,
+      meta: { debtorId: row.id, debt },
+    });
+    await logActivity(req, {
+      entity: "debtor",
+      entityId: row.id,
+      action: "created",
+      summary: `Заведено дело ${caseNumber} · Долг по выкупу · ${fmtMoney(debt)} ₽ — из выкупа #${String(id).padStart(4, "0")}`,
+    });
+    return { debtor: row, existed: false };
+  });
 
   app.post<{ Params: { id: string }; Body: { reason?: string; status?: string } }>(
     "/deals/:id/cancel",
@@ -813,4 +796,144 @@ async function buildValues(
   values.paymentAmount = terms.paymentAmount;
   values.paymentsCount = terms.paymentsCount;
   return values;
+}
+
+export type BuyoutPayInput = {
+  amount: number;
+  method?: "cash" | "transfer" | "mixed";
+  cashAmount?: number;
+  transferAmount?: number;
+  note?: string | null;
+  payoff?: boolean;
+  paidAt?: string;
+};
+
+/**
+ * Платёж по выкупу — гасит ближайшие строки графика. Общий для карточки
+ * сделки и для «Должников» (партия 23.10: дело «выкуп» принимает деньги
+ * тем же путём, чтобы график и дело сходились).
+ */
+export async function recordBuyoutPayment(
+  req: FastifyRequest,
+  id: number,
+  data: BuyoutPayInput,
+): Promise<{ status: number; body: unknown }> {
+  const [deal] = await db
+    .select()
+    .from(buyoutDeals)
+    .where(eq(buyoutDeals.id, id));
+  if (!deal) return { status: 404, body: { error: "not found" } };
+  if (deal.status !== "active") {
+    return { status: 409, body: { error: "deal_not_active" } };
+  }
+
+  const rows = await db
+    .select()
+    .from(buyoutSchedule)
+    .where(eq(buyoutSchedule.dealId, id))
+    .orderBy(asc(buyoutSchedule.seq));
+  const progress = computeProgress(deal, rows);
+  const amount = data.payoff ? progress.left : data.amount;
+  if (amount <= 0) return { status: 409, body: { error: "nothing_to_pay" } };
+
+  const { updates } = applyPayment(
+    rows.map((r) => ({ id: r.id, amount: r.amount, paidAmount: r.paidAmount })),
+    amount,
+  );
+  const now = data.paidAt
+    ? new Date(
+        data.paidAt.length === 10
+          ? `${data.paidAt}T12:00:00`
+          : data.paidAt,
+      )
+    : new Date();
+  if (Number.isNaN(now.getTime())) {
+    return { status: 400, body: { error: "bad paidAt" } };
+  }
+  for (const u of updates) {
+    await db
+      .update(buyoutSchedule)
+      .set({ paidAmount: u.paidAmount, paidAt: u.closed ? now : null })
+      .where(eq(buyoutSchedule.id, u.id));
+  }
+
+  const kind = data.payoff
+    ? "early_full"
+    : updates.length > 1
+      ? "early_partial"
+      : "regular";
+  // Доли считаем здесь: при «наличными» всё в кассу, при «переводом» —
+  // всё на счёт, при смешанной берём указанное и добираем остаток.
+  const method = data.method ?? "cash";
+  const cashPart =
+    method === "cash"
+      ? amount
+      : method === "transfer"
+        ? 0
+        : Math.min(amount, Math.max(0, data.cashAmount ?? 0));
+  const transferPart = amount - cashPart;
+  await db.insert(buyoutPayments).values({
+    dealId: id,
+    amount,
+    method,
+    cashAmount: cashPart,
+    transferAmount: transferPart,
+    kind,
+    paidAt: now,
+    userId: req.user?.userId ?? null,
+    note: data.note ?? null,
+  });
+
+  const after = await db
+    .select()
+    .from(buyoutSchedule)
+    .where(eq(buyoutSchedule.dealId, id))
+    .orderBy(asc(buyoutSchedule.seq));
+  const p2 = computeProgress(deal, after);
+  let closed = false;
+  if (p2.left <= 0) {
+    closed = true;
+    await db
+      .update(buyoutDeals)
+      .set({ status: "closed", closedAt: now, updatedAt: now })
+      .where(eq(buyoutDeals.id, id));
+    // Техника окончательно уходит клиенту.
+    if (deal.scooterId) {
+      const [sc] = await db
+        .select()
+        .from(scooters)
+        .where(eq(scooters.id, deal.scooterId));
+      if (sc) {
+        await db
+          .update(scooters)
+          .set({ baseStatus: "sold" })
+          .where(eq(scooters.id, deal.scooterId));
+        await logActivity(req, {
+          entity: "scooter",
+          entityId: deal.scooterId,
+          action: "status_changed",
+          summary: `Статус ${scooterLabel(sc.name, sc.rentalSlot)}: «Выкуп» → «Продан» · выкуп #${String(id).padStart(4, "0")} закрыт, техника перешла клиенту`,
+          meta: { statusFrom: sc.baseStatus, statusTo: "sold", buyoutId: id },
+        });
+      }
+    }
+  }
+
+  await logActivity(req, {
+    entity: "buyout",
+    entityId: id,
+    action: closed ? "closed" : "payment",
+    summary: closed
+      ? `ВЫКУП ЗАКРЫТ: ${dealLabel(deal)} · последний платёж ${fmtMoney(amount)} ₽ · выплачено полностью ${fmtMoney(deal.total)} ₽`
+      : `Платёж по выкупу ${fmtMoney(amount)} ₽ · ${dealLabel(deal)} · ` +
+        (method === "mixed"
+          ? `наличными ${fmtMoney(cashPart)} ₽ + переводом ${fmtMoney(transferPart)} ₽ · `
+          : method === "transfer"
+            ? "переводом · "
+            : "наличными · ") +
+        `закрыто ${p2.paidCount} из ${after.length} · остаток ${fmtMoney(p2.left)} ₽` +
+        (kind === "early_partial" ? " · досрочно" : ""),
+    meta: { amount, kind, method, cashPart, transferPart, left: p2.left },
+  });
+  return { status: 200, body: { ok: true, closed, progress: p2 } };
 }

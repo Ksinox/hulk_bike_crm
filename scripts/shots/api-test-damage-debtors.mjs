@@ -207,6 +207,43 @@ console.log("\n12. Долг за аренду: закрытая аренда с 
   ok(rc2.stage === "closed_paid", "дело «долг за аренду» закрылось само", rc2);
 }
 
+
+console.log("\n13. Выкуп → «Должники»: просрочка по графику");
+{
+  const [dl] = await sql`select id from buyout_deals where status='active' order by id limit 1`;
+  const dealId = Number(dl.id);
+  const [row] = await sql`select id, amount, paid_amount from buyout_schedule where deal_id=${dealId} and paid_amount < amount order by seq limit 1`;
+  await sql`update buyout_schedule set due_date = current_date - 5 where id=${row.id}`;
+  const owe = Number(row.amount) - Number(row.paid_amount);
+  const noComment = await call("POST", `/api/buyout/deals/${dealId}/to-debtors`, { comment: "" });
+  ok(noComment.status === 400, "без комментария не передаётся", noComment.status);
+  const tr = await call("POST", `/api/buyout/deals/${dealId}/to-debtors`, { comment: "ТЕСТ не платит вторую неделю" });
+  ok(tr.status === 200 && tr.body.debtor?.id, "передано в «Должники»", tr.body);
+  const bc = await detail(tr.body.debtor.id);
+  ok(bc.type === "buyout_overdue" && bc.remaining === owe, `в деле к взысканию — просрочка ${owe}`, { t: bc.type, rem: bc.remaining });
+  ok(bc.buyoutDeal?.overdueAmount === owe, "в деле видна сводка сделки", bc.buyoutDeal);
+  const again = await call("POST", `/api/buyout/deals/${dealId}/to-debtors`, { comment: "ТЕСТ повтор" });
+  ok(again.body.existed === true && again.body.debtor.id === tr.body.debtor.id, "повторно — то же дело, не дубль");
+  const deals = (await call("GET", "/api/buyout/deals")).body.items;
+  ok(deals.find((x) => x.id === dealId)?.debtorCase?.id === tr.body.debtor.id, "в сделке видна ссылка на дело");
+  const bpBefore = await sql`select coalesce(sum(amount),0)::int s from buyout_payments where deal_id=${dealId}`;
+  const half = Math.floor(owe / 2);
+  const p1 = await call("POST", `/api/debtors/${tr.body.debtor.id}/payments`, { amount: half, method: "cash" });
+  ok(p1.status === 200, `в «Должниках» принято ${half}`, p1.body);
+  const bpAfter = await sql`select coalesce(sum(amount),0)::int s from buyout_payments where deal_id=${dealId}`;
+  ok(bpAfter[0].s - bpBefore[0].s === half, "платёж записан в выкуп", bpAfter[0].s - bpBefore[0].s);
+  const [r2] = await sql`select paid_amount from buyout_schedule where id=${row.id}`;
+  ok(Number(r2.paid_amount) === Number(row.paid_amount) + half, "строка графика погашена частично");
+  const bc2 = await detail(tr.body.debtor.id);
+  ok(bc2.remaining === owe - half && bc2.paid === half, "в деле: оплачено и остаток сходятся", { rem: bc2.remaining, paid: bc2.paid });
+  // остаток — в карточке выкупа
+  const p2 = await call("POST", `/api/buyout/deals/${dealId}/payments`, { amount: owe - half, method: "transfer" });
+  ok(p2.status === 200, "в карточке выкупа принят остаток просрочки", p2.body);
+  await call("GET", "/api/debtors"); // sync
+  const bc3 = await detail(tr.body.debtor.id);
+  ok(bc3.stage === "closed_paid", "клиент догнал график — дело закрылось само", { st: bc3.stage, why: bc3.closedReason });
+}
+
 console.log(`\nИТОГ: ${pass} ✓, ${fail} ✗`);
 await sql.end();
 process.exit(fail ? 1 : 0);

@@ -25,6 +25,8 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
+  buyoutDeals,
+  buyoutSchedule,
   clientDocuments,
   clients,
   damageReports,
@@ -62,6 +64,8 @@ import { overdueAmount, overdueDays } from "../services/debtorOverdue.js";
 import { calculateInsuranceForecast } from "../services/debtorProfit.js";
 import { recommendNextAction } from "../services/debtorRecommend.js";
 import { syncRentalDebtorCases } from "../services/debtorSync.js";
+import { recordBuyoutPayment } from "./buyout.js";
+import { computeProgress } from "../services/buyoutMath.js";
 import {
   addDaysYmd,
   DAMAGE_PAID_REASON,
@@ -79,6 +83,7 @@ const DebtTypeEnum = z.enum([
   "damage",
   "theft",
   "rental_overdue",
+  "buyout_overdue",
 ]);
 
 const StageEnum = z.enum([
@@ -534,6 +539,29 @@ async function applyToRentDebt(
   return applied;
 }
 
+/**
+ * Партия 23.10: дело по выкупу — платёж в «Должниках» проводим через сделку
+ * (гасит ближайшие строки графика), тем же путём, что карточка выкупа.
+ */
+async function applyToBuyout(
+  req: FastifyRequest,
+  d: typeof debtors.$inferSelect,
+  amount: number,
+  method: "transfer" | "cash",
+  paidAt: Date,
+): Promise<{ ok: boolean; error?: string }> {
+  if (d.buyoutDealId == null) return { ok: true };
+  const r = await recordBuyoutPayment(req, d.buyoutDealId, {
+    amount,
+    method,
+    paidAt: paidAt.toISOString(),
+    note: `Принято в «Должниках» · ${d.caseNumber}`,
+  });
+  if (r.status !== 200)
+    return { ok: false, error: (r.body as { error?: string })?.error ?? "buyout_payment_failed" };
+  return { ok: true };
+}
+
 function clientDisplayName(d: {
   externalName: string | null;
   externalPhone: string | null;
@@ -627,6 +655,8 @@ export async function debtorsRoutes(app: FastifyInstance) {
       const cd = clientDisplayName(r, r.clientId ? clientsMap.get(r.clientId) ?? null : null);
       return {
         remaining: fin.get(r.id)?.remaining ?? r.totalAmount,
+        paid: fin.get(r.id)?.paid ?? 0,
+        clientId: r.clientId,
         paymentDueDate: r.paymentDueDate,
         clientPhone: cd.phone,
         clientPhotoKey: r.clientId ? photos.get(r.clientId) ?? null : null,
@@ -644,6 +674,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
           scheduledDate: p.scheduledDate,
           scheduledAmount: p.scheduledAmount,
           paidAt: p.paidAt,
+          paidAmount: p.paidAmount,
         })),
       };
     });
@@ -756,6 +787,44 @@ export async function debtorsRoutes(app: FastifyInstance) {
         .where(eq(damageReports.id, d.damageReportId));
       damageReport = r ?? null;
     }
+    // 23.10: дело по выкупу — сводка сделки (откуда долг).
+    let buyoutDeal: {
+      id: number;
+      scooterName: string | null;
+      status: string;
+      total: number;
+      left: number;
+      overdueAmount: number;
+      overdueCount: number;
+      overdueDays: number;
+      nextDue: string | null;
+      paidCount: number;
+      count: number;
+    } | null = null;
+    if (d.buyoutDealId != null) {
+      const [dl] = await db.select().from(buyoutDeals).where(eq(buyoutDeals.id, d.buyoutDealId));
+      if (dl) {
+        const sch = await db
+          .select()
+          .from(buyoutSchedule)
+          .where(eq(buyoutSchedule.dealId, dl.id))
+          .orderBy(asc(buyoutSchedule.seq));
+        const pr = computeProgress(dl, sch);
+        buyoutDeal = {
+          id: dl.id,
+          scooterName: dl.scooterName,
+          status: dl.status,
+          total: dl.total,
+          left: pr.left,
+          overdueAmount: pr.overdueAmount,
+          overdueCount: pr.overdueCount,
+          overdueDays: pr.overdueDays,
+          nextDue: pr.nextDue?.date ?? null,
+          paidCount: pr.paidCount,
+          count: sch.length,
+        };
+      }
+    }
 
     const psForCalc = payments.map((p) => ({
       scheduledDate: p.scheduledDate,
@@ -791,6 +860,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
       penaltyPerDay: PENALTY_PER_DAY,
       reportBalance: fin.reportBalance,
       damageReport,
+      buyoutDeal,
       progressPercent: progressPercent(fin.total, paid),
       overdueDays: overdueDays(psForCalc),
       overdueAmount: overdueAmount(psForCalc),
@@ -1278,7 +1348,11 @@ export async function debtorsRoutes(app: FastifyInstance) {
     // Партия 23.10: по делу ущерба платёж сразу гасит акт в аренде (одна
     // точка правды), сверх акта — пеня по п. 5.7. Больше остатка не берём:
     // лишние деньги некуда отнести (это ошибка ввода).
-    if (d.damageReportId != null || (d.comment ?? "").includes(RENT_CASE_MARK)) {
+    if (
+      d.damageReportId != null ||
+      d.buyoutDealId != null ||
+      (d.comment ?? "").includes(RENT_CASE_MARK)
+    ) {
       const f = await caseFinance(d);
       if (parsed.data.amount > f.remaining)
         return reply.code(400).send({
@@ -1294,6 +1368,12 @@ export async function debtorsRoutes(app: FastifyInstance) {
       paidAt,
     );
     await applyToRentDebt(req, d, parsed.data.amount, parsed.data.method, paidAt);
+    const bo = await applyToBuyout(req, d, parsed.data.amount, parsed.data.method, paidAt);
+    if (!bo.ok)
+      return reply.code(409).send({
+        error: bo.error,
+        message: "Платёж по выкупу не прошёл — сделка не активна",
+      });
 
     if (parsed.data.paymentN != null) {
       const all = await loadPayments(id);

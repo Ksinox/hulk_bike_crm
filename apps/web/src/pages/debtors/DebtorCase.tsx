@@ -183,6 +183,8 @@ const NEXT_TRANSITIONS: Record<DebtType, Partial<Record<Stage, { to: Stage; labe
       { to: "closed_written_off", label: "Списать" },
     ],
   },
+  // Выкуп ведётся как долг за аренду — заполняется ниже.
+  buyout_overdue: {},
   rental_overdue: {
     created: [
       { to: "payment_schedule", label: "Создать график", primary: true },
@@ -208,12 +210,15 @@ const NEXT_TRANSITIONS: Record<DebtType, Partial<Record<Stage, { to: Stage; labe
   },
 };
 
+NEXT_TRANSITIONS.buyout_overdue = NEXT_TRANSITIONS.rental_overdue;
+
 const TYPE_BG: Record<DebtType, string> = {
   dtp_guilty: "bg-red-50 text-red-700 border-red-100",
   dtp_victim: "bg-blue-50 text-blue-700 border-blue-100",
   damage: "bg-orange-50 text-orange-700 border-orange-100",
   theft: "bg-violet-50 text-violet-700 border-violet-100",
   rental_overdue: "bg-slate-50 text-slate-600 border-slate-200",
+  buyout_overdue: "bg-teal-50 text-teal-600 border-teal-200",
 };
 
 export function DebtorCase({
@@ -861,8 +866,59 @@ export function DebtorCase({
     </div>
   );
 
-  const actCard =
-    d.damageReportId != null ? (
+  const bd = d.buyoutDeal ?? null;
+  const actCard = bd ? (
+    <div data-case-source="buyout" className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="text-[14px] font-semibold text-ink">
+          Выкуп #{String(bd.id).padStart(4, "0")}
+          {bd.scooterName && <span className="font-normal text-muted"> · {bd.scooterName}</span>}
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate({ route: "rassrochki", buyoutDealId: bd.id })}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 transition-colors hover:bg-blue-100"
+        >
+          Открыть сделку <ArrowUpRight size={12} />
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-[13px] sm:grid-cols-4">
+        <div>
+          <div className="text-[11px] text-muted-2">Просрочено</div>
+          <div className="font-display text-[17px] font-bold tabular-nums text-red-ink">
+            {formatRub(bd.overdueAmount)}
+          </div>
+          <div className="text-[11px] text-muted">
+            {bd.overdueCount} плат. · {bd.overdueDays} дн
+          </div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-2">Осталось по сделке</div>
+          <div className="font-display text-[17px] font-bold tabular-nums text-ink">
+            {formatRub(bd.left)}
+          </div>
+          <div className="text-[11px] text-muted">из {formatRub(bd.total)}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-2">Платежей</div>
+          <div className="font-display text-[17px] font-bold tabular-nums text-ink">
+            {bd.paidCount} из {bd.count}
+          </div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-2">Следующий</div>
+          <div className="font-display text-[17px] font-bold tabular-nums text-ink">
+            {bd.nextDue ? ruDate(bd.nextDue) : "—"}
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 rounded-[10px] bg-surface-soft px-3 py-2 text-[12px] leading-snug text-muted">
+        {bd.status === "defaulted"
+          ? "Сделка сорвана — к взысканию весь остаток."
+          : "К взысканию — просроченные платежи. Платёж здесь гасит ближайшие строки графика выкупа; клиент догнал график — дело закроется само."}
+      </div>
+    </div>
+  ) : d.damageReportId != null ? (
       <DamageDebtorActSection rentalId={d.relatedRentalId} reportId={d.damageReportId} />
     ) : d.comment ? (
       <div className="rounded-2xl border border-border bg-surface p-5 shadow-card-sm">

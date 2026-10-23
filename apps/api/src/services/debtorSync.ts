@@ -291,6 +291,28 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
     }
   }
 
+  // ============ 1b. Дела по выкупу — сумма по графику сделки ============
+  const buyoutOpen = allCases.filter(
+    (c) => c.buyoutDealId != null && !isClosed(c.stage as Stage),
+  );
+  if (buyoutOpen.length > 0) {
+    const fin = await loadCaseFinance(buyoutOpen);
+    for (const c of buyoutOpen) {
+      const f = fin.get(c.id);
+      if (!f) continue;
+      if (f.remaining <= 0) {
+        await closeCase(c, "Просрочка по выкупу погашена", "авто: по графику выкупа долга нет");
+        result.closed += 1;
+      } else if (c.totalAmount !== f.total) {
+        await db
+          .update(debtors)
+          .set({ totalAmount: f.total, updatedAt: sql`now()` })
+          .where(eq(debtors.id, c.id));
+        result.updated += 1;
+      }
+    }
+  }
+
   // ============ 2. Долг за аренду — только закрытые с долгом ============
   // Любое прежнее дело по аренде (в т.ч. закрытое) — значит, по ней уже
   // работали: новое дело «за аренду» не заводим (как и раньше).
@@ -305,7 +327,7 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
   const rentCasesByRental = new Map<number, (typeof allCases)[number][]>();
   for (const c of allCases) {
     if (c.relatedRentalId == null || c.damageReportId != null) continue;
-    if (c.type === "damage") continue;
+    if (c.type === "damage" || c.buyoutDealId != null) continue;
     const arr = rentCasesByRental.get(c.relatedRentalId) ?? [];
     arr.push(c);
     rentCasesByRental.set(c.relatedRentalId, arr);

@@ -2012,6 +2012,8 @@ export const debtorTypeEnum = pgEnum("debtor_type", [
   "damage",
   "theft",
   "rental_overdue",
+  // Партия 23.10: долг по выкупу (передан кнопкой из сделки).
+  "buyout_overdue",
 ]);
 
 export const debtorStageEnum = pgEnum("debtor_stage", [
@@ -2093,6 +2095,8 @@ export const debtors = pgTable(
       () => damageReports.id,
       { onDelete: "set null" },
     ),
+    // Партия 23.10: дело по сделке выкупа (кнопка «Передать в «Должники»»).
+    buyoutDealId: bigint("buyout_deal_id", { mode: "number" }),
     // Партия 23.10: «ждём оплату до» — пока дата не наступила, дело не в
     // прозвоне; в срок CRM спрашивает «Пришла ли оплата?».
     paymentDueDate: date("payment_due_date"),

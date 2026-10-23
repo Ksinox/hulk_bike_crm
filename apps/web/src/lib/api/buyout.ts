@@ -86,6 +86,8 @@ export type BuyoutDeal = {
   createdBy: string | null;
   schedule: BuyoutScheduleRow[];
   progress: BuyoutProgress;
+  /** 23.10: открытое дело в «Должниках» по сделке (если передана). */
+  debtorCase?: { id: number; caseNumber: string } | null;
 };
 
 export type BuyoutPaymentRecord = {
@@ -206,6 +208,26 @@ export function useBuyoutPayment() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: buyoutKeys.all });
       qc.invalidateQueries({ queryKey: ["scooters"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+      // 23.10: платёж по выкупу может закрыть дело в «Должниках».
+      qc.invalidateQueries({ queryKey: ["debtors"] });
+    },
+  });
+}
+
+/** 23.10: «Передать в «Должники»» — дело по выкупу (комментарий обязателен). */
+export function useBuyoutToDebtors() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, comment }: { id: number; comment: string }) =>
+      api.post<{ debtor: { id: number; caseNumber: string }; existed: boolean }>(
+        `/api/buyout/deals/${id}/to-debtors`,
+        { comment },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: buyoutKeys.all });
+      qc.invalidateQueries({ queryKey: ["debtors"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
       qc.invalidateQueries({ queryKey: ["activity"] });
     },
   });

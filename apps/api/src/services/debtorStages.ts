@@ -14,7 +14,8 @@ export type DebtType =
   | "dtp_victim"
   | "damage"
   | "theft"
-  | "rental_overdue";
+  | "rental_overdue"
+  | "buyout_overdue";
 
 export type Stage =
   | "created"
@@ -186,6 +187,9 @@ const TRANSITIONS: Record<DebtType, Partial<Record<Stage, Transition[]>>> = {
     ],
   },
 
+  // Заполняется ниже копией rental_overdue (выкуп ведётся так же).
+  buyout_overdue: {},
+
   rental_overdue: {
     created: [
       { to: "payment_schedule", label: "Создать график погашения", primary: true },
@@ -211,6 +215,9 @@ const TRANSITIONS: Record<DebtType, Partial<Record<Stage, Transition[]>>> = {
     ],
   },
 };
+
+// Выкуп — как долг за аренду: график, юрист, суд, мировая, списание.
+TRANSITIONS.buyout_overdue = TRANSITIONS.rental_overdue;
 
 /** Возможные следующие стадии для (type, stage). */
 export function nextStages(type: DebtType, stage: Stage): Transition[] {
@@ -296,6 +303,7 @@ export function typeLabel(type: DebtType): string {
     damage: "Ущерб",
     theft: "Угон",
     rental_overdue: "Долг за аренду",
+    buyout_overdue: "Долг по выкупу",
   };
   return labels[type];
 }
