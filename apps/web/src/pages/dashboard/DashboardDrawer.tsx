@@ -1024,7 +1024,7 @@ function RentalsListDrawerContent({
   }) => {
     const myDebt = debtAgg?.find((d) => d.rentalId === r.id);
     const overdueRel = myDebt
-      ? myDebt.overdueBalance + myDebt.damageBalance + myDebt.manualBalance
+      ? myDebt.overdueBalance + myDebt.manualBalance
       : undefined;
     return effectiveRentalStatus(
       r.status as RentalStatus,
@@ -1045,12 +1045,13 @@ function RentalsListDrawerContent({
       );
     }
     if (filter === "overdue") {
-      // v0.4.53: только аренды с реальным долгом (overdue+damage+manual).
+      // v0.4.53: только аренды с реальным долгом (overdue+manual). Ущерб —
+      // не просрочка аренды (23.10), он ведётся в «Должниках».
       // Если просто endPlanned прошёл, но клиент всё оплатил/прощён —
       // это не «просрочка» для дашборда.
       const myDebt = debtAgg?.find((d) => d.rentalId === r.id);
       const overdueRel = myDebt
-        ? myDebt.overdueBalance + myDebt.damageBalance + myDebt.manualBalance
+        ? myDebt.overdueBalance + myDebt.manualBalance
         : 0;
       if (overdueRel <= 0) return false;
       const endKey = ymdFromRu(r.endPlanned);

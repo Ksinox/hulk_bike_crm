@@ -15,7 +15,7 @@ import { useEffect, useState } from "react";
 import { usePageFab } from "@/mobile/fab";
 import { useTabletLayout } from "@/lib/useIsMobile";
 import { Topbar } from "@/pages/dashboard/Topbar";
-import { consumePending } from "@/app/navigationStore";
+import { consumePending, onNavigate } from "@/app/navigationStore";
 import { DebtorsMorning } from "./DebtorsMorning";
 import { DebtorsList } from "./DebtorsList";
 import { DebtorsEmpty } from "./DebtorsEmpty";
@@ -52,6 +52,11 @@ export function Debtors({ embedded = false }: { embedded?: boolean } = {}) {
   useEffect(() => {
     const p = consumePending("debtors");
     if (p?.debtorId) setSub({ kind: "case", id: p.debtorId });
+    // Раздел уже открыт (напр. дело открыли из карточки аренды поверх него).
+    return onNavigate((req) => {
+      if (req.route === "debtors" && req.debtorId)
+        setSub({ kind: "case", id: req.debtorId });
+    });
   }, []);
 
   const isEmpty =

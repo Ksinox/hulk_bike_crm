@@ -14,6 +14,8 @@ import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useAllDamageReports } from "@/lib/api/damage-reports";
+import { useDebtorsList } from "@/lib/api/debtors";
+import { isClosed as isClosedStage, type DebtType } from "@/lib/debtors/types";
 import { useDebtAggregate } from "@/lib/api/debt";
 import type { ApiRental, ApiScooter } from "@/lib/api/types";
 import { currentBillingPeriod } from "@/lib/billingPeriod";
@@ -169,6 +171,13 @@ export type DebtorNoRentalItem = {
   clientName: string;
   clientPhone: string;
   amount: number;
+  /** Партия 23.10: строка = дело в «Должниках» (клик ведёт прямо в него). */
+  debtorId: number;
+  caseNumber: string;
+  type: DebtType;
+  /** «Ждём оплату до» по акту — пока срок не прошёл, звонить рано. */
+  paymentDueDate: string | null;
+  clientPhotoKey: string | null;
 };
 
 export function useDashboardMetrics(): DashboardMetrics {
@@ -180,6 +189,9 @@ export function useDashboardMetrics(): DashboardMetrics {
   const damageReportsQ = useAllDamageReports();
   // v0.4.51: реальный долг по всем live-арендам (учитывает forgive/payment).
   const debtAggQ = useDebtAggregate();
+  // Партия 23.10: долги по ущербу и закрытым арендам — делами «Должников»
+  // (одна точка правды: закрыл там — пропало и здесь).
+  const debtorsQ = useDebtorsList();
   // v0.4.10: общая выручка за период — единый источник правды (используется
   // и здесь, и на вкладке «Аренды»). Скоуп='all' включает все источники
   // (в будущем продажи/ремонты/рассрочки тоже подтянутся сюда).
@@ -200,7 +212,8 @@ export function useDashboardMetrics(): DashboardMetrics {
     const damageAll = damageReportsQ.data ?? [];
     const debtAgg = debtAggQ.data ?? [];
     const debtByRentalId = new Map(
-      debtAgg.map((d) => [d.rentalId, d.totalDebt]),
+      // 23.10: долг аренды — без ущерба (он ведётся делом в «Должниках»).
+      debtAgg.map((d) => [d.rentalId, d.totalDebt - (d.damageBalance ?? 0)]),
     );
 
     const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -641,39 +654,38 @@ export function useDashboardMetrics(): DashboardMetrics {
         rentalIds: [...ids].sort((a, b) => b - a),
       }));
 
-    // F4 + #25: «Висящие долги» — клиенты с незакрытым долгом по ущербу,
-    // КОТОРЫЙ НЕ ВИДЕН на активной аренде. Такой долг «переезжает» с клиентом
-    // после возврата и легко теряется. Два случая, оба должны попасть в плашку:
-    //   • у клиента нет активной аренды → весь unpaidDamageDebt висит;
-    //   • у клиента ЕСТЬ активная аренда, но долг по ущербу с ДРУГОЙ (закрытой)
-    //     аренды — на текущей аренде он не показан (её ущерб = 0/меньше).
-    //     Раньше (#25, баг Комарова) такой клиент исключался целиком, и долг
-    //     2000 ₽ с прошлой аренды нигде не светился.
-    // «Висящая» сумма = unpaidDamageDebt − долг по ущербу на ЕГО активных
-    // арендах (тот виден на карточке аренды, не дублируем). debtAgg — только
-    // live-аренды, поэтому damageBalance в нём = ущерб на активной аренде.
-    const activeDamageByClient = new Map<number, number>();
-    for (const d of debtAgg) {
-      if ((d.damageBalance ?? 0) > 0) {
-        activeDamageByClient.set(
-          d.clientId,
-          (activeDamageByClient.get(d.clientId) ?? 0) + d.damageBalance,
-        );
-      }
-    }
-    const debtorsNoRental: DebtorNoRentalItem[] = clients
-      .map((c) => {
-        const totalDamage = c.unpaidDamageDebt ?? 0;
-        const onActive = activeDamageByClient.get(c.id) ?? 0;
-        return { c, hanging: Math.max(0, totalDamage - onActive) };
+    // F4 + #25 → партия 23.10: «висящие» долги теперь — открытые дела в
+    // «Должниках» (ущерб по любой аренде, долг закрытой аренды и т.д.).
+    // Раньше считали по актам у клиента, и дело, закрытое в «Должниках»,
+    // продолжало висеть на дашборде. Дело «просрочка» по ещё идущей аренде
+    // не дублируем — она и так в списке просрочек.
+    const overdueIds = new Set(overdueRentals.map((r) => r.id));
+    const debtorsNoRental: DebtorNoRentalItem[] = (debtorsQ.data?.items ?? [])
+      .filter(
+        (d) =>
+          !isClosedStage(d.stage) &&
+          (d.remaining ?? d.totalAmount) > 0 &&
+          d.clientId != null &&
+          !(
+            d.type === "rental_overdue" &&
+            d.relatedRentalId != null &&
+            overdueIds.has(d.relatedRentalId)
+          ),
+      )
+      .map((d) => {
+        const c = clientById.get(d.clientId!);
+        return {
+          clientId: d.clientId!,
+          clientName: d.clientName ?? c?.name ?? "—",
+          clientPhone: d.clientPhone ?? c?.phone ?? "",
+          amount: d.remaining ?? d.totalAmount,
+          debtorId: d.id,
+          caseNumber: d.caseNumber,
+          type: d.type,
+          paymentDueDate: d.paymentDueDate ?? null,
+          clientPhotoKey: d.clientPhotoKey ?? null,
+        };
       })
-      .filter((x) => x.hanging > 0)
-      .map((x) => ({
-        clientId: x.c.id,
-        clientName: x.c.name,
-        clientPhone: x.c.phone ?? "",
-        amount: x.hanging,
-      }))
       .sort((a, b) => b.amount - a.amount);
 
     return {
@@ -726,6 +738,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     paymentsQ.data,
     damageReportsQ.data,
     debtAggQ.data,
+    debtorsQ.data,
     isLoading,
     periodRevenue,
   ]);

@@ -190,7 +190,8 @@ export function Rentals() {
     for (const d of debtAgg ?? []) {
       m.set(
         d.rentalId,
-        d.overdueBalance + d.damageBalance + d.manualBalance,
+        // 23.10: ущерб в просрочку аренды не входит.
+        d.overdueBalance + d.manualBalance,
       );
     }
     return m;
@@ -203,7 +204,9 @@ export function Rentals() {
   // просрочка = active с прошедшим endPlanned и реальным долгом > 0.
   const totalDebtByRentalId = useMemo(() => {
     const m = new Map<number, number>();
-    for (const d of debtAgg ?? []) m.set(d.rentalId, d.totalDebt);
+    // 23.10: без ущерба — он ведётся делом в «Должниках».
+    for (const d of debtAgg ?? [])
+      m.set(d.rentalId, d.totalDebt - (d.damageBalance ?? 0));
     return m;
   }, [debtAgg]);
   // v0.4.10: единый источник правды для выручки — общий хук, тот же

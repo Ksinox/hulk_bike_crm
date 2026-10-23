@@ -1,3 +1,4 @@
+import { isAwaitingPayment, ruDate } from "@/lib/debtors/types";
 import { useState } from "react";
 import {
   AlarmClock,
@@ -106,14 +107,16 @@ export function TabletHome({
       onOpen: () => onOpenRental(o.rentalId),
     })),
     ...m.debtorsNoRental.map<QueueItem>((d) => ({
-      key: `d${d.clientId}`,
+      key: `d${d.debtorId}`,
       kind: "debt",
       name: d.clientName,
-      reason: "Долг по ущербу",
-      detail: "с прошлых аренд",
+      reason: d.type === "damage" ? "Ущерб" : d.type === "rental_overdue" ? "Долг аренды" : "Долг",
+      detail: isAwaitingPayment(d)
+        ? `ждём оплату до ${ruDate(d.paymentDueDate)}`
+        : `дело ${d.caseNumber}`,
       amount: d.amount,
       phones: [d.clientPhone],
-      onOpen: () => navigate({ route: "clients", clientId: d.clientId }),
+      onOpen: () => navigate({ route: "debtors", debtorId: d.debtorId }),
     })),
     ...reminders
       .filter((r) => r.urgency !== "soon")

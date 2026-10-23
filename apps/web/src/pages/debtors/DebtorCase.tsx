@@ -21,7 +21,12 @@ import {
   StickyNote,
   Wallet,
   Bike,
+  UserRound,
+  ArrowUpRight,
 } from "lucide-react";
+import { navigate } from "@/app/navigationStore";
+import { fileUrl } from "@/lib/files";
+import { DebtorPaymentCheck } from "./DebtorPaymentCheck";
 import {
   useDebtor,
   useTransitionDebtor,
@@ -242,7 +247,8 @@ export function DebtorCase({
   // управленческие исходы (скутер вернулся, мировая, суд, списание).
   const moves = secondary.filter((t) => !t.to.startsWith("closed_"));
   const closings = secondary.filter((t) => t.to.startsWith("closed_"));
-  const remaining = Math.max(0, d.totalAmount - d.paid);
+  // Партия 23.10: остаток считает сервер (у дела ущерба — по акту + пеня).
+  const remaining = d.remaining ?? Math.max(0, d.totalAmount - d.paid);
 
   const onTransition = async (to: Stage, label: string, reason?: string) => {
     try {
@@ -365,7 +371,10 @@ export function DebtorCase({
             </span>
           )}
         </div>
-        <h2 className="mt-2 font-display text-[30px] font-bold leading-[1.05] tracking-[-0.022em] text-ink">
+        <div className="mt-3 flex items-center gap-3.5">
+          <CaseAvatar name={d.displayName} photoKey={d.clientPhotoKey ?? null} />
+          <div className="min-w-0 flex-1">
+        <h2 className="font-display text-[26px] font-bold leading-[1.05] tracking-[-0.022em] text-ink sm:text-[30px]">
           {d.displayName}
         </h2>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13.5px] text-muted">
@@ -383,6 +392,48 @@ export function DebtorCase({
           <span className="text-muted-2">·</span>
           <span>психо-портрет {d.psyRating}/5</span>
         </div>
+          </div>
+        </div>
+        {/* Переходы: карточка клиента и аренда, откуда долг (23.10). */}
+        {(d.clientId != null || d.relatedRentalId != null) && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {d.clientId != null && (
+              <button
+                type="button"
+                data-open-client
+                onClick={() =>
+                  navigate({
+                    route: "clients",
+                    clientId: d.clientId!,
+                    from: { route: "debtors" },
+                  })
+                }
+                className={`${TAP}inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-white px-3.5 text-[12.5px] font-semibold text-ink-2 transition-colors hover:border-ink hover:text-ink`}
+              >
+                <UserRound size={14} className="text-blue-600" />
+                Карточка клиента
+                <ArrowUpRight size={13} className="text-muted-2" />
+              </button>
+            )}
+            {d.relatedRentalId != null && (
+              <button
+                type="button"
+                onClick={() =>
+                  navigate({
+                    route: "rentals",
+                    rentalId: d.relatedRentalId!,
+                    from: { route: "debtors" },
+                  })
+                }
+                className={`${TAP}inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-white px-3.5 text-[12.5px] font-semibold text-ink-2 transition-colors hover:border-ink hover:text-ink`}
+              >
+                <Bike size={14} className="text-blue-600" />
+                Аренда #{String(d.relatedRentalId).padStart(4, "0")}
+                <ArrowUpRight size={13} className="text-muted-2" />
+              </button>
+            )}
+          </div>
+        )}
       </header>
 
       {/* ── Рабочая зона: две колонки ─────────────────────────── */}
@@ -394,7 +445,10 @@ export function DebtorCase({
             <div className="flex flex-wrap items-center gap-6 rounded-2xl border border-border bg-surface p-6 shadow-card-sm">
               <DonutProgress paid={d.paid} total={d.totalAmount} />
               <div className="grid min-w-[240px] flex-1 grid-cols-2 gap-x-6 gap-y-3.5">
-                <CaseStat label="Всего долг" value={formatRub(d.totalAmount)} />
+                <CaseStat
+                  label={d.penalty > 0 ? "Всего (с пеней)" : "Всего долг"}
+                  value={formatRub(d.totalAmount)}
+                />
                 <CaseStat label="Оплачено" value={formatRub(d.paid)} tone="green" />
                 <CaseStat label="Осталось" value={formatRub(remaining)} tone="ink" />
                 {d.overdueAmount > 0 ? (
@@ -602,6 +656,8 @@ export function DebtorCase({
 
         {/* ПРАВО — действия и связь */}
         <div className="flex flex-col gap-4 lg:sticky lg:top-4">
+          {/* 23.10: «Ждём оплату до …» / «Пришла ли оплата?» + пеня п. 5.7 */}
+          <DebtorPaymentCheck d={d} />
           {closed && (
             <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5 text-[13px] text-emerald-800 shadow-card-sm">
               <div className="font-display text-[16px] font-semibold">
@@ -822,6 +878,35 @@ export function DebtorCase({
           onCreated={() => setScheduleOpen(false)}
         />
       )}
+    </div>
+  );
+}
+
+/** Аватар дела — фото из карточки клиента (23.10), иначе инициалы. */
+function CaseAvatar({ name, photoKey }: { name: string; photoKey: string | null }) {
+  const [broken, setBroken] = useState(false);
+  const initials =
+    (name || "?")
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() ?? "")
+      .join("") || "?";
+  if (photoKey && !broken)
+    return (
+      <img
+        src={fileUrl(photoKey, { variant: "thumb" }) ?? undefined}
+        alt=""
+        data-case-avatar="photo"
+        onError={() => setBroken(true)}
+        className="h-14 w-14 shrink-0 rounded-2xl object-cover shadow-card-sm"
+      />
+    );
+  return (
+    <div
+      data-case-avatar="initials"
+      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-50 to-surface-soft text-[17px] font-bold text-blue-700"
+    >
+      {initials}
     </div>
   );
 }

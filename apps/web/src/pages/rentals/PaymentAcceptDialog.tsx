@@ -41,6 +41,7 @@ import {
   Plus,
   Pencil,
   ArrowLeftRight,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CheckBox } from "@/components/ui/picker";
@@ -319,7 +320,11 @@ export function PaymentAcceptDialog({
   const overdueFineBalanceRaw = isBackdated
     ? overdueDaysCount * fineDailyRate
     : debt?.overdueFineBalance ?? 0;
-  const damageBalance = debt?.damageBalance ?? 0;
+  // Партия 23.10: ущерб — не долг аренды. Он ведётся делом в «Должниках»
+  // (там «Пришла ли оплата?», пеня п. 5.7) и в расчёт аренды не входит:
+  // ни в «Принять платёж», ни при завершении. Показываем только справкой.
+  const damageInDebtors = debt?.damageBalance ?? 0;
+  const damageBalance = 0;
   const manualBalance = debt?.manualBalance ?? 0;
   // #179: «за экипировку» (доплата за смену экипировки на аренде) против
   // обезличенного «ручного начисления» — чтобы у долга была понятная подпись.
@@ -608,8 +613,7 @@ export function PaymentAcceptDialog({
     overdueDaysBalance +
     overdueFineBalance +
     damageBalance +
-    manualBalance +
-    intakeDamageDebt;
+    manualBalance;
   // C3: «клиент вносит по долгу сейчас» — ОДНА сумма против общего долга.
   // Пусто = гасим полностью (как было). Можно ввести меньше → частичное
   // погашение: distribute() раскидает её по составу (просрочка→штраф→ущерб→…)
@@ -1062,7 +1066,9 @@ export function PaymentAcceptDialog({
     // Правки 7.0 (п.16): «Игнорировать долг» — в очереди только просрочка и
     // продление; ущерб, начисления, доплата за замену и старая аренда не трогаются.
     if (!ignoring) {
-      for (const dr of debt?.damageReports ?? []) {
+      // 23.10: ущерб в аренде не гасим (ведётся в «Должниках») — слоты
+      // актов в очередь не ставим.
+      for (const dr of damageBalance > 0 ? debt?.damageReports ?? [] : []) {
         const reportPaid = payments
           .filter(
             (p) =>
@@ -1078,7 +1084,7 @@ export function PaymentAcceptDialog({
       // Этап 2: акт, созданный в этом же сабмите завершения, ещё не попал
       // в debt.damageReports (кэш) — добавляем его слот вручную, чтобы
       // «вносит сейчас» лёг на новый ущерб по приоритету.
-      for (const s of extraDamageSlots) {
+      for (const s of damageBalance > 0 ? extraDamageSlots : []) {
         if (s.cap > 0)
           queue.push({ cap: s.cap, target: "damage", damageReportId: s.damageReportId });
       }
@@ -2857,7 +2863,7 @@ export function PaymentAcceptDialog({
                   </div>
                 )}
                 <div className="mt-0.5 flex items-center justify-between border-t border-orange-200/60 pt-1.5 text-[13.5px]">
-                  <span className="font-bold text-ink">В долг по ущербу</span>
+                  <span className="font-bold text-ink">В «Должники» по ущербу</span>
                   <b className="tabular-nums text-orange-ink">
                     {fmt(intakeDamageDebt)} ₽
                   </b>
@@ -2994,7 +3000,7 @@ export function PaymentAcceptDialog({
                       )}
                       {completing && intakeDamageDebt > 0 && (
                         <FooterRow
-                          label="Ущерб по приёмке (в долг)"
+                          label="Ущерб по приёмке → в «Должники»"
                           value={`${fmt(intakeDamageDebt)} ₽`}
                           tone="red"
                         />
@@ -3384,6 +3390,27 @@ export function PaymentAcceptDialog({
       ? Math.round(overdueDaysBalanceRaw / overdueDaysCount)
       : 0;
 
+  // 23.10: справка «ущерб останется в «Должниках»» — при завершении аренды
+  // (и при приёмке с новым ущербом), чтобы администратор не удивился.
+  const damageAfterClose = damageInDebtors + (completing ? intakeDamageDebt : 0);
+  const damageDebtorsNote =
+    damageAfterClose > 0 ? (
+      <div
+        data-damage-debtors-note
+        className="mb-3 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-soft/40 p-3"
+      >
+        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-ink" />
+        <div className="min-w-0 text-[12.5px] leading-snug text-ink-2">
+          <div className="font-bold text-red-ink">
+            Ущерб {fmt(damageAfterClose)} ₽ — не в счёте аренды
+          </div>
+          {completing
+            ? "После завершения долг по ущербу останется у клиента — делом в «Должниках»: там срок оплаты по акту и отметка, пришли ли деньги."
+            : "Ущерб ведётся делом в «Должниках» — оплату принимают там."}
+        </div>
+      </div>
+    ) : null;
+
   const completingPanel = (
     <div
       className={cn(
@@ -3432,6 +3459,7 @@ export function PaymentAcceptDialog({
           <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
             Счёт к закрытию
           </div>
+          {damageDebtorsNote}
 
           {/* Сквозной долг с прошлых аренд — отдельный поток оплаты */}
           {crossDebtTotal > 0 && (
@@ -3941,6 +3969,7 @@ export function PaymentAcceptDialog({
             {/* ----- ШАГ 1: счёт ----- */}
             {cStep === 1 && (
               <div className="flex flex-col gap-3 pt-1">
+                {damageDebtorsNote}
                 {crossDebtTotal > 0 && (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
                     <div className="mb-1.5 flex items-center gap-2">

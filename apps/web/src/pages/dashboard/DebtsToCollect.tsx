@@ -11,15 +11,21 @@ import {
 } from "./useDashboardMetrics";
 import { navigate } from "@/app/navigationStore";
 import { useScooterNaming } from "@/lib/scooterNaming";
+import {
+  TYPE_LABEL,
+  isAwaitingPayment,
+  ruDate,
+  type DebtType,
+} from "@/lib/debtors/types";
 
 /**
  * «Долги к сбору» — единый блок «кому звонить за деньгами» на дашборде
  * (заказчик: просрочка + висящие долги — главное на экране, поднять НАД парком).
  * Объединяет просроченные платежи (есть аренда) и висящие долги по ущербу
  * (нет активной аренды), сортирует по срочности, показывает общую сумму к
- * взысканию и звонок прямо в строке. Клик по строке → выбор куда открыть
- * (аренда / карточка клиента / вкладка «Должники») — вкладка должников пока
- * в работе, поэтому даём выбор, а не жёсткий переход.
+ * взысканию и звонок прямо в строке. Клик по просрочке → выбор куда открыть
+ * (аренда / карточка клиента). Партия 23.10: долги вне аренды — это дела
+ * «Должников» (ущерб, долг закрытой аренды); клик по ним ведёт прямо в дело.
  */
 type DebtRow = {
   key: string;
@@ -31,6 +37,11 @@ type DebtRow = {
   rentalId?: number;
   scooterName?: string;
   daysOverdue?: number;
+  debtorId?: number;
+  caseNumber?: string;
+  caseType?: DebtType;
+  paymentDueDate?: string | null;
+  photoKey?: string | null;
 };
 
 export function DebtsToCollect({
@@ -62,12 +73,17 @@ export function DebtsToCollect({
       daysOverdue: o.daysOverdue,
     })),
     ...debtors.map((d) => ({
-      key: `h${d.clientId}`,
+      key: `h${d.debtorId}`,
       kind: "hanging" as const,
       clientId: d.clientId,
       clientName: d.clientName,
       clientPhone: d.clientPhone,
       amount: d.amount,
+      debtorId: d.debtorId,
+      caseNumber: d.caseNumber,
+      caseType: d.type,
+      paymentDueDate: d.paymentDueDate,
+      photoKey: d.clientPhotoKey,
     })),
   ];
   // Сортировка по срочности: сперва просрочка (по числу дней ↓, затем сумма ↓),
@@ -116,7 +132,7 @@ export function DebtsToCollect({
           <div className="text-[11px] text-muted">
             {overdue.length > 0 && `просрочка ${overdue.length}`}
             {overdue.length > 0 && debtors.length > 0 && " · "}
-            {debtors.length > 0 && `ущерб ${debtors.length}`}
+            {debtors.length > 0 && `в «Должниках» ${debtors.length}`}
           </div>
         </div>
         <div className="ml-auto text-right">
@@ -189,14 +205,22 @@ function DebtRowView({
       : "hsl(var(--red))"
     : "hsl(var(--orange))";
   const phoneHref = phoneToTel(row.clientPhone);
+  const awaiting = !isOverdue && isAwaitingPayment(row);
 
   return (
     <div className="relative">
       <div
         role="button"
         tabIndex={0}
-        onClick={onToggleMenu}
-        title="Выбрать, куда открыть"
+        data-debt-row={row.kind}
+        onClick={
+          row.debtorId != null
+            ? () => navigate({ route: "debtors", debtorId: row.debtorId })
+            : onToggleMenu
+        }
+        title={
+          row.debtorId != null ? "Открыть дело в «Должниках»" : "Выбрать, куда открыть"
+        }
         className="flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-xl border border-border bg-surface pr-2.5 transition-colors hover:bg-surface-soft"
       >
         <span
@@ -204,7 +228,11 @@ function DebtRowView({
           style={{ background: stripColor }}
         />
         <div className="py-1.5 pl-1">
-          <ClientAvatar initials={initialsOf(row.clientName)} variant="red" />
+          <ClientAvatar
+            initials={initialsOf(row.clientName)}
+            variant="red"
+            photoKey={row.photoKey}
+          />
         </div>
         <div className="min-w-0 flex-1 py-1.5">
           <div className="truncate text-[13.5px] font-semibold text-ink">
@@ -220,7 +248,10 @@ function DebtRowView({
                 {pad(row.rentalId!)}
               </>
             ) : (
-              "нет активной аренды"
+              <>
+                {row.caseNumber ? `дело ${row.caseNumber}` : "в «Должниках»"}
+                {awaiting && ` · ждём оплату до ${ruDate(row.paymentDueDate)}`}
+              </>
             )}
           </div>
         </div>
@@ -232,7 +263,15 @@ function DebtRowView({
               : "bg-orange-soft text-orange-ink",
           )}
         >
-          {isOverdue ? `Просрочка · ${days} дн` : "Ущерб с прошлой"}
+          {isOverdue
+            ? `Просрочка · ${days} дн`
+            : row.caseType === "damage"
+              ? "Ущерб"
+              : row.caseType === "rental_overdue"
+                ? "Долг аренды"
+                : row.caseType
+                  ? TYPE_LABEL[row.caseType]
+                  : "Долг"}
         </span>
         <span className="shrink-0 text-[14px] font-bold tabular-nums text-red-ink">
           {formatRub(row.amount)} ₽

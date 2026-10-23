@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -281,6 +281,23 @@ export function DamageReportDialog({
   }, [depositMax]);
   const debt = Math.max(0, total - depositCovered);
 
+  // Партия 23.10: срок оплаты ущерба (п. 2.3.15 договора) — по умолчанию 7
+  // дней. Остаток уходит делом в «Должники»: до этой даты «ждём оплату», в
+  // срок CRM спросит, пришли ли деньги.
+  const initialPayDays = useMemo(() => {
+    if (!existing?.payDueDate) return 7;
+    const t = new Date();
+    const today = Date.UTC(t.getFullYear(), t.getMonth(), t.getDate());
+    const due = new Date(`${existing.payDueDate}T00:00:00Z`).getTime();
+    return Math.max(0, Math.round((due - today) / 86_400_000));
+  }, [existing?.payDueDate]);
+  const [payDays, setPayDays] = useState(initialPayDays);
+  const payDueYmd = useMemo(() => {
+    const t = new Date();
+    t.setDate(t.getDate() + payDays);
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  }, [payDays]);
+
   // По умолчанию ВЫКЛ — сотрудник явно решает, отправлять ли скутер в ремонт.
   const [sendToRepair, setSendToRepair] = useState(false);
   const [note, setNote, clearNoteDraft] = usePersistedState<string>(
@@ -550,6 +567,7 @@ export function DamageReportDialog({
               items,
               depositCovered,
               note: note.trim() || null,
+              ...(payDays !== initialPayDays ? { payDueDate: payDueYmd } : {}),
             },
           })
         : await create.mutateAsync({
@@ -557,6 +575,7 @@ export function DamageReportDialog({
             items,
             depositCovered,
             note: note.trim() || null,
+            payDays,
             sendScooterToRepair: sendToRepair,
             // Part B: привязать eager-загруженные медиа к новому акту.
             draftToken,
@@ -1103,13 +1122,22 @@ export function DamageReportDialog({
                   </span>
                 </div>
               </div>
+              {debt > 0 && (
+                <PayTermPicker
+                  days={payDays}
+                  onChange={setPayDays}
+                  dueYmd={payDueYmd}
+                  big
+                />
+              )}
               {debt > 0 && !depositIsItem && (
                 <div className="flex items-start gap-1.5 rounded-2xl border border-amber-200 bg-amber-50/70 px-3 py-2.5 text-[12px] leading-snug text-amber-900">
                   <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                   <span>
-                    Остаток <b>{fmt(debt)} ₽</b> станет{" "}
-                    <b>мягким долгом клиента</b> — поедет за ним, пока не
-                    погасит. Досудебную претензию формировать необязательно.
+                    Остаток <b>{fmt(debt)} ₽</b> уйдёт делом в{" "}
+                    <b>«Должники»</b> — ждём оплату до{" "}
+                    <b>{payDueYmd.split("-").reverse().join(".")}</b>. В расчёт
+                    аренды ущерб не входит.
                   </span>
                 </div>
               )}
@@ -1601,17 +1629,23 @@ export function DamageReportDialog({
                   {fmt(debt)} ₽
                 </span>
               </div>
-              {/* F2: остаток после зачёта залога — мягкий долг клиента. Едет
-                  за ним (виден в делах и в новых арендах), досудебка — отдельно
-                  и по желанию (не обязательна). */}
+              {debt > 0 && (
+                <PayTermPicker
+                  days={payDays}
+                  onChange={setPayDays}
+                  dueYmd={payDueYmd}
+                />
+              )}
+              {/* F2 → 23.10: остаток после зачёта залога — дело в «Должниках»
+                  со сроком оплаты; досудебка — отдельно и по желанию. */}
               {debt > 0 && !depositIsItem && (
                 <div className="flex items-start gap-1.5 rounded-[10px] border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11.5px] leading-snug text-amber-900">
                   <AlertTriangle size={13} className="mt-0.5 shrink-0" />
                   <span>
-                    Остаток <b>{fmt(debt)} ₽</b> станет <b>мягким долгом клиента</b> —
-                    поедет за ним: будет виден в его делах и в новых арендах, пока
-                    не погасит. Досудебную претензию формировать{" "}
-                    <b>необязательно</b> — это отдельный шаг.
+                    Остаток <b>{fmt(debt)} ₽</b> уйдёт делом в <b>«Должники»</b> —
+                    ждём оплату до <b>{payDueYmd.split("-").reverse().join(".")}</b>,
+                    в этот день CRM спросит, пришли ли деньги. В расчёт аренды
+                    ущерб не входит.
                   </span>
                 </div>
               )}
@@ -1742,5 +1776,70 @@ function DepositInput({
       }}
       className="w-[100px] rounded-[8px] border border-border bg-white px-2 py-1 text-right text-[13px] tabular-nums"
     />
+  );
+}
+
+/**
+ * Партия 23.10: «Срок оплаты» ущерба — дней от акта (по умолчанию 7, п. 2.3.15
+ * договора). Без нативных полей: чипсы частых сроков.
+ */
+function PayTermPicker({
+  days,
+  onChange,
+  dueYmd,
+  big = false,
+}: {
+  days: number;
+  onChange: (d: number) => void;
+  dueYmd: string;
+  big?: boolean;
+}) {
+  const options = [3, 7, 14, 30];
+  const custom = !options.includes(days);
+  return (
+    <div
+      data-pay-term
+      className={cn(
+        "border border-border bg-surface-soft",
+        big ? "rounded-2xl p-3" : "rounded-[10px] px-3 py-2.5",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className={cn("font-semibold text-ink", big ? "text-[14px]" : "text-[12.5px]")}>
+          Срок оплаты ущерба
+        </span>
+        <span className={cn("text-muted-2", big ? "text-[12px]" : "text-[11px]")}>
+          до <b className="text-ink">{dueYmd.split("-").reverse().join(".")}</b>
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {options.map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onChange(n)}
+            className={cn(
+              "rounded-full border font-semibold transition-colors",
+              big ? "h-11 px-4 text-[14px]" : "h-8 px-3 text-[12px]",
+              days === n
+                ? "border-blue-600 bg-blue-600 text-white"
+                : "border-border bg-white text-ink-2 hover:border-blue-400",
+            )}
+          >
+            {n} дн
+          </button>
+        ))}
+        {custom && (
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full border border-blue-600 bg-blue-600 font-semibold text-white",
+              big ? "h-11 px-4 text-[14px]" : "h-8 px-3 text-[12px]",
+            )}
+          >
+            {days} дн
+          </span>
+        )}
+      </div>
+    </div>
   );
 }

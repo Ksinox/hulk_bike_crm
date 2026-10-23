@@ -60,7 +60,43 @@ export type Debtor = {
   /** v0.6: имя/телефон клиента, подмешиваются в GET /api/debtors (список). */
   clientName?: string | null;
   clientPhone?: string | null;
+  /** Партия 23.10: «ждём оплату до» (YYYY-MM-DD) — срок из акта. */
+  paymentDueDate: string | null;
+  /** Пеня по п. 5.7 договора (1 000 ₽/день неоплаты ущерба). */
+  penaltyEnabled: boolean;
+  penaltyFrom: string | null;
+  penaltyUntil: string | null;
+  /** Ключ фото клиента (миниатюра) — для аватарки. */
+  clientPhotoKey?: string | null;
+  /** Оплачено / остаток к взысканию (с учётом акта и пени). */
+  paid?: number;
+  remaining?: number;
+  penalty?: number;
 };
+
+/** Дело ждёт оплату по акту и срок ещё не прошёл. */
+export function isAwaitingPayment(
+  d: { paymentDueDate?: string | null },
+  todayYmd: string = localYmd(),
+): boolean {
+  return !!d.paymentDueDate && d.paymentDueDate >= todayYmd;
+}
+
+/** Срок оплаты из акта прошёл — пора спросить «Пришла ли оплата?». */
+export function needsPaymentCheck(
+  d: { paymentDueDate?: string | null; stage: Stage },
+  todayYmd: string = localYmd(),
+): boolean {
+  return !!d.paymentDueDate && d.paymentDueDate < todayYmd && !isClosed(d.stage);
+}
+
+export function localYmd(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function ruDate(ymd: string | null | undefined): string {
+  return ymd ? ymd.slice(0, 10).split("-").reverse().join(".") : "—";
+}
 
 export type DebtorPayment = {
   id: number;
@@ -144,6 +180,19 @@ export type DebtorDetail = Debtor & {
   notes: DebtorNote[];
   recommendation: Recommendation | null;
   forecast: InsuranceForecast | null;
+  remaining: number;
+  penalty: number;
+  penaltyDays: number;
+  penaltyPerDay: number;
+  /** У дела ущерба — остаток по самому акту (без пени). */
+  reportBalance: number | null;
+  damageReport: {
+    id: number;
+    rentalId: number;
+    payDueDate: string | null;
+    total: number;
+    depositCovered: number;
+  } | null;
 };
 
 export type TodayAction = {
@@ -153,6 +202,7 @@ export type TodayAction = {
     | "lawyer_check"
     | "insurance_reminder"
     | "payment_due_today"
+    | "payment_check"
     | "first_contact"
     | "in_progress";
   priority: "hot" | "warm" | "cool";
@@ -160,33 +210,28 @@ export type TodayAction = {
   primaryAction: { label: string; target: string };
 };
 
+export type TodayDebtor = {
+  id: number;
+  caseNumber: string;
+  type: DebtType;
+  stage: Stage;
+  totalAmount: number;
+  clientName: string;
+  psyRating: number;
+  clientStatus: ClientStatus;
+  /** Партия 23.10: остаток к взысканию. */
+  remaining?: number;
+  paymentDueDate?: string | null;
+  clientPhone?: string;
+  clientPhotoKey?: string | null;
+};
+
 export type TodayBundle = {
-  hottest: {
-    debtor: {
-      id: number;
-      caseNumber: string;
-      type: DebtType;
-      stage: Stage;
-      totalAmount: number;
-      clientName: string;
-      psyRating: number;
-      clientStatus: ClientStatus;
-    };
-    action: TodayAction;
-  } | null;
-  queue: {
-    debtor: {
-      id: number;
-      caseNumber: string;
-      type: DebtType;
-      stage: Stage;
-      totalAmount: number;
-      clientName: string;
-      psyRating: number;
-      clientStatus: ClientStatus;
-    };
-    action: TodayAction;
-  }[];
+  hottest: { debtor: TodayDebtor; action: TodayAction } | null;
+  queue: { debtor: TodayDebtor; action: TodayAction }[];
+  /** Партия 23.10: все активные дела — для главной раздела. */
+  active?: { debtor: TodayDebtor; action: TodayAction | null }[];
+  awaitingCount?: number;
   totalActiveCount: number;
   totalActiveSum: number;
 };
@@ -197,7 +242,7 @@ export const TYPE_LABEL: Record<DebtType, string> = {
   dtp_victim: "ДТП · потерпевший",
   damage: "Ущерб",
   theft: "Угон",
-  rental_overdue: "Просрочка аренды",
+  rental_overdue: "Долг за аренду",
 };
 
 export const STAGE_LABEL: Record<Stage, string> = {
