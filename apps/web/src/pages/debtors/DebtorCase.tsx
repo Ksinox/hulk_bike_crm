@@ -385,11 +385,11 @@ export function DebtorCase({
             <Phone size={13} className="text-blue-600" />
             {d.displayPhone}
           </a>
-          <span className="text-muted-2">·</span>
+          <span className="hidden text-muted-2 sm:inline">·</span>
           <span>
             {d.clientStatus === "closed" ? "Закрытый" : "Действующий"} клиент
           </span>
-          <span className="text-muted-2">·</span>
+          <span className="hidden text-muted-2 sm:inline">·</span>
           <span>психо-портрет {d.psyRating}/5</span>
         </div>
           </div>
