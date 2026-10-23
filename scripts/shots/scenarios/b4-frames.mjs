@@ -102,7 +102,7 @@ export async function run(page, ctx) {
     const row = process.env.ROW;
     if (row)
       await page.evaluate((row) => {
-        document.querySelector(`[data-case-row="${row}"]`)?.dispatchEvent(
+        document.querySelector(`[data-reason-chip="${row}"]`)?.dispatchEvent(
           new MouseEvent("click", { bubbles: true }),
         );
       }, row);
@@ -114,7 +114,7 @@ export async function run(page, ctx) {
     await ctx.gotoRoute("debtors", { debtorId: caseId });
     await ctx.sleep(4500);
     await page.evaluate((row) => {
-      document.querySelector(`[data-case-row="${row}"]`)?.dispatchEvent(
+      document.querySelector(`[data-reason-chip="${row}"]`)?.dispatchEvent(
         new MouseEvent("click", { bubbles: true }),
       );
     }, process.env.ROW ?? "D-014");
@@ -158,6 +158,28 @@ export async function run(page, ctx) {
     });
     await ctx.sleep(2500);
     await ctx.shot(`b4-act-${vp}-${tag}`, { jpeg: true });
+  }
+  if (what === "buyout") {
+    // сделка выкупа с просрочкой → «Передать в «Должники»» (окно, без отправки)
+    const deal = Number(process.env.DEAL ?? 3);
+    await ctx.gotoRoute("rassrochki", { buyoutDealId: deal });
+    await ctx.sleep(1500);
+    await ctx.gotoRoute("rassrochki", { buyoutDealId: deal });
+    await ctx.sleep(3500);
+    await ctx.shot(`b4-buyout-${vp}-${tag}`, { jpeg: true });
+    await page.evaluate(() => document.querySelector("[data-to-debtors]")?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await ctx.sleep(1200);
+    await page.type("textarea", "Не платит вторую неделю, обещал в пятницу", { delay: 15 });
+    await ctx.sleep(500);
+    await ctx.shot(`b4-buyout-dialog-${vp}-${tag}`, { jpeg: true });
+  }
+  if (what === "oldcase") {
+    // старый экран: открыть дело кликом по строке очереди с именем
+    await ctx.gotoRoute("debtors");
+    await ctx.sleep(4500);
+    console.log("дело:", await click(process.env.CLICK ?? "Открыть и разобраться"));
+    await ctx.sleep(3500);
+    await ctx.shot(`b4-case-${vp}-${tag}`, { jpeg: true });
   }
   if (what === "wizard") {
     await ctx.gotoRoute("debtors");
