@@ -2161,7 +2161,7 @@ export function RentalCard({
           className="group flex min-h-[44px] w-full items-center gap-2 rounded-[12px] border border-red-200 bg-red-soft/30 px-3.5 py-2 text-left transition-colors hover:border-red-300 hover:bg-red-soft/60"
         >
           <AlertTriangle size={15} className="shrink-0 text-red-ink" />
-          <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">
+          <span className="line-clamp-2 min-w-0 flex-1 text-[13px] text-ink-2 sm:truncate">
             <b className="text-red-ink underline decoration-red-ink/40 underline-offset-2 group-hover:decoration-red-ink">
               Ущерб {fmt(damageLeft)} ₽
             </b>
