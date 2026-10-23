@@ -312,7 +312,7 @@ export function RentalsList({
   /**
    * Правка 28.08 (партнёрка): контейнерная адаптация колонок. Родитель
    * оборачивает список в @container; на узком контейнере колонки прячутся
-   * по приоритету — сначала «Сумма аренды», потом «№», «Связь», «Выдан».
+   * по приоритету — сначала «Тариф» (сумма текущего периода), потом «№», «Связь», «Выдан».
    * Долг и статус видимы всегда. Без обёртки-@container включать нельзя —
    * колонки останутся скрытыми (min-width-запросу не с чем сравняться).
    */
@@ -567,7 +567,7 @@ export function RentalsList({
             {hasAnyParking && (
               <Th label="Паркинг" col="parking" sort={sort} onSort={toggleSort} align="center" />
             )}
-            <Th label="Сумма аренды" col="rentSum" sort={sort} onSort={toggleSort} align="right" className={COL.rentSum(narrowAware)} />
+            <Th label="Тариф" col="rentSum" sort={sort} onSort={toggleSort} align="right" className={COL.rentSum(narrowAware)} />
             <Th label="Долг" col="sum" sort={sort} onSort={toggleSort} align="right" className={COL.debt(narrowAware)} />
             <Th label="Статус" col="status" sort={sort} onSort={toggleSort} className={COL.status(narrowAware)} />
           </tr>
