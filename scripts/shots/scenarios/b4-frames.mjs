@@ -173,6 +173,14 @@ export async function run(page, ctx) {
     await ctx.sleep(500);
     await ctx.shot(`b4-buyout-dialog-${vp}-${tag}`, { jpeg: true });
   }
+  if (what === "oldcase") {
+    // старый экран: открыть дело кликом по строке очереди с именем
+    await ctx.gotoRoute("debtors");
+    await ctx.sleep(4500);
+    console.log("дело:", await click(process.env.CLICK ?? "Открыть и разобраться"));
+    await ctx.sleep(3500);
+    await ctx.shot(`b4-case-${vp}-${tag}`, { jpeg: true });
+  }
   if (what === "wizard") {
     await ctx.gotoRoute("debtors");
     await ctx.sleep(4000);

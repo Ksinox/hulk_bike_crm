@@ -7637,7 +7637,7 @@ export const progressItems: ProgressItem[] = [
       {
         tag: "bug",
         text: "Было разбросано.",
-        imgs: [{ src: "/progress/v2012-case-was.jpg", label: "БЫЛО: дело должника" }],
+        imgs: [{ src: "/progress/v2012-case-was.jpg", label: "БЫЛО: компьютер" }, { src: "/progress/v2012-case-phone-was.jpg", label: "БЫЛО: телефон" }],
       },
       {
         tag: "fix",
